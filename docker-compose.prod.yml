@@ -1,0 +1,60 @@
+version: '3.9'
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: erd_postgres_prod
+    restart: always
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_DB:       ${DB_NAME}
+      POSTGRES_USER:     ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: erd_backend_prod
+    restart: always
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn erickshaw.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    env_file: ./backend/.env
+    volumes:
+      - media_prod_data:/app/media
+      - static_prod_data:/app/staticfiles
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: erd_frontend_prod
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - static_prod_data:/app/staticfiles:ro
+      - media_prod_data:/app/media:ro
+    depends_on:
+      - backend
+
+volumes:
+  postgres_prod_data:
+  media_prod_data:
+  static_prod_data:

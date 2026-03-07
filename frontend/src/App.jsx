@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { SalesPage } from './SalesPage';
 
 // ═══════════════════════════════════════════════════════
 // API LAYER
 // ═══════════════════════════════════════════════════════
-const API = "http://localhost:8000/api";
+const API = (import.meta.env.VITE_API_URL || "http://localhost:8000") + "/api";
 
 async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem("erd_token");
@@ -750,95 +751,6 @@ function Leads() {
 }
 
 // ═══════════════════════════════════════════════════════
-// SALES PAGE
-// ═══════════════════════════════════════════════════════
-function Sales() {
-  const [sales, setSales] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [showInv, setShowInv] = useState(null);
-  const [vehicles, setVehicles] = useState([]);
-  const [form, setForm] = useState({ vehicle: "", customer_name: "", customer_phone: "", customer_address: "", customer_gstin: "", sale_price: "", quantity: 1, payment_method: "cash", delivery_date: "" });
-
-  const load = () => {
-    setLoading(true);
-    api.sales.list().then(d => setSales(d.results || d)).finally(() => setLoading(false));
-  };
-  useEffect(() => { load(); api.vehicles.list().then(d => setVehicles(d.results || d)); }, []);
-
-  const setF = k => v => setForm(p => ({ ...p, [k]: v }));
-
-  const submit = async (e) => {
-    e.preventDefault();
-    try { await api.sales.create(form); setShowAdd(false); load(); }
-    catch (err) { alert("Error: " + JSON.stringify(err)); }
-  };
-
-  const viewInvoice = async (id) => {
-    const inv = await api.sales.invoice(id);
-    setShowInv(inv);
-  };
-
-  const cols = [
-    { label: "Invoice",   render: r => <span style={{ fontWeight: 700, color: C.primary }}>{r.invoice_number}</span> },
-    { label: "Customer",  render: r => <div><div style={{ fontWeight: 600 }}>{r.customer_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.customer_phone}</div></div> },
-    { label: "Vehicle",   render: r => <span style={{ fontSize: 12 }}>{r.vehicle_name}</span> },
-    { label: "Amount",    render: r => <span style={{ fontWeight: 700 }}>{fmtINR(r.total_amount)}</span> },
-    { label: "Payment",   render: r => <Badge label={r.payment_method.replace("_"," ")} color={C.info} /> },
-    { label: "Date",      render: r => <span style={{ fontSize: 12, color: C.textDim }}>{fmtDate(r.sale_date)}</span> },
-    { label: "Delivery",  render: r => <span style={{ fontSize: 12, color: r.is_delivered ? C.success : C.warning }}>{r.is_delivered ? "Delivered" : fmtDate(r.delivery_date)}</span> },
-    { label: "Actions",   render: r => <Btn label="Invoice" size="sm" color={C.primary} onClick={() => viewInvoice(r.id)} /> },
-  ];
-
-  return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <Btn label="+ New Sale" color={C.primary} onClick={() => setShowAdd(true)} />
-      </div>
-      <Card padding={0}>
-        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>All Sales</div>
-        {loading ? <Spinner /> : <Table cols={cols} rows={sales} />}
-      </Card>
-
-      {showAdd && (
-        <Modal title="Record New Sale" onClose={() => setShowAdd(false)} width={620}>
-          <form onSubmit={submit}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              <div style={{ gridColumn: "span 2" }}>
-                <Field label="Vehicle" required>
-                  <Select value={form.vehicle} onChange={setF("vehicle")} placeholder="Select vehicle" required options={vehicles.map(v => ({ value: v.id, label: `${v.brand_name} ${v.model_name} — ${fmtINR(v.price)}` }))} />
-                </Field>
-              </div>
-              <Field label="Customer Name" required><Input value={form.customer_name} onChange={setF("customer_name")} required /></Field>
-              <Field label="Customer Phone" required><Input value={form.customer_phone} onChange={setF("customer_phone")} required /></Field>
-              <Field label="Customer GSTIN"><Input value={form.customer_gstin} onChange={setF("customer_gstin")} placeholder="09XXXXX" /></Field>
-              <Field label="Sale Price (₹)" required><Input value={form.sale_price} onChange={setF("sale_price")} type="number" required /></Field>
-              <Field label="Quantity"><Input value={form.quantity} onChange={setF("quantity")} type="number" /></Field>
-              <Field label="Payment Method">
-                <Select value={form.payment_method} onChange={setF("payment_method")} options={[{value:"cash",label:"Cash"},{value:"upi",label:"UPI"},{value:"loan",label:"Loan"},{value:"bank_transfer",label:"Bank Transfer"},{value:"cheque",label:"Cheque"}]} />
-              </Field>
-              <Field label="Delivery Date"><Input value={form.delivery_date} onChange={setF("delivery_date")} type="date" /></Field>
-            </div>
-            <Field label="Customer Address"><Input value={form.customer_address} onChange={setF("customer_address")} placeholder="Full address..." /></Field>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAdd(false)} />
-              <Btn label="Record Sale" color={C.primary} type="submit" />
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* Invoice Modal */}
-      {showInv && (
-        <Modal title="Invoice" onClose={() => setShowInv(null)} width={680}>
-          <InvoiceView inv={showInv} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════
 // INVOICE VIEW (matching reference image)
 // ═══════════════════════════════════════════════════════
 function InvoiceView({ inv }) {
@@ -1179,7 +1091,7 @@ export default function App() {
       case "dashboard":   return <Dashboard />;
       case "inventory":   return <Inventory showAdd={showAddVehicle} onAddClose={() => setShowAddVehicle(false)} />;
       case "leads":       return <Leads />;
-      case "sales":       return <Sales />;
+      case "sales":       return <SalesPage />;
       case "customers":   return <Customers />;
       case "finance":     return <Finance />;
       case "reports":     return <Reports />;
