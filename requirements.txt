@@ -1,0 +1,15 @@
+asgiref==3.11.1
+cffi==2.0.0
+charset-normalizer==3.4.5
+cryptography==46.0.5
+Django==4.2
+django-cors-headers==4.9.0
+djangorestframework==3.16.1
+gunicorn==25.1.0
+packaging==26.0
+pdfminer.six==20260107
+pillow==12.1.1
+psycopg2-binary==2.9.11
+pycparser==3.0
+sqlparse==0.5.5
+typing_extensions==4.15.0
