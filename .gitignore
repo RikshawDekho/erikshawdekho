@@ -12,9 +12,11 @@ __pycache__/
 db.sqlite3
 media/
 
-# Environment variables
+# Environment variables — keep examples, ignore real secrets
 .env
 .env.*
+!.env.example
+!.env.staging
 
 # Virtual environments
 venv/
@@ -38,6 +40,7 @@ yarn-error.log*
 
 # Vite
 .vite/
+*.local
 
 # =========================
 # IDE

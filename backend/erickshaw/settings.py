@@ -1,10 +1,13 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = 'django-insecure-erikshawdekho-secret-change-in-production'
-DEBUG = True
-ALLOWED_HOSTS = ['*']
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-erikshawdekho-secret-change-in-production')
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -51,8 +54,9 @@ DATABASES = {
         'NAME':     os.environ.get('DB_NAME',     'erikshaw_db'),
         'USER':     os.environ.get('DB_USER',     'postgres'),
         'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
-        'HOST':     os.environ.get('DB_HOST',     'localhost'),
+        'HOST':     os.environ.get('DB_HOST',     'db'),
         'PORT':     os.environ.get('DB_PORT',     '5432'),
+        'OPTIONS':  {'connect_timeout': 10},
     }
 }
 
@@ -66,8 +70,11 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 10,
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # only in dev; prod uses CORS_ALLOWED_ORIGINS
 CORS_ALLOW_CREDENTIALS = True
+_cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if _cors_origins:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
 AUTH_PASSWORD_VALIDATORS = []
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE     = 'Asia/Kolkata'
