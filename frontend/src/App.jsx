@@ -4,7 +4,7 @@ import { SalesPage } from './SalesPage';
 // ═══════════════════════════════════════════════════════
 // API LAYER
 // ═══════════════════════════════════════════════════════
-const API = (import.meta.env.VITE_API_URL || "http://localhost:8000") + "/api";
+const API = import.meta.env.VITE_API_URL;
 
 async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem("erd_token");
