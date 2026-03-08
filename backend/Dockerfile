@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py seed_data && gunicorn erickshaw.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py seed_data && python manage.py createsuperuser --noinput || true && gunicorn erickshaw.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120"]
