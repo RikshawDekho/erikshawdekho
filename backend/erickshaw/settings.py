@@ -8,9 +8,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-erikshawdekho-secret-change-in-production')
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
     "erikshawdekho-production.up.railway.app",
     "erikshawdekho.com",
-    "www.erikshawdekho.com"
+    "www.erikshawdekho.com",
+    *[h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()],
 ]
 
 INSTALLED_APPS = [

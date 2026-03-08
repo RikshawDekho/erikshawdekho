@@ -1,3 +1,4 @@
+import uuid
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.db.models import Sum, Count, Q
@@ -56,7 +57,7 @@ def login_view(request):
             'phone': dealer.phone if dealer else '',
             'gstin': dealer.gstin if dealer else '',
         }
-    })
+    }, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
@@ -229,8 +230,7 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         dealer = self.request.user.dealer_profile
-        import random, string
-        inv_no = 'INV-' + ''.join(random.choices(string.digits, k=5))
+        inv_no = 'INV-' + uuid.uuid4().hex[:8].upper()
         sale = serializer.save(dealer=dealer, invoice_number=inv_no)
         # Decrement stock
         vehicle = sale.vehicle

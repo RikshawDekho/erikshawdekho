@@ -298,7 +298,7 @@ function DonutChart({ data, size = 100 }) {
 // ═══════════════════════════════════════════════════════
 function AuthPage({ onAuth }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ username: "demo", password: "demo1234", email: "", dealer_name: "", phone: "", city: "Delhi" });
+  const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "Delhi" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
