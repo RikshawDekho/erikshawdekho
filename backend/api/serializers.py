@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan
+from django.db.models import Avg
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -90,12 +91,12 @@ class FinanceLoanSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=150)
-    email = serializers.EmailField()
-    password = serializers.CharField(min_length=6)
+    username    = serializers.CharField(max_length=150)
+    email       = serializers.EmailField()
+    password    = serializers.CharField(min_length=6)
     dealer_name = serializers.CharField(max_length=200)
-    phone = serializers.CharField(max_length=15)
-    city = serializers.CharField(max_length=100, required=False, default='Delhi')
+    phone       = serializers.CharField(max_length=15)
+    city        = serializers.CharField(max_length=100, required=False, default='Delhi')
 
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():
@@ -119,7 +120,90 @@ class RegisterSerializer(serializers.Serializer):
             phone=validated_data['phone'],
             city=validated_data.get('city', 'Delhi'),
         )
+        UserProfile.objects.create(user=user, user_type='dealer',
+                                   phone=validated_data['phone'],
+                                   city=validated_data.get('city', 'Delhi'))
         return user
+
+
+class DriverRegisterSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    email    = serializers.EmailField()
+    password = serializers.CharField(min_length=6)
+    phone    = serializers.CharField(max_length=15, required=False, default='')
+    city     = serializers.CharField(max_length=100, required=False, default='')
+
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Username already taken.")
+        return value
+
+    def validate_email(self, value):
+        if value and User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return value
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password=validated_data['password'],
+        )
+        UserProfile.objects.create(user=user, user_type='driver',
+                                   phone=validated_data.get('phone', ''),
+                                   city=validated_data.get('city', ''))
+        return user
+
+
+# ─── PUBLIC DEALER SERIALIZERS ─────────────────────────────────────
+
+class DealerReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = DealerReview
+        fields = ['id', 'reviewer_name', 'reviewer_phone', 'rating', 'comment', 'created_at']
+        read_only_fields = ['created_at']
+
+
+class PublicVehicleSerializer(serializers.ModelSerializer):
+    brand_name  = serializers.CharField(source='brand.name', read_only=True)
+    dealer_name = serializers.CharField(source='dealer.dealer_name', read_only=True)
+    dealer_city = serializers.CharField(source='dealer.city', read_only=True)
+
+    class Meta:
+        model  = Vehicle
+        fields = ['id', 'brand_name', 'dealer_name', 'dealer_city', 'model_name',
+                  'fuel_type', 'vehicle_type', 'price', 'stock_status',
+                  'thumbnail', 'year', 'is_featured', 'is_used',
+                  'range_km', 'seating_capacity', 'description']
+
+
+class PublicDealerSerializer(serializers.ModelSerializer):
+    avg_rating    = serializers.SerializerMethodField()
+    review_count  = serializers.SerializerMethodField()
+    vehicle_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = DealerProfile
+        fields = ['id', 'dealer_name', 'city', 'state', 'phone', 'address',
+                  'logo', 'avg_rating', 'review_count', 'vehicle_count']
+
+    def get_avg_rating(self, obj):
+        avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']
+        return round(avg, 1) if avg else None
+
+    def get_review_count(self, obj):
+        return obj.reviews.count()
+
+    def get_vehicle_count(self, obj):
+        return obj.vehicles.filter(is_active=True, stock_status__in=['in_stock', 'low_stock']).count()
+
+
+class DealerApplicationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = DealerApplication
+        fields = ['id', 'dealer_name', 'contact_name', 'phone', 'email',
+                  'city', 'state', 'gstin', 'message', 'applied_at']
+        read_only_fields = ['applied_at']
 
 
 class DashboardSerializer(serializers.Serializer):
