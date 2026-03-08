@@ -23,6 +23,8 @@ venv/
 .venv/
 env/
 ENV/
+.env
+.env.*
 
 # Migrations cache
 *.pyo

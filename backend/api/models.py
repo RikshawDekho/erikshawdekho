@@ -3,6 +3,25 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 
+# ─── USER PROFILE (role + FCM token for all user types) ───────────
+
+class UserProfile(models.Model):
+    USER_TYPES = [
+        ('driver', 'Driver / Buyer'),
+        ('dealer', 'Dealer / Showroom'),
+        ('admin',  'Platform Admin'),
+    ]
+    user      = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    user_type = models.CharField(max_length=20, choices=USER_TYPES, default='dealer')
+    phone     = models.CharField(max_length=15, blank=True)
+    city      = models.CharField(max_length=100, blank=True)
+    fcm_token = models.TextField(blank=True, help_text='Firebase Cloud Messaging device token')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} ({self.user_type})"
+
+
 class DealerProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='dealer_profile')
     dealer_name = models.CharField(max_length=200)
@@ -211,3 +230,71 @@ class FinanceLoan(models.Model):
 
     def __str__(self):
         return f"{self.customer_name} - ₹{self.loan_amount}"
+
+
+# ─── DEALER APPLICATION ────────────────────────────────────────────
+
+class DealerApplication(models.Model):
+    STATUS_CHOICES = [
+        ('pending',  'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+    dealer_name  = models.CharField(max_length=200)
+    contact_name = models.CharField(max_length=200)
+    phone        = models.CharField(max_length=15)
+    email        = models.EmailField()
+    city         = models.CharField(max_length=100)
+    state        = models.CharField(max_length=100, blank=True)
+    gstin        = models.CharField(max_length=20, blank=True)
+    message      = models.TextField(blank=True)
+    status       = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    applied_at   = models.DateTimeField(auto_now_add=True)
+    reviewed_at  = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-applied_at']
+
+    def __str__(self):
+        return f"{self.dealer_name} — {self.status}"
+
+
+# ─── DEALER REVIEWS (from drivers/buyers) ─────────────────────────
+
+class DealerReview(models.Model):
+    dealer        = models.ForeignKey(DealerProfile, on_delete=models.CASCADE, related_name='reviews')
+    reviewer_name = models.CharField(max_length=200)
+    reviewer_phone = models.CharField(max_length=15, blank=True)
+    rating        = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comment       = models.TextField()
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.dealer.dealer_name} — {self.rating}★ by {self.reviewer_name}"
+
+
+# ─── PUBLIC ENQUIRY (no auth needed, no required dealer FK) ───────
+
+class PublicEnquiry(models.Model):
+    """Visitor lead from public marketplace / homepage — no login required."""
+    customer_name = models.CharField(max_length=200)
+    phone         = models.CharField(max_length=15)
+    city          = models.CharField(max_length=100, blank=True)
+    vehicle       = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True)
+    dealer        = models.ForeignKey(DealerProfile, on_delete=models.SET_NULL, null=True, blank=True,
+                                      help_text='Auto-assigned based on vehicle or city')
+    notes         = models.TextField(blank=True)
+    is_processed  = models.BooleanField(default=False)
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Public Enquiry'
+        verbose_name_plural = 'Public Enquiries'
+
+    def __str__(self):
+        return f"{self.customer_name} ({self.phone}) — {self.city}"
