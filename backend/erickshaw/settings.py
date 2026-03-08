@@ -28,6 +28,7 @@ ALLOWED_HOSTS = [
     "erikshawdekho-production.up.railway.app",
     "erikshawdekho.com",
     "www.erikshawdekho.com",
+    "api.erikshawdekho.com",
     *[h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()],
 ]
 
