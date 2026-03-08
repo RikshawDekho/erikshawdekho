@@ -30,6 +30,7 @@ urlpatterns = [
     # ── Public marketplace ────────────────────────────────────────
     path('marketplace/',            views.marketplace_vehicles, name='marketplace'),
     path('stats/',                  views.platform_stats,    name='platform-stats'),
+    path('public/enquiry/',         views.public_enquiry,    name='public-enquiry'),
 
     # ── Public dealer directory ───────────────────────────────────
     path('dealers/',                          views.dealer_list,           name='dealer-list'),

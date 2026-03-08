@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 const G = "#16a34a";  // brand green
-const D = "#1e3a8a";  // brand dark blue
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -34,7 +33,7 @@ export default function Navbar() {
           <div style={{ display: "flex", alignItems: "center", gap: 4 }} className="desktop-nav">
             <Link to="/marketplace" className={`nav-link${active("/marketplace") ? " active" : ""}`}>Marketplace</Link>
             <Link to="/dealers"     className={`nav-link${active("/dealers")     ? " active" : ""}`}>Dealers</Link>
-            <a href="https://erikshawdekho.com/dealers/apply" className="nav-link" style={{ color: "#6b7280" }}>List Your Showroom</a>
+            <Link to="/dealers" className="nav-link" style={{ color: "#6b7280" }}>List Your Showroom</Link>
           </div>
 
           {/* CTA */}
