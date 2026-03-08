@@ -387,50 +387,77 @@ const NAV = [
   { id: "finance",    label: "Finance",    icon: "🏦" },
   { id: "reports",    label: "Reports",    icon: "📈" },
   { id: "marketplace",label: "Marketplace",icon: "🛒" },
-  { id: "admin",      label: "Admin",      icon: "⚙️" },
+];
+
+const BOTTOM_NAV = [
+  { id: "dashboard",  label: "Home",    icon: "📊" },
+  { id: "inventory",  label: "Stock",   icon: "🚗" },
+  { id: "leads",      label: "Leads",   icon: "👥" },
+  { id: "sales",      label: "Sales",   icon: "💰" },
+  { id: "account",    label: "Account", icon: "👤" },
 ];
 
 function Sidebar({ page, setPage, dealer, onLogout }) {
   return (
-    <div style={{ width: 220, minWidth: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 }}>
-      {/* Logo */}
-      <div style={{ padding: "18px 16px", borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 36, height: 36, background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🛺</div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 14, color: C.text, fontFamily: "Georgia, serif" }}>eRickshaw<span style={{ color: C.accent }}>Dekho</span></div>
-            <div style={{ fontSize: 10, color: C.textDim }}>Dealer Portal</div>
+    <>
+      {/* Desktop sidebar */}
+      <div className="erd-sidebar" style={{ width: 220, minWidth: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 }}>
+        <div style={{ padding: "18px 16px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 36, height: 36, background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🛺</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 14, color: C.text, fontFamily: "Georgia, serif" }}>eRickshaw<span style={{ color: C.accent }}>Dekho</span></div>
+              <div style={{ fontSize: 10, color: C.textDim }}>Dealer Portal</div>
+            </div>
           </div>
+        </div>
+        <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto" }}>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => setPage(n.id)} style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+              background: page === n.id ? `${C.primary}15` : "transparent",
+              border: "none", borderRadius: 8,
+              color: page === n.id ? C.primary : C.textMid,
+              fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer",
+              fontFamily: "inherit", marginBottom: 2, transition: "all 0.1s",
+              borderLeft: page === n.id ? `3px solid ${C.primary}` : "3px solid transparent",
+            }}>
+              <span style={{ fontSize: 16 }}>{n.icon}</span>{n.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
+          <button onClick={() => setPage("account")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: page === "account" ? `${C.primary}15` : "transparent", border: "none", borderRadius: 8, color: page === "account" ? C.primary : C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            <span>👤</span>My Account
+          </button>
+          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            <span>🚪</span>Logout
+          </button>
         </div>
       </div>
 
-      {/* Nav */}
-      <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto" }}>
-        {NAV.map(n => (
+      {/* Mobile bottom navigation */}
+      <div className="erd-bottom-nav" style={{ display: "none", position: "fixed", bottom: 0, left: 0, right: 0, background: C.surface, borderTop: `1px solid ${C.border}`, zIndex: 200, padding: "6px 0 8px" }}>
+        {BOTTOM_NAV.map(n => (
           <button key={n.id} onClick={() => setPage(n.id)} style={{
-            width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
-            background: page === n.id ? `${C.primary}15` : "transparent",
-            border: "none", borderRadius: 8,
-            color: page === n.id ? C.primary : C.textMid,
-            fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer",
-            fontFamily: "inherit", marginBottom: 2, transition: "all 0.1s",
-            borderLeft: page === n.id ? `3px solid ${C.primary}` : "3px solid transparent",
+            flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+            background: "transparent", border: "none", cursor: "pointer",
+            color: page === n.id ? C.primary : C.textDim, fontFamily: "inherit",
           }}>
-            <span style={{ fontSize: 16 }}>{n.icon}</span>{n.label}
+            <span style={{ fontSize: 20 }}>{n.icon}</span>
+            <span style={{ fontSize: 10, fontWeight: page === n.id ? 700 : 400 }}>{n.label}</span>
           </button>
         ))}
-      </nav>
-
-      {/* My Account */}
-      <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
-        <button onClick={() => setPage("account")} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-          <span>👤</span>My Account
-        </button>
-        <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-          <span>🚪</span>Logout
-        </button>
       </div>
-    </div>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .erd-sidebar { display: none !important; }
+          .erd-bottom-nav { display: flex !important; }
+          .erd-main { padding-bottom: 70px !important; }
+        }
+      `}</style>
+    </>
   );
 }
 
@@ -466,17 +493,40 @@ function Dashboard() {
   if (!data) return null;
 
   const fuelColors = { electric: C.success, petrol: "#f97316", cng: "#06b6d4", lpg: "#8b5cf6" };
+  const plan = data.plan;
 
   return (
     <div style={{ padding: 24, maxWidth: 1200 }}>
       {/* Welcome banner */}
-      <div style={{ background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, borderRadius: 14, padding: "22px 28px", marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", color: "#fff" }}>
+      <div style={{ background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, borderRadius: 14, padding: "22px 28px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", color: "#fff" }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 700 }}>Welcome back! 👋</div>
           <div style={{ opacity: 0.85, fontSize: 13, marginTop: 4 }}>Here's an overview of your dealership activity.</div>
         </div>
         <div style={{ fontSize: 48 }}>🛺</div>
       </div>
+
+      {/* Verification warning */}
+      {plan && !plan.is_verified && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", alignItems: "center", gap: 8 }}>
+          ⏳ <span>Your dealership is <b>pending verification</b>. Our team will review and approve it shortly.</span>
+        </div>
+      )}
+
+      {/* Plan warnings */}
+      {plan && !plan.is_active && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#dc2626", display: "flex", alignItems: "center", gap: 8 }}>
+          ⚠️ <span>Your <b>{plan.type} plan</b> has expired. Contact support to renew your subscription.</span>
+        </div>
+      )}
+      {plan && plan.is_active && plan.days_remaining !== null && plan.days_remaining <= 7 && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", alignItems: "center", gap: 8 }}>
+          ⚠️ <span>Your <b>{plan.type} plan</b> expires in <b>{plan.days_remaining} day{plan.days_remaining !== 1 ? "s" : ""}</b>. Contact support to upgrade.</span>
+        </div>
+      )}
+      {plan && plan.is_active && plan.days_remaining !== null && plan.days_remaining > 7 && (
+        <div style={{ marginBottom: 24 }} />
+      )}
 
       {/* Stats row */}
       <div style={{ display: "flex", gap: 14, marginBottom: 24, flexWrap: "wrap" }}>
@@ -971,6 +1021,100 @@ function Finance() {
 }
 
 // ═══════════════════════════════════════════════════════
+// ACCOUNT PAGE
+// ═══════════════════════════════════════════════════════
+function AccountPage({ dealer, onLogout }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.dashboard().then(d => setData(d)).finally(() => setLoading(false));
+  }, []);
+
+  const plan = data?.plan;
+
+  return (
+    <div style={{ padding: 24, maxWidth: 600 }}>
+      {/* Profile card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, color: "#fff", flexShrink: 0 }}>
+            {(dealer?.dealer_name || "D")[0].toUpperCase()}
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 17, color: C.text }}>{dealer?.dealer_name || "Dealer"}</div>
+            <div style={{ fontSize: 13, color: C.textMid }}>📍 {dealer?.city || "—"}</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Phone</div>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>{dealer?.phone || "—"}</div>
+          </div>
+          <div style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Verification</div>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>
+              {dealer?.is_verified
+                ? <span style={{ color: C.success }}>✅ Verified</span>
+                : <span style={{ color: C.warning }}>⏳ Pending</span>}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Plan card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Subscription Plan</div>
+        {loading ? <Spinner /> : plan ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 20, color: C.primary, textTransform: "capitalize" }}>{plan.type} Plan</div>
+                <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>
+                  {plan.is_active ? `Expires: ${plan.expires_at ? new Date(plan.expires_at).toLocaleDateString("en-IN") : "—"}` : "Plan expired"}
+                </div>
+              </div>
+              <Badge label={plan.is_active ? "Active" : "Expired"} color={plan.is_active ? C.success : "#dc2626"} />
+            </div>
+            {plan.is_active && plan.days_remaining !== null && (
+              <div style={{
+                background: plan.days_remaining <= 7 ? "#fef2f2" : "#f0fdf4",
+                border: `1px solid ${plan.days_remaining <= 7 ? "#fecaca" : "#bbf7d0"}`,
+                borderRadius: 8, padding: "10px 14px", fontSize: 13,
+                color: plan.days_remaining <= 7 ? "#dc2626" : C.success,
+              }}>
+                {plan.days_remaining <= 7
+                  ? `⚠️ Only ${plan.days_remaining} day${plan.days_remaining !== 1 ? "s" : ""} remaining! Contact support to upgrade.`
+                  : `✅ ${plan.days_remaining} days remaining`}
+              </div>
+            )}
+            {!plan.is_active && (
+              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626" }}>
+                ⚠️ Your plan has expired. Please contact support to renew.
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ color: C.textDim, fontSize: 13 }}>No plan information available.</div>
+        )}
+      </Card>
+
+      {/* Actions */}
+      <Card>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Account Actions</div>
+        <button onClick={onLogout} style={{
+          width: "100%", padding: "12px", background: "#fef2f2", border: "1.5px solid #fecaca",
+          borderRadius: 8, color: "#dc2626", fontWeight: 700, fontSize: 14, cursor: "pointer",
+          fontFamily: "inherit", transition: "all 0.15s",
+        }}>
+          🚪 Logout
+        </button>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // REPORTS PAGE
 // ═══════════════════════════════════════════════════════
 function Reports() {
@@ -1115,6 +1259,7 @@ export default function App() {
       case "finance":     return <Finance />;
       case "reports":     return <Reports />;
       case "marketplace": return <Marketplace />;
+      case "account":     return <AccountPage dealer={dealer} onLogout={handleLogout} />;
       default:            return <Dashboard />;
     }
   };
@@ -1134,7 +1279,7 @@ export default function App() {
 
       <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
+      <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
         <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} />
         <main style={{ flex: 1 }}>
           {renderPage()}
