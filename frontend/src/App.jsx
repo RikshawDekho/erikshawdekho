@@ -4,15 +4,32 @@ import { SalesPage } from './SalesPage';
 // ═══════════════════════════════════════════════════════
 // API LAYER
 // ═══════════════════════════════════════════════════════
-const API = (import.meta.env.VITE_API_URL || "http://localhost:8000") + "/api";
+const API = import.meta.env.VITE_API_URL;
 
-async function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem("erd_token");
+async function apiFetch(path, opts = {}, _retry = false) {
+  const token = localStorage.getItem("erd_access");
   const res = await fetch(`${API}${path}`, {
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Token ${token}` } : {}), ...opts.headers },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
     ...opts,
   });
-  if (res.status === 401) { localStorage.clear(); window.location.reload(); }
+  if (res.status === 401 && !_retry) {
+    const refresh = localStorage.getItem("erd_refresh");
+    if (refresh) {
+      try {
+        const r = await fetch(`${API}/auth/token/refresh/`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh }),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          localStorage.setItem("erd_access", d.access);
+          return apiFetch(path, opts, true);
+        }
+      } catch (_) { /* fall through to logout */ }
+    }
+    localStorage.clear();
+    window.location.reload();
+  }
   if (!res.ok) throw await res.json();
   if (res.status === 204) return null;
   return res.json();
@@ -298,7 +315,7 @@ function DonutChart({ data, size = 100 }) {
 // ═══════════════════════════════════════════════════════
 function AuthPage({ onAuth }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ username: "demo", password: "demo1234", email: "", dealer_name: "", phone: "", city: "Delhi" });
+  const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "Delhi" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -309,7 +326,8 @@ function AuthPage({ onAuth }) {
     setErr(""); setLoading(true);
     try {
       const data = mode === "login" ? await api.login({ username: form.username, password: form.password }) : await api.register(form);
-      localStorage.setItem("erd_token", data.token);
+      localStorage.setItem("erd_access", data.access);
+      if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
       onAuth(data);
     } catch (e) {
       setErr(typeof e === "object" ? Object.values(e).flat().join(" ") : "Something went wrong");
@@ -1064,7 +1082,7 @@ function Marketplace() {
 // ═══════════════════════════════════════════════════════
 export default function App() {
   const [auth, setAuth] = useState(() => {
-    const token = localStorage.getItem("erd_token");
+    const token = localStorage.getItem("erd_access");
     const dealer = JSON.parse(localStorage.getItem("erd_dealer") || "null");
     return token ? { token, dealer } : null;
   });
@@ -1072,7 +1090,8 @@ export default function App() {
   const [showAddVehicle, setShowAddVehicle] = useState(false);
 
   const handleAuth = (data) => {
-    localStorage.setItem("erd_token", data.token);
+    localStorage.setItem("erd_access", data.access);
+    if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
     localStorage.setItem("erd_dealer", JSON.stringify(data.dealer));
     setAuth(data);
   };
