@@ -44,7 +44,10 @@ class DealerApplicationAdmin(admin.ModelAdmin):
 
     @admin.action(description='Approve and create dealer accounts')
     def approve_applications(self, request, queryset):
+        from datetime import timedelta
         created = 0
+        credentials = []
+        now = timezone.now()
         for app in queryset.filter(status='pending'):
             temp_pw = secrets.token_urlsafe(10)
             user = User.objects.create_user(
@@ -61,13 +64,19 @@ class DealerApplicationAdmin(admin.ModelAdmin):
                 state=app.state,
                 gstin=app.gstin,
                 is_verified=True,
+                plan_type='free',
+                plan_started_at=now,
+                plan_expires_at=now + timedelta(days=30),
             )
             UserProfile.objects.create(user=user, user_type='dealer', phone=app.phone, city=app.city)
             app.status = 'approved'
-            app.reviewed_at = timezone.now()
+            app.reviewed_at = now
+            app.review_notes = f'Temp password: {temp_pw}'
             app.save()
+            credentials.append(f'{app.dealer_name} → username: {app.phone}, password: {temp_pw}')
             created += 1
-        self.message_user(request, f'{created} application(s) approved and dealer account(s) created.')
+        msg = f'{created} account(s) created. Credentials: ' + ' | '.join(credentials)
+        self.message_user(request, msg)
 
     @admin.action(description='Reject selected applications')
     def reject_applications(self, request, queryset):

@@ -23,6 +23,10 @@ class UserProfile(models.Model):
 
 
 class DealerProfile(models.Model):
+    PLAN_FREE  = 'free'
+    PLAN_PRO   = 'pro'
+    PLAN_CHOICES = [('free', 'Free Trial'), ('pro', 'Pro')]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='dealer_profile')
     dealer_name = models.CharField(max_length=200)
     gstin = models.CharField(max_length=20, blank=True)
@@ -34,6 +38,25 @@ class DealerProfile(models.Model):
     logo = models.ImageField(upload_to='dealers/', null=True, blank=True)
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    # ── Subscription ──────────────────────────────────────
+    plan_type       = models.CharField(max_length=20, choices=PLAN_CHOICES, default='free')
+    plan_started_at = models.DateTimeField(null=True, blank=True)
+    plan_expires_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def plan_is_active(self):
+        from django.utils import timezone
+        if self.plan_expires_at is None:
+            return False
+        return self.plan_expires_at > timezone.now()
+
+    @property
+    def plan_days_remaining(self):
+        from django.utils import timezone
+        if not self.plan_expires_at:
+            return 0
+        delta = self.plan_expires_at - timezone.now()
+        return max(0, delta.days)
 
     def __str__(self):
         return self.dealer_name

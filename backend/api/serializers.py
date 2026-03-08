@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.db.models import Avg
+from django.utils import timezone
+from datetime import timedelta
 from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile
 
 
@@ -114,11 +116,15 @@ class RegisterSerializer(serializers.Serializer):
             email=validated_data['email'],
             password=validated_data['password'],
         )
+        now = timezone.now()
         DealerProfile.objects.create(
             user=user,
             dealer_name=validated_data['dealer_name'],
             phone=validated_data['phone'],
             city=validated_data.get('city', 'Delhi'),
+            plan_type='free',
+            plan_started_at=now,
+            plan_expires_at=now + timedelta(days=30),
         )
         UserProfile.objects.create(user=user, user_type='dealer',
                                    phone=validated_data['phone'],

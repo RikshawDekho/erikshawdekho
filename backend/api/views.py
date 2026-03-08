@@ -178,6 +178,13 @@ def dashboard(request):
         'upcoming_deliveries': SaleSerializer(upcoming_deliveries, many=True).data,
         'upcoming_tasks': TaskSerializer(upcoming_tasks, many=True).data,
         'sales_chart': sales_chart,
+        'plan': {
+            'type': dealer.plan_type,
+            'is_active': dealer.plan_is_active,
+            'days_remaining': dealer.plan_days_remaining,
+            'expires_at': dealer.plan_expires_at.isoformat() if dealer.plan_expires_at else None,
+            'is_verified': dealer.is_verified,
+        },
     })
 
 
