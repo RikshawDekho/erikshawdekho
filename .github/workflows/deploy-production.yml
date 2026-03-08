@@ -70,13 +70,6 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --service backend --detach
 
-      - name: Seed demo data (idempotent)
-        working-directory: backend
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          sleep 30
-          railway run --service backend python manage.py seed_data
 
   # ── 3. Deploy frontend to Vercel ────────────────────────────────
   deploy-frontend:
