@@ -37,4 +37,8 @@ urlpatterns = [
     path('dealers/<int:dealer_id>/',          views.dealer_detail,         name='dealer-detail'),
     path('dealers/<int:dealer_id>/reviews/',  views.submit_dealer_review,  name='dealer-reviews'),
     path('dealers/apply/',                    views.apply_dealer,          name='dealer-apply'),
+
+    # ── Notifications ─────────────────────────────────────────────
+    path('notifications/preferences/', views.notification_preferences, name='notification-preferences'),
+    path('notifications/fcm-token/',   views.update_fcm_token,         name='update-fcm-token'),
 ]

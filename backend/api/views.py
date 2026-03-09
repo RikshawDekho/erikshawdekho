@@ -45,6 +45,23 @@ def register(request):
     if ser.is_valid():
         user = ser.save()
         dealer = user.dealer_profile
+        # Send welcome email + WhatsApp (fire-and-forget — don't block registration)
+        try:
+            from .emails import send_dealer_welcome_email, send_admin_new_dealer_alert
+            from .notifications import notify_dealer_welcome
+            if user.email:
+                expires_str = dealer.plan_expires_at.strftime('%d %b %Y') if dealer.plan_expires_at else 'N/A'
+                send_dealer_welcome_email(
+                    dealer_name=dealer.dealer_name,
+                    email=user.email,
+                    username=user.username,
+                    plan_expires=expires_str,
+                )
+            send_admin_new_dealer_alert(dealer.dealer_name, user.username, dealer.phone, dealer.city)
+            if dealer.phone and dealer.notify_whatsapp:
+                notify_dealer_welcome(dealer.dealer_name, dealer.phone, user.username)
+        except Exception:
+            pass  # Never block registration due to notification failure
         return Response({
             **_jwt_response(user),
             'user':   {'id': user.id, 'username': user.username, 'email': user.email, 'user_type': 'dealer'},
@@ -102,10 +119,28 @@ def login_view(request):
     }, status=status.HTTP_200_OK)
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 def me(request):
     user = request.user
     dealer = getattr(user, 'dealer_profile', None)
+
+    if request.method == 'PATCH':
+        # Update profile fields
+        data = request.data
+        if 'email' in data:
+            user.email = data['email'].strip()
+            user.save(update_fields=['email'])
+        if dealer:
+            if 'dealer_name' in data and data['dealer_name'].strip():
+                dealer.dealer_name = data['dealer_name'].strip()
+            if 'phone' in data and data['phone'].strip():
+                dealer.phone = data['phone'].strip()
+            if 'city' in data:
+                dealer.city = data['city'].strip()
+            if 'address' in data:
+                dealer.address = data['address'].strip()
+            dealer.save()
+
     return Response({
         'user': {'id': user.id, 'username': user.username, 'email': user.email},
         'dealer': {
@@ -115,6 +150,7 @@ def me(request):
             'phone': dealer.phone if dealer else '',
             'gstin': dealer.gstin if dealer else '',
             'address': dealer.address if dealer else '',
+            'is_verified': dealer.is_verified if dealer else False,
         }
     })
 
@@ -556,7 +592,7 @@ def public_enquiry(request):
     if not dealer:
         dealer = DealerProfile.objects.filter(is_verified=True).first()
 
-    PublicEnquiry.objects.create(
+    enquiry = PublicEnquiry.objects.create(
         customer_name=customer_name,
         phone=phone,
         city=city,
@@ -564,6 +600,38 @@ def public_enquiry(request):
         dealer=dealer,
         notes=notes,
     )
+
+    # Notify the assigned dealer — fire-and-forget, never block the response
+    if dealer:
+        vehicle_name = str(vehicle) if vehicle else 'a vehicle'
+        try:
+            from api.emails import send_public_enquiry_notification
+            dealer_email = dealer.user.email
+            if dealer_email and dealer.notify_email:
+                send_public_enquiry_notification(
+                    dealer_email=dealer_email,
+                    dealer_name=dealer.dealer_name,
+                    customer_name=customer_name,
+                    customer_phone=phone,
+                    city=city,
+                    vehicle_name=vehicle_name,
+                    notes=notes,
+                )
+        except Exception:
+            pass  # Email failure is silent — admin sees it in NotificationLog
+
+        try:
+            from api.notifications import notify_dealer_new_lead
+            if dealer.phone and dealer.notify_whatsapp:
+                notify_dealer_new_lead(
+                    dealer_name=dealer.dealer_name,
+                    dealer_phone=dealer.phone,
+                    customer_name=customer_name,
+                    customer_phone=phone,
+                    vehicle_name=vehicle_name,
+                )
+        except Exception:
+            pass  # WhatsApp failure is silent
 
     return Response({'message': 'Enquiry submitted! A dealer will call you within 24 hours.'}, status=status.HTTP_201_CREATED)
 
@@ -579,3 +647,55 @@ def platform_stats(request):
         'vehicle_count': Vehicle.objects.filter(is_active=True).count(),
         'city_count':    DealerProfile.objects.filter(is_verified=True).values('city').distinct().count(),
     })
+
+
+# ─── NOTIFICATION PREFERENCES ─────────────────────────────────────
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def notification_preferences(request):
+    """Get or update the dealer's notification preferences."""
+    try:
+        dealer = request.user.dealer_profile
+    except DealerProfile.DoesNotExist:
+        return Response({'error': 'Dealer profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        return Response({
+            'notify_email':    dealer.notify_email,
+            'notify_whatsapp': dealer.notify_whatsapp,
+            'notify_push':     dealer.notify_push,
+        })
+
+    # PATCH — update preferences
+    allowed = {'notify_email', 'notify_whatsapp', 'notify_push'}
+    updated = {}
+    for field in allowed:
+        if field in request.data:
+            val = request.data[field]
+            if isinstance(val, bool):
+                setattr(dealer, field, val)
+                updated[field] = val
+    dealer.save(update_fields=list(updated.keys()) or ['notify_email'])
+    return Response({
+        'notify_email':    dealer.notify_email,
+        'notify_whatsapp': dealer.notify_whatsapp,
+        'notify_push':     dealer.notify_push,
+        'message': 'Preferences updated.',
+    })
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_fcm_token(request):
+    """Update FCM device token for push notifications."""
+    token = request.data.get('fcm_token', '').strip()
+    if not token:
+        return Response({'error': 'fcm_token required'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        profile = request.user.profile
+        profile.fcm_token = token
+        profile.save(update_fields=['fcm_token'])
+        return Response({'message': 'FCM token updated.'})
+    except Exception:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)

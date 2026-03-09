@@ -42,6 +42,10 @@ class DealerProfile(models.Model):
     plan_type       = models.CharField(max_length=20, choices=PLAN_CHOICES, default='free')
     plan_started_at = models.DateTimeField(null=True, blank=True)
     plan_expires_at = models.DateTimeField(null=True, blank=True)
+    # ── Notification Preferences ──────────────────────────
+    notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
+    notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')
+    notify_push     = models.BooleanField(default=True,  help_text='Receive push notifications')
 
     @property
     def plan_is_active(self):
@@ -321,3 +325,43 @@ class PublicEnquiry(models.Model):
 
     def __str__(self):
         return f"{self.customer_name} ({self.phone}) — {self.city}"
+
+
+# ─── NOTIFICATION LOG ─────────────────────────────────────────────
+
+class NotificationLog(models.Model):
+    CHANNEL_CHOICES = [
+        ('email',     'Email'),
+        ('whatsapp',  'WhatsApp'),
+        ('push',      'Push Notification'),
+        ('sms',       'SMS'),
+    ]
+    TYPE_CHOICES = [
+        ('welcome',        'Welcome'),
+        ('approval',       'Dealer Approved'),
+        ('rejection',      'Dealer Rejected'),
+        ('plan_expiry',    'Plan Expiry Warning'),
+        ('new_lead',       'New Lead'),
+        ('new_enquiry',    'New Enquiry'),
+        ('emi_due',        'EMI Due Reminder'),
+        ('delivery',       'Delivery Reminder'),
+        ('offer',          'Offer Broadcast'),
+        ('other',          'Other'),
+    ]
+
+    dealer      = models.ForeignKey(DealerProfile, on_delete=models.CASCADE,
+                                    related_name='notification_logs', null=True, blank=True)
+    channel     = models.CharField(max_length=20, choices=CHANNEL_CHOICES)
+    notif_type  = models.CharField(max_length=30, choices=TYPE_CHOICES, default='other')
+    recipient   = models.CharField(max_length=200, help_text='Email or phone number')
+    subject     = models.CharField(max_length=300, blank=True)
+    success     = models.BooleanField(default=False)
+    error_msg   = models.TextField(blank=True)
+    sent_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-sent_at']
+
+    def __str__(self):
+        status = '✓' if self.success else '✗'
+        return f"[{status}] {self.channel} {self.notif_type} → {self.recipient}"

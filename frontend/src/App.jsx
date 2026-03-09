@@ -78,13 +78,88 @@ const api = {
   },
   reports:  (p="") => apiFetch(`/reports/${p}`),
   brands:   ()     => apiFetch("/brands/"),
+  notifications: {
+    getPrefs:    ()  => apiFetch("/notifications/preferences/"),
+    updatePrefs: (d) => apiFetch("/notifications/preferences/", { method: "PATCH", body: JSON.stringify(d) }),
+    updateFcm:   (d) => apiFetch("/notifications/fcm-token/", { method: "PATCH", body: JSON.stringify(d) }),
+  },
+  profile: {
+    update: (d) => apiFetch("/auth/me/", { method: "PATCH", body: JSON.stringify(d) }),
+  },
+  enquiry: (d) => apiFetch("/public/enquiry/", { method: "POST", body: JSON.stringify(d) }),
+  dealers: {
+    detail:  (id) => apiFetch(`/dealers/${id}/`),
+    reviews: (id) => apiFetch(`/dealers/${id}/reviews/`),
+    review:  (id, d) => apiFetch(`/dealers/${id}/reviews/`, { method: "POST", body: JSON.stringify(d) }),
+  },
 };
 
 // ═══════════════════════════════════════════════════════
 // AUTH CONTEXT
 // ═══════════════════════════════════════════════════════
 const AuthCtx = createContext(null);
-function useAuth() { return useContext(AuthCtx); }
+
+// ═══════════════════════════════════════════════════════
+// TOAST CONTEXT
+// ═══════════════════════════════════════════════════════
+const ToastCtx = createContext(() => {});
+function useToast() { return useContext(ToastCtx); }
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+  const add = useCallback((msg, type = "info") => {
+    const id = Date.now() + Math.random();
+    setToasts(t => [...t, { id, msg, type }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4500);
+  }, []);
+  const ICONS = { success: "✓", error: "✕", warning: "⚠", info: "ℹ" };
+  const COLORS = { success: C.success, error: C.danger, warning: C.warning, info: C.info };
+  return (
+    <ToastCtx.Provider value={add}>
+      {children}
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column-reverse", gap: 8, maxWidth: 360, pointerEvents: "none" }}>
+        {toasts.map(t => (
+          <div key={t.id} style={{
+            background: COLORS[t.type] || C.info, color: "#fff",
+            padding: "12px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.25)", display: "flex", alignItems: "flex-start", gap: 8,
+            animation: "slideUp 0.25s ease",
+          }}>
+            <span style={{ flexShrink: 0, fontSize: 15 }}>{ICONS[t.type]}</span>
+            <span style={{ lineHeight: 1.5 }}>{t.msg}</span>
+          </div>
+        ))}
+      </div>
+    </ToastCtx.Provider>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// PLAN CONTEXT
+// ═══════════════════════════════════════════════════════
+const PlanCtx = createContext(null);
+function usePlan() { return useContext(PlanCtx); }
+
+function PlanGate({ children, feature = "This feature", onUpgrade, plan: planProp }) {
+  const ctxPlan = usePlan();
+  const plan = planProp ?? ctxPlan;
+  if (!plan || plan.is_active) return children;
+  return (
+    <div style={{ position: "relative", minHeight: 200 }}>
+      <div style={{ filter: "blur(3px)", pointerEvents: "none", userSelect: "none", opacity: 0.5 }}>{children}</div>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.85)", borderRadius: 12 }}>
+        <div style={{ textAlign: "center", padding: 28, maxWidth: 320 }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>🔒</div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 6 }}>{feature} — Plan Expired</div>
+          <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.7, marginBottom: 18 }}>
+            Your free trial has ended. Upgrade to the Pro plan to continue using this feature.
+          </div>
+          <Btn label="⭐ View Plans & Upgrade" color={C.primary} onClick={onUpgrade} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════
 // DESIGN TOKENS
@@ -316,21 +391,41 @@ function DonutChart({ data, size = 100 }) {
 function AuthPage({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "Delhi" });
-  const [err, setErr] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const set = (k) => (v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k) => (v) => { setForm(p => ({ ...p, [k]: v })); setFieldErrors(p => ({ ...p, [k]: "" })); };
+
+  const validate = () => {
+    const errs = {};
+    if (!form.username.trim()) errs.username = "Username is required";
+    if (form.password.length < 6) errs.password = "Password must be at least 6 characters";
+    if (mode === "register") {
+      if (!form.dealer_name.trim()) errs.dealer_name = "Dealership name is required";
+      if (!form.phone.trim()) errs.phone = "Phone number is required";
+      else if (!/^[6-9]\d{9}$/.test(form.phone.replace(/\D/g, "").slice(-10)))
+        errs.phone = "Enter a valid 10-digit Indian mobile number";
+      if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
+        errs.email = "Enter a valid email address";
+    }
+    return errs;
+  };
 
   const submit = async (e) => {
     e.preventDefault();
-    setErr(""); setLoading(true);
+    const errs = validate();
+    if (Object.keys(errs).length) { setFieldErrors(errs); return; }
+    setLoading(true);
     try {
-      const data = mode === "login" ? await api.login({ username: form.username, password: form.password }) : await api.register(form);
+      const data = mode === "login"
+        ? await api.login({ username: form.username, password: form.password })
+        : await api.register(form);
       localStorage.setItem("erd_access", data.access);
       if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
       onAuth(data);
     } catch (e) {
-      setErr(typeof e === "object" ? Object.values(e).flat().join(" ") : "Something went wrong");
+      const errs = typeof e === "object" ? e : { non_field_errors: "Something went wrong. Try again." };
+      setFieldErrors(errs);
     }
     setLoading(false);
   };
@@ -357,15 +452,39 @@ function AuthPage({ onAuth }) {
           </div>
 
           <form onSubmit={submit}>
-            <Field label="Username" required><Input value={form.username} onChange={set("username")} placeholder="username" required /></Field>
-            <Field label="Password" required><Input value={form.password} onChange={set("password")} type="password" placeholder="••••••" required /></Field>
+            <Field label="Username" required>
+              <Input value={form.username} onChange={set("username")} placeholder="username" />
+              {fieldErrors.username && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.username}</div>}
+            </Field>
+            <Field label="Password" required>
+              <Input value={form.password} onChange={set("password")} type="password" placeholder="••••••" />
+              {fieldErrors.password && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.password}</div>}
+            </Field>
             {mode === "register" && <>
-              <Field label="Email"><Input value={form.email} onChange={set("email")} type="email" placeholder="you@email.com" /></Field>
-              <Field label="Dealership Name" required><Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="Kumar Electric Vehicles" required /></Field>
-              <Field label="Phone" required><Input value={form.phone} onChange={set("phone")} placeholder="+91 98765 43210" required /></Field>
+              <Field label="Email">
+                <Input value={form.email} onChange={set("email")} type="email" placeholder="you@email.com" />
+                {fieldErrors.email && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.email}</div>}
+              </Field>
+              <Field label="Dealership Name" required>
+                <Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="Kumar Electric Vehicles" />
+                {fieldErrors.dealer_name && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.dealer_name}</div>}
+              </Field>
+              <Field label="Phone" required>
+                <Input value={form.phone} onChange={set("phone")} placeholder="9876543210" />
+                {fieldErrors.phone && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.phone}</div>}
+              </Field>
               <Field label="City"><Input value={form.city} onChange={set("city")} placeholder="Delhi" /></Field>
             </>}
-            {err && <div style={{ background: "#fef2f2", border: `1px solid ${C.danger}33`, borderRadius: 6, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>{err}</div>}
+            {fieldErrors.non_field_errors && (
+              <div style={{ background: "#fef2f2", border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
+                ✕ {fieldErrors.non_field_errors}
+              </div>
+            )}
+            {fieldErrors.detail && (
+              <div style={{ background: "#fef2f2", border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
+                ✕ {fieldErrors.detail}
+              </div>
+            )}
             <Btn label={loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"} type="submit" color={C.primary} fullWidth disabled={loading} size="lg" />
           </form>
           <div style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: C.textDim }}>Demo: username=<b>demo</b>  password=<b>demo1234</b></div>
@@ -387,6 +506,7 @@ const NAV = [
   { id: "finance",    label: "Finance",    icon: "🏦" },
   { id: "reports",    label: "Reports",    icon: "📈" },
   { id: "marketplace",label: "Marketplace",icon: "🛒" },
+  { id: "plans",      label: "Plans",      icon: "⭐" },
 ];
 
 const BOTTOM_NAV = [
@@ -461,18 +581,28 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
   );
 }
 
-function Topbar({ dealer, page, onAddNew }) {
-  const title = NAV.find(n => n.id === page)?.label || page;
+function Topbar({ dealer, page, onAddNew, onProfile }) {
+  const pageLabel = [...NAV, { id: "account", label: "My Account" }, { id: "plans", label: "Plans & Pricing" }].find(n => n.id === page)?.label || page;
   return (
     <div style={{ height: 60, background: C.surface, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", position: "sticky", top: 0, zIndex: 10 }}>
-      <div style={{ fontWeight: 700, fontSize: 18, color: C.text }}>{title}</div>
+      <div style={{ fontWeight: 700, fontSize: 18, color: C.text }}>{pageLabel}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ fontSize: 12, color: C.textMid }}>🔔</div>
-        {page === "inventory" && <Btn label="+ Add New Vehicle" color={C.primary} size="sm" onClick={onAddNew} />}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", background: C.bg, borderRadius: 20 }}>
-          <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.primary}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>👤</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{dealer?.name || "Dealer"}</div>
-        </div>
+        {page === "inventory" && <Btn label="+ Add Vehicle" color={C.primary} size="sm" onClick={onAddNew} />}
+        <button onClick={onProfile} style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+          background: C.bg, borderRadius: 20, border: `1.5px solid ${C.border}`,
+          cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+        }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = C.primary}
+          onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+          <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#fff", fontWeight: 700 }}>
+            {(dealer?.name || "D")[0].toUpperCase()}
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text, lineHeight: 1.2 }}>{dealer?.name || "Dealer"}</div>
+            <div style={{ fontSize: 10, color: C.textDim, lineHeight: 1 }}>My Account ›</div>
+          </div>
+        </button>
       </div>
     </div>
   );
@@ -481,7 +611,7 @@ function Topbar({ dealer, page, onAddNew }) {
 // ═══════════════════════════════════════════════════════
 // DASHBOARD PAGE
 // ═══════════════════════════════════════════════════════
-function Dashboard() {
+function Dashboard({ onNavigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -515,13 +645,15 @@ function Dashboard() {
 
       {/* Plan warnings */}
       {plan && !plan.is_active && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#dc2626", display: "flex", alignItems: "center", gap: 8 }}>
-          ⚠️ <span>Your <b>{plan.type} plan</b> has expired. Contact support to renew your subscription.</span>
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <span>⚠️ Your <b>{plan.type} plan</b> has expired. Upgrade to continue accessing all features.</span>
+          <Btn label="⭐ View Plans" color="#dc2626" size="sm" onClick={() => onNavigate?.("plans")} />
         </div>
       )}
       {plan && plan.is_active && plan.days_remaining !== null && plan.days_remaining <= 7 && (
-        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", alignItems: "center", gap: 8 }}>
-          ⚠️ <span>Your <b>{plan.type} plan</b> expires in <b>{plan.days_remaining} day{plan.days_remaining !== 1 ? "s" : ""}</b>. Contact support to upgrade.</span>
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <span>⚠️ Your <b>{plan.type} plan</b> expires in <b>{plan.days_remaining} day{plan.days_remaining !== 1 ? "s" : ""}</b>.</span>
+          <Btn label="⭐ Upgrade Now" color={C.warning} size="sm" onClick={() => onNavigate?.("plans")} />
         </div>
       )}
       {plan && plan.is_active && plan.days_remaining !== null && plan.days_remaining > 7 && (
@@ -617,7 +749,9 @@ function Dashboard() {
 // ═══════════════════════════════════════════════════════
 // INVENTORY PAGE
 // ═══════════════════════════════════════════════════════
-function Inventory({ showAdd, onAddClose }) {
+function Inventory({ showAdd, onAddClose, onNavigate }) {
+  const toast = useToast();
+  const plan = usePlan();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, inStock: 0, sold: 0, lowStock: 0 });
@@ -648,11 +782,19 @@ function Inventory({ showAdd, onAddClose }) {
   const setForm_ = k => v => setForm(p => ({ ...p, [k]: v }));
 
   const submit = async (e) => {
-    e.preventDefault(); setSaving(true);
+    e.preventDefault();
+    if (!form.brand_id) { toast("Please select a brand.", "warning"); return; }
+    if (!form.model_name.trim()) { toast("Model name is required.", "warning"); return; }
+    if (!form.price) { toast("Price is required.", "warning"); return; }
+    setSaving(true);
     try {
       await api.vehicles.create({ ...form, brand: form.brand_id });
+      toast("Vehicle added successfully!", "success");
       onAddClose(); load();
-    } catch (err) { alert("Error: " + JSON.stringify(err)); }
+    } catch (err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to add vehicle.";
+      toast(msg, "error");
+    }
     setSaving(false);
   };
 
@@ -728,7 +870,7 @@ function Inventory({ showAdd, onAddClose }) {
               <Field label="Stock Quantity"><Input value={form.stock_quantity} onChange={setForm_("stock_quantity")} type="number" placeholder="10" /></Field>
               <Field label="Year"><Input value={form.year} onChange={setForm_("year")} type="number" placeholder="2024" /></Field>
             </div>
-            <Field label="Description"><textarea value={form.description} onChange={e => setForm_(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description..." /></Field>
+            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description..." /></Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={onAddClose} />
               <Btn label={saving ? "Saving..." : "Add Vehicle"} color={C.primary} type="submit" disabled={saving} />
@@ -743,7 +885,9 @@ function Inventory({ showAdd, onAddClose }) {
 // ═══════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════
-function Leads() {
+function Leads({ onNavigate }) {
+  const toast = useToast();
+  const plan = usePlan();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -760,8 +904,19 @@ function Leads() {
 
   const submit = async (e) => {
     e.preventDefault();
-    try { await api.leads.create(form); setShowAdd(false); load(); }
-    catch (err) { alert("Error: " + JSON.stringify(err)); }
+    if (!form.customer_name.trim()) { toast("Customer name is required.", "warning"); return; }
+    if (!form.phone.trim()) { toast("Phone number is required.", "warning"); return; }
+    if (!/^[6-9]\d{9}$/.test(form.phone.replace(/\D/g, "").slice(-10))) {
+      toast("Please enter a valid 10-digit Indian mobile number.", "warning"); return;
+    }
+    try {
+      await api.leads.create(form);
+      toast("Lead added successfully!", "success");
+      setShowAdd(false); load();
+    } catch (err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to add lead.";
+      toast(msg, "error");
+    }
   };
 
   const updateStatus = async (id, status) => {
@@ -912,10 +1067,23 @@ function Customers() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", address: "", gstin: "" });
 
+  const toast = useToast();
   const load = () => { setLoading(true); api.customers.list().then(d => setCustomers(d.results || d)).finally(() => setLoading(false)); };
   useEffect(() => { load(); }, []);
   const setF = k => v => setForm(p => ({ ...p, [k]: v }));
-  const submit = async (e) => { e.preventDefault(); try { await api.customers.create(form); setShowAdd(false); load(); } catch(err) { alert(JSON.stringify(err)); } };
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) { toast("Customer name is required.", "warning"); return; }
+    if (!form.phone.trim()) { toast("Phone number is required.", "warning"); return; }
+    try {
+      await api.customers.create(form);
+      toast("Customer added!", "success");
+      setShowAdd(false); load();
+    } catch(err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to add customer.";
+      toast(msg, "error");
+    }
+  };
 
   const cols = [
     { label: "Name",      render: r => <div><div style={{ fontWeight: 600 }}>{r.name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.email}</div></div> },
@@ -1023,43 +1191,122 @@ function Finance() {
 // ═══════════════════════════════════════════════════════
 // ACCOUNT PAGE
 // ═══════════════════════════════════════════════════════
-function AccountPage({ dealer, onLogout }) {
+function ToggleSwitch({ checked, onChange, label, sub }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>{sub}</div>}
+      </div>
+      <button onClick={() => onChange(!checked)} style={{
+        width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
+        background: checked ? C.primary : C.border, transition: "background 0.2s", position: "relative", flexShrink: 0,
+      }}>
+        <div style={{
+          width: 18, height: 18, borderRadius: "50%", background: "#fff",
+          position: "absolute", top: 3, left: checked ? 23 : 3, transition: "left 0.2s",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+        }} />
+      </button>
+    </div>
+  );
+}
+
+function AccountPage({ dealer: dealerProp, onLogout }) {
+  const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({ dealer_name: "", phone: "", city: "", email: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [prefs, setPrefs] = useState({ notify_email: true, notify_whatsapp: true, notify_push: true });
+  const [prefsLoading, setPrefsLoading] = useState(true);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+  const [prefsSaved, setPrefsSaved] = useState(false);
+
+  const loadData = () => {
+    api.dashboard().then(d => {
+      setData(d);
+      setEditForm({ dealer_name: d.dealer?.name || "", phone: d.dealer?.phone || "", city: d.dealer?.city || "", email: d.user?.email || "" });
+    }).finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    api.dashboard().then(d => setData(d)).finally(() => setLoading(false));
+    loadData();
+    api.notifications.getPrefs()
+      .then(d => setPrefs({ notify_email: d.notify_email, notify_whatsapp: d.notify_whatsapp, notify_push: d.notify_push }))
+      .catch(() => {})
+      .finally(() => setPrefsLoading(false));
   }, []);
 
+  const saveProfile = async () => {
+    if (!editForm.dealer_name.trim()) { toast("Dealership name cannot be empty.", "warning"); return; }
+    if (!editForm.phone.trim()) { toast("Phone number is required.", "warning"); return; }
+    setEditSaving(true);
+    try {
+      await api.profile.update(editForm);
+      toast("Profile updated successfully!", "success");
+      setEditMode(false);
+      loadData();
+    } catch (err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to update profile.";
+      toast(msg, "error");
+    }
+    setEditSaving(false);
+  };
+
+  const savePref = async (key, val) => {
+    const updated = { ...prefs, [key]: val };
+    setPrefs(updated);
+    setPrefsSaving(true); setPrefsSaved(false);
+    try {
+      await api.notifications.updatePrefs(updated);
+      setPrefsSaved(true);
+      setTimeout(() => setPrefsSaved(false), 2000);
+    } catch (_) { toast("Failed to save preferences.", "error"); }
+    setPrefsSaving(false);
+  };
+
+  const dealer = data?.dealer || dealerProp;
   const plan = data?.plan;
 
   return (
     <div style={{ padding: 24, maxWidth: 600 }}>
       {/* Profile card */}
       <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-          <div style={{ width: 56, height: 56, borderRadius: "50%", background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, color: "#fff", flexShrink: 0 }}>
-            {(dealer?.dealer_name || "D")[0].toUpperCase()}
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 17, color: C.text }}>{dealer?.dealer_name || "Dealer"}</div>
-            <div style={{ fontSize: 13, color: C.textMid }}>📍 {dealer?.city || "—"}</div>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
-            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Phone</div>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>{dealer?.phone || "—"}</div>
-          </div>
-          <div style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
-            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Verification</div>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>
-              {dealer?.is_verified
-                ? <span style={{ color: C.success }}>✅ Verified</span>
-                : <span style={{ color: C.warning }}>⏳ Pending</span>}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, color: "#fff", flexShrink: 0, fontWeight: 700 }}>
+              {((dealer?.name || dealer?.dealer_name || "D")[0]).toUpperCase()}
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 17, color: C.text }}>{dealer?.name || dealer?.dealer_name || "Dealer"}</div>
+              <div style={{ fontSize: 12, color: C.textMid }}>📍 {dealer?.city || "—"}</div>
             </div>
           </div>
+          <Btn label={editMode ? "Cancel" : "✏ Edit Profile"} color={C.primary} outline size="sm" onClick={() => setEditMode(e => !e)} />
         </div>
+
+        {editMode ? (
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <Field label="Dealership Name"><Input value={editForm.dealer_name} onChange={v => setEditForm(p => ({ ...p, dealer_name: v }))} placeholder="Kumar Electric Vehicles" /></Field>
+              <Field label="Phone"><Input value={editForm.phone} onChange={v => setEditForm(p => ({ ...p, phone: v }))} placeholder="9876543210" /></Field>
+              <Field label="City"><Input value={editForm.city} onChange={v => setEditForm(p => ({ ...p, city: v }))} placeholder="Delhi" /></Field>
+              <Field label="Email"><Input value={editForm.email} onChange={v => setEditForm(p => ({ ...p, email: v }))} type="email" placeholder="you@email.com" /></Field>
+            </div>
+            <Btn label={editSaving ? "Saving..." : "Save Changes"} color={C.primary} onClick={saveProfile} disabled={editSaving} />
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[["Phone", dealer?.phone], ["Email", data?.user?.email || "—"], ["GSTIN", dealer?.gstin || "—"], ["Verification", dealer?.is_verified ? "✅ Verified" : "⏳ Pending"]].map(([label, val]) => (
+              <div key={label} style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>{label}</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{val || "—"}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* Plan card */}
@@ -1096,6 +1343,38 @@ function AccountPage({ dealer, onLogout }) {
           </>
         ) : (
           <div style={{ color: C.textDim, fontSize: 13 }}>No plan information available.</div>
+        )}
+      </Card>
+
+      {/* Notification Preferences */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>Notification Preferences</div>
+          {prefsSaving && <span style={{ fontSize: 11, color: C.textDim }}>Saving…</span>}
+          {prefsSaved && <span style={{ fontSize: 11, color: C.success }}>✓ Saved</span>}
+        </div>
+        <div style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>Choose how you want to receive alerts and reminders.</div>
+        {prefsLoading ? <Spinner /> : (
+          <>
+            <ToggleSwitch
+              label="Email Notifications"
+              sub="Plan expiry warnings, lead alerts, invoices"
+              checked={prefs.notify_email}
+              onChange={v => savePref("notify_email", v)}
+            />
+            <ToggleSwitch
+              label="WhatsApp Notifications"
+              sub="New leads, follow-up reminders, plan alerts (Pro plan)"
+              checked={prefs.notify_whatsapp}
+              onChange={v => savePref("notify_whatsapp", v)}
+            />
+            <ToggleSwitch
+              label="Push Notifications"
+              sub="Real-time browser / app alerts (Pro plan)"
+              checked={prefs.notify_push}
+              onChange={v => savePref("notify_push", v)}
+            />
+          </>
         )}
       </Card>
 
@@ -1160,12 +1439,271 @@ function Reports() {
 }
 
 // ═══════════════════════════════════════════════════════
+// STAR RATING COMPONENT
+// ═══════════════════════════════════════════════════════
+function StarRating({ value, onChange, max = 5, size = 22, readOnly = false }) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div style={{ display: "flex", gap: 3 }}>
+      {Array.from({ length: max }, (_, i) => i + 1).map(star => (
+        <span key={star}
+          onClick={() => !readOnly && onChange?.(star)}
+          onMouseEnter={() => !readOnly && setHover(star)}
+          onMouseLeave={() => !readOnly && setHover(0)}
+          style={{
+            fontSize: size, cursor: readOnly ? "default" : "pointer",
+            color: star <= (hover || value) ? "#f59e0b" : "#e2e8f0",
+            transition: "color 0.1s", userSelect: "none",
+          }}>★</span>
+      ))}
+    </div>
+  );
+}
+
+function AvgStars({ avg, count }) {
+  if (!avg) return <span style={{ fontSize: 12, color: C.textDim }}>No reviews yet</span>;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <StarRating value={Math.round(avg)} readOnly size={14} />
+      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{avg}</span>
+      <span style={{ fontSize: 12, color: C.textDim }}>({count} review{count !== 1 ? "s" : ""})</span>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// VEHICLE DETAIL MODAL
+// ═══════════════════════════════════════════════════════
+function VehicleDetailModal({ vehicle: v, onClose }) {
+  const toast = useToast();
+  const [tab, setTab] = useState("overview"); // overview | reviews | enquiry
+  const [dealerInfo, setDealerInfo] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [reviewForm, setReviewForm] = useState({ reviewer_name: "", reviewer_phone: "", rating: 0, comment: "" });
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [enquiryForm, setEnquiryForm] = useState({ customer_name: "", phone: "", city: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
+  const [enquirySending, setEnquirySending] = useState(false);
+
+  useEffect(() => {
+    if (v.dealer_id) {
+      api.dealers.detail(v.dealer_id).then(d => {
+        setDealerInfo(d.dealer);
+        setReviews(d.reviews || []);
+      }).catch(() => {});
+    }
+  }, [v.dealer_id]);
+
+  const avgRating = reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
+
+  const submitReview = async (e) => {
+    e.preventDefault();
+    if (!reviewForm.reviewer_name.trim()) { toast("Please enter your name.", "warning"); return; }
+    if (!reviewForm.reviewer_phone.trim()) { toast("Please enter your phone number.", "warning"); return; }
+    if (reviewForm.rating === 0) { toast("Please select a star rating.", "warning"); return; }
+    if (!reviewForm.comment.trim()) { toast("Please write a comment.", "warning"); return; }
+    if (!/^[6-9]\d{9}$/.test(reviewForm.reviewer_phone.replace(/\D/g,"").slice(-10))) {
+      toast("Enter a valid 10-digit Indian mobile number.", "warning"); return;
+    }
+    setReviewSaving(true);
+    try {
+      const r = await api.dealers.review(v.dealer_id, reviewForm);
+      setReviews(prev => [r, ...prev]);
+      setReviewForm({ reviewer_name: "", reviewer_phone: "", rating: 0, comment: "" });
+      toast("Review submitted! Thank you.", "success");
+    } catch (err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to submit review.";
+      toast(msg, "error");
+    }
+    setReviewSaving(false);
+  };
+
+  const submitEnquiry = async (e) => {
+    e.preventDefault();
+    if (!enquiryForm.customer_name.trim()) { toast("Please enter your name.", "warning"); return; }
+    if (!enquiryForm.phone.trim()) { toast("Please enter your mobile number.", "warning"); return; }
+    if (!/^[6-9]\d{9}$/.test(enquiryForm.phone.replace(/\D/g,"").slice(-10))) {
+      toast("Enter a valid 10-digit Indian mobile number.", "warning"); return;
+    }
+    setEnquirySending(true);
+    try {
+      await api.enquiry({ ...enquiryForm, vehicle: v.id });
+      toast("Enquiry sent! Dealer will call within 24 hours.", "success");
+      setTab("overview");
+    } catch (err) {
+      toast("Failed to send enquiry. Please try again.", "error");
+    }
+    setEnquirySending(false);
+  };
+
+  const SPECS = [
+    v.range_km         && ["Range",           `${v.range_km} km`],
+    v.battery_capacity && ["Battery",          v.battery_capacity],
+    v.max_speed        && ["Max Speed",        `${v.max_speed} km/h`],
+    v.payload_kg       && ["Payload",          `${v.payload_kg} kg`],
+    v.seating_capacity && ["Seating",          `${v.seating_capacity} persons`],
+    v.warranty_years   && ["Warranty",         `${v.warranty_years} year${v.warranty_years > 1 ? "s" : ""}`],
+    v.year             && ["Year",             v.year],
+    v.hsn_code         && ["HSN Code",         v.hsn_code],
+  ].filter(Boolean);
+
+  return (
+    <Modal title={`${v.brand_name} ${v.model_name}`} onClose={onClose} width={640}>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 2, marginBottom: 20, background: C.bg, borderRadius: 8, padding: 4 }}>
+        {[["overview","Overview"],["reviews","Reviews"],["enquiry","Get Price"]].map(([id,label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            flex: 1, padding: "8px 4px", border: "none", borderRadius: 6,
+            background: tab === id ? C.primary : "transparent",
+            color: tab === id ? "#fff" : C.textMid,
+            fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "overview" && (
+        <div>
+          {/* Vehicle hero */}
+          <div style={{ height: 140, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 72, marginBottom: 16 }}>🛺</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{fmtINR(v.price)}</div>
+              <div style={{ fontSize: 12, color: C.textDim }}>Ex-showroom price (incl. GST)</div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <Badge label={v.fuel_type} color={FUEL_COLOR[v.fuel_type]} />
+              {v.stock_status === "out_of_stock" ? <Badge label="Out of Stock" color={C.danger} /> : <Badge label={`${v.stock_quantity || ""} in Stock`} color={C.success} />}
+              {v.is_featured && <Badge label="Featured" color={C.accent} />}
+            </div>
+          </div>
+
+          {v.description && <p style={{ fontSize: 13, color: C.textMid, lineHeight: 1.7, marginBottom: 16 }}>{v.description}</p>}
+
+          {/* Specs grid */}
+          {SPECS.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 8 }}>Technical Specifications</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8 }}>
+                {SPECS.map(([label, val]) => (
+                  <div key={label} style={{ background: C.bg, borderRadius: 8, padding: "8px 12px" }}>
+                    <div style={{ fontSize: 10, color: C.textDim, marginBottom: 2 }}>{label.toUpperCase()}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Dealer info */}
+          <div style={{ background: `${C.primary}08`, border: `1px solid ${C.primary}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: C.text }}>🏪 Dealer Details</div>
+            <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{dealerInfo?.dealer_name || v.dealer_name}</div>
+            <div style={{ fontSize: 12, color: C.textMid, marginTop: 3 }}>📍 {dealerInfo?.address || ""}{dealerInfo?.address ? ", " : ""}{v.dealer_city}, {v.dealer_state || ""}</div>
+            {dealerInfo?.avg_rating && <div style={{ marginTop: 6 }}><AvgStars avg={dealerInfo.avg_rating} count={dealerInfo.review_count || 0} /></div>}
+            {(dealerInfo?.phone || v.dealer_phone) && (
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <a href={`tel:${(dealerInfo?.phone || v.dealer_phone).replace(/\s/g,"")}`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.success, color: "#fff", padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                  📞 Call Dealer — {dealerInfo?.phone || v.dealer_phone}
+                </a>
+                <Btn label="💬 Send Enquiry" color={C.primary} size="sm" onClick={() => setTab("enquiry")} />
+              </div>
+            )}
+          </div>
+
+          <Btn label="⭐ Rate This Dealer" color={C.accent} outline fullWidth size="sm" onClick={() => setTab("reviews")} />
+        </div>
+      )}
+
+      {tab === "reviews" && (
+        <div>
+          {/* Average */}
+          <div style={{ textAlign: "center", padding: "12px 0 20px", borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
+            <div style={{ fontSize: 40, fontWeight: 800, color: C.text }}>{avgRating || "—"}</div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
+              <StarRating value={Math.round(Number(avgRating) || 0)} readOnly size={20} />
+            </div>
+            <div style={{ fontSize: 12, color: C.textDim }}>{reviews.length} review{reviews.length !== 1 ? "s" : ""} for {v.dealer_name}</div>
+          </div>
+
+          {/* Submit review form */}
+          <div style={{ background: C.bg, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Write a Review</div>
+            <form onSubmit={submitReview}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <Field label="Your Name"><Input value={reviewForm.reviewer_name} onChange={v => setReviewForm(p => ({ ...p, reviewer_name: v }))} placeholder="Ramesh Kumar" /></Field>
+                <Field label="Mobile Number"><Input value={reviewForm.reviewer_phone} onChange={v => setReviewForm(p => ({ ...p, reviewer_phone: v }))} placeholder="9876543210" /></Field>
+              </div>
+              <Field label="Rating">
+                <StarRating value={reviewForm.rating} onChange={v => setReviewForm(p => ({ ...p, rating: v }))} size={28} />
+              </Field>
+              <Field label="Your Review">
+                <textarea value={reviewForm.comment} onChange={e => setReviewForm(p => ({ ...p, comment: e.target.value }))} rows={3}
+                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                  placeholder="How was your experience with this dealer?" />
+              </Field>
+              <Btn label={reviewSaving ? "Submitting..." : "Submit Review"} color={C.primary} type="submit" disabled={reviewSaving} />
+            </form>
+          </div>
+
+          {/* Existing reviews */}
+          {reviews.length === 0 && <div style={{ textAlign: "center", color: C.textDim, padding: 20, fontSize: 13 }}>No reviews yet. Be the first to review!</div>}
+          {reviews.map((r, i) => (
+            <div key={i} style={{ borderBottom: `1px solid ${C.border}`, padding: "12px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{r.reviewer_name}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <StarRating value={r.rating} readOnly size={14} />
+                  <span style={{ fontSize: 11, color: C.textDim }}>{fmtDate(r.created_at)}</span>
+                </div>
+              </div>
+              <p style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6, margin: 0 }}>{r.comment}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "enquiry" && (
+        <div>
+          <div style={{ background: `${C.primary}08`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.primary }}>
+            🛺 <b>{v.brand_name} {v.model_name}</b> — Starting at {fmtINR(v.price)}
+          </div>
+          <form onSubmit={submitEnquiry}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field label="Your Name" required><Input value={enquiryForm.customer_name} onChange={v2 => setEnquiryForm(p => ({ ...p, customer_name: v2 }))} placeholder="Ramesh Kumar" /></Field>
+              <Field label="Mobile Number" required><Input value={enquiryForm.phone} onChange={v2 => setEnquiryForm(p => ({ ...p, phone: v2 }))} placeholder="9876543210" /></Field>
+              <Field label="Your City"><Input value={enquiryForm.city} onChange={v2 => setEnquiryForm(p => ({ ...p, city: v2 }))} placeholder="Delhi" /></Field>
+            </div>
+            <Field label="Message">
+              <textarea value={enquiryForm.notes} onChange={e => setEnquiryForm(p => ({ ...p, notes: e.target.value }))} rows={2}
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                placeholder="Any specific requirements..." />
+            </Field>
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
+              ✓ Dealer will contact you within 24 hours. Your number is never shared with third parties.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn label="Back" outline color={C.textMid} onClick={() => setTab("overview")} />
+              <Btn label={enquirySending ? "Sending..." : "Get Best Price →"} color={C.primary} type="submit" disabled={enquirySending} />
+            </div>
+          </form>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // MARKETPLACE PAGE (public-facing)
 // ═══════════════════════════════════════════════════════
 function Marketplace() {
+  const toast = useToast();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState({ fuel_type: "", search: "" });
+  const [filter, setFilter] = useState({ fuel_type: "", search: "", city: "" });
+  const [detailVehicle, setDetailVehicle] = useState(null);
+  const [enquiryVehicle, setEnquiryVehicle] = useState(null);
+  const [enquiryForm, setEnquiryForm] = useState({ customer_name: "", phone: "", city: "", notes: "" });
+  const [enquirySending, setEnquirySending] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1174,6 +1712,26 @@ function Marketplace() {
   }, [filter]);
 
   useEffect(() => { load(); }, [load]);
+
+  const submitEnquiry = async (e) => {
+    e.preventDefault();
+    if (!enquiryForm.customer_name.trim()) { toast("Please enter your name.", "warning"); return; }
+    if (!enquiryForm.phone.trim()) { toast("Please enter your mobile number.", "warning"); return; }
+    if (!/^[6-9]\d{9}$/.test(enquiryForm.phone.replace(/\D/g, "").slice(-10))) {
+      toast("Enter a valid 10-digit Indian mobile number.", "warning"); return;
+    }
+    setEnquirySending(true);
+    try {
+      await api.enquiry({ ...enquiryForm, vehicle: enquiryVehicle?.id });
+      toast("Enquiry sent! A dealer will call you within 24 hours.", "success");
+      setEnquiryVehicle(null);
+      setEnquiryForm({ customer_name: "", phone: "", city: "", notes: "" });
+    } catch (err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to send enquiry. Try again.";
+      toast(msg, "error");
+    }
+    setEnquirySending(false);
+  };
 
   return (
     <div style={{ padding: 24 }}>
@@ -1189,7 +1747,7 @@ function Marketplace() {
       </div>
 
       {/* Fuel filter tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {["", "electric", "petrol", "cng", "lpg"].map(f => (
           <button key={f} onClick={() => setFilter(p => ({ ...p, fuel_type: f }))}
             style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${filter.fuel_type === f ? C.primary : C.border}`, background: filter.fuel_type === f ? C.primary : "#fff", color: filter.fuel_type === f ? "#fff" : C.textMid, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s" }}>
@@ -1203,21 +1761,265 @@ function Marketplace() {
       {loading ? <Spinner /> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
           {vehicles.map(v => (
-            <Card key={v.id} style={{ cursor: "pointer", transition: "all 0.2s", border: `1.5px solid ${C.border}` }}
-              onMouseEnter={() => {}} onMouseLeave={() => {}}>
+            <Card key={v.id} style={{ transition: "all 0.2s", border: `1.5px solid ${C.border}`, cursor: "pointer" }}
+              onClick={() => setDetailVehicle(v)}>
               <div style={{ height: 120, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>🛺</div>
               <div style={{ fontWeight: 700, fontSize: 14 }}>{v.model_name}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 6, flexWrap: "wrap" }}>
                 <Badge label={v.fuel_type} color={FUEL_COLOR[v.fuel_type]} />
                 <Badge label={v.brand_name} color={C.textMid} />
               </div>
-              <div style={{ fontSize: 13, color: C.textMid }}>Starting at <span style={{ color: C.primary, fontWeight: 700, fontSize: 15 }}>{fmtINR(v.price)}</span></div>
-              <div style={{ marginTop: 12 }}><Btn label="View Details" color={C.primary} fullWidth size="sm" /></div>
-            </Card>
+              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>📍 {v.dealer_city}</div>
+              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 12 }}>Starting at <span style={{ color: C.primary, fontWeight: 700, fontSize: 15 }}>{fmtINR(v.price)}</span></div>
+              <Btn label="View Details & Price" color={C.primary} fullWidth size="sm" onClick={e => { e.stopPropagation(); setDetailVehicle(v); }} /></Card>
           ))}
         </div>
       )}
+
+      {/* Enquiry modal */}
+      {enquiryVehicle && (
+        <Modal title={`Get Best Price — ${enquiryVehicle.brand_name} ${enquiryVehicle.model_name}`} onClose={() => setEnquiryVehicle(null)} width={480}>
+          <div style={{ background: `${C.primary}08`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.primary }}>
+            🛺 Starting at <b>{fmtINR(enquiryVehicle.price)}</b> · {enquiryVehicle.fuel_type} · {enquiryVehicle.dealer_city || "India"}
+          </div>
+          <form onSubmit={submitEnquiry}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field label="Your Name" required>
+                <Input value={enquiryForm.customer_name} onChange={v => setEnquiryForm(p => ({ ...p, customer_name: v }))} placeholder="Ramesh Kumar" />
+              </Field>
+              <Field label="Mobile Number" required>
+                <Input value={enquiryForm.phone} onChange={v => setEnquiryForm(p => ({ ...p, phone: v }))} placeholder="9876543210" />
+              </Field>
+              <Field label="Your City">
+                <Input value={enquiryForm.city} onChange={v => setEnquiryForm(p => ({ ...p, city: v }))} placeholder="Delhi" />
+              </Field>
+            </div>
+            <Field label="Message (optional)">
+              <textarea value={enquiryForm.notes} onChange={e => setEnquiryForm(p => ({ ...p, notes: e.target.value }))} rows={2}
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                placeholder="Any specific requirements..." />
+            </Field>
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
+              ✓ A verified dealer will contact you within 24 hours. Your number is never shared with third parties.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setEnquiryVehicle(null)} />
+              <Btn label={enquirySending ? "Sending..." : "Get Best Price →"} color={C.primary} type="submit" disabled={enquirySending} />
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// PLANS PAGE
+// ═══════════════════════════════════════════════════════
+const PLAN_FEATURES = [
+  { label: "Vehicle Listings",          free: "Up to 5 vehicles",     pro: "Unlimited vehicles" },
+  { label: "Lead Management",           free: "Up to 50 leads/month",  pro: "Unlimited leads" },
+  { label: "Sales & Invoicing (GST)",   free: "10 invoices/month",     pro: "Unlimited invoices" },
+  { label: "Customer Database",         free: true,                    pro: true },
+  { label: "Finance & EMI Calculator",  free: true,                    pro: true },
+  { label: "Reports & Analytics",       free: "Basic",                 pro: "Advanced + Export" },
+  { label: "Marketplace Listing",       free: false,                   pro: true },
+  { label: "Email Notifications",       free: true,                    pro: true },
+  { label: "WhatsApp Notifications",    free: false,                   pro: true },
+  { label: "Push Notifications",        free: false,                   pro: true },
+  { label: "Follow-up Reminders",       free: false,                   pro: true },
+  { label: "Priority Support",          free: false,                   pro: true },
+  { label: "Dedicated Account Manager", free: false,                   pro: true },
+];
+
+function PlanFeatureRow({ label, free, pro }) {
+  const renderVal = (v) => {
+    if (v === true)  return <span style={{ color: C.success, fontSize: 16 }}>✓</span>;
+    if (v === false) return <span style={{ color: C.textDim, fontSize: 16 }}>—</span>;
+    return <span style={{ fontSize: 12, color: C.textMid }}>{v}</span>;
+  };
+  return (
+    <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+      <td style={{ padding: "11px 16px", fontSize: 13, color: C.text }}>{label}</td>
+      <td style={{ padding: "11px 16px", textAlign: "center" }}>{renderVal(free)}</td>
+      <td style={{ padding: "11px 16px", textAlign: "center", background: `${C.primary}08` }}>{renderVal(pro)}</td>
+    </tr>
+  );
+}
+
+function PlansPage({ onUpgrade }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.dashboard().then(setData).finally(() => setLoading(false));
+  }, []);
+
+  const plan = data?.plan;
+  const isPro = plan?.type === "pro" && plan?.is_active;
+  const isFreeActive = plan?.type === "free" && plan?.is_active;
+
+  return (
+    <div style={{ padding: 24, maxWidth: 860 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 26, fontWeight: 800, color: C.text, marginBottom: 6 }}>Plans & Pricing</div>
+        <div style={{ fontSize: 14, color: C.textMid }}>Choose the right plan for your dealership. Start free, upgrade anytime.</div>
+      </div>
+
+      {loading ? <Spinner /> : (
+        <>
+          {/* Current plan status */}
+          {plan && (
+            <div style={{
+              background: plan.is_active ? `${C.success}12` : "#fef2f2",
+              border: `1px solid ${plan.is_active ? C.success + "44" : "#fecaca"}`,
+              borderRadius: 10, padding: "12px 18px", marginBottom: 24,
+              fontSize: 13, color: plan.is_active ? C.success : "#dc2626",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              {plan.is_active
+                ? `✅ You are on the ${plan.type.toUpperCase()} plan — ${plan.days_remaining} day${plan.days_remaining !== 1 ? "s" : ""} remaining`
+                : `⚠️ Your ${plan.type.toUpperCase()} plan has expired. Upgrade to continue accessing all features.`}
+            </div>
+          )}
+
+          {/* Plan cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 32 }}>
+            {/* Free Plan */}
+            <Card style={{ border: isFreeActive ? `2px solid ${C.primary}` : `1px solid ${C.border}`, position: "relative" }}>
+              {isFreeActive && (
+                <div style={{ position: "absolute", top: -12, left: 20, background: C.primary, color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 11, fontWeight: 700 }}>
+                  CURRENT PLAN
+                </div>
+              )}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, letterSpacing: "1px", marginBottom: 6 }}>FREE TRIAL</div>
+                <div style={{ fontSize: 32, fontWeight: 800, color: C.text }}>₹0</div>
+                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>14-day trial period</div>
+              </div>
+              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20, lineHeight: 1.7 }}>
+                Get started and explore the platform. Perfect for new dealerships.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                {["5 vehicle listings", "50 leads / month", "10 invoices / month", "Basic analytics", "Email notifications"].map(f => (
+                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.textMid }}>
+                    <span style={{ color: C.success }}>✓</span> {f}
+                  </div>
+                ))}
+                {["Marketplace listing", "WhatsApp alerts", "Follow-up reminders", "Priority support"].map(f => (
+                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.textDim }}>
+                    <span style={{ color: C.textDim }}>—</span> {f}
+                  </div>
+                ))}
+              </div>
+              <Btn label={isFreeActive ? "Current Plan" : "Get Started Free"} color={C.primary} outline fullWidth disabled={isFreeActive} />
+            </Card>
+
+            {/* Pro Plan */}
+            <Card style={{ border: `2px solid ${C.primary}`, background: `linear-gradient(180deg,${C.primary}08 0%,#fff 100%)`, position: "relative" }}>
+              <div style={{ position: "absolute", top: -12, right: 20, background: `linear-gradient(90deg,${C.accent},${C.primary})`, color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 11, fontWeight: 700 }}>
+                {isPro ? "CURRENT PLAN" : "MOST POPULAR"}
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: "1px", marginBottom: 6 }}>PRO PLAN</div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: C.primary }}>₹999</div>
+                  <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>/month</div>
+                </div>
+                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>or ₹9,999/year (save 17%)</div>
+              </div>
+              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20, lineHeight: 1.7 }}>
+                Everything you need to grow your dealership. Unlimited access, all features.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                {["Unlimited vehicle listings", "Unlimited leads", "Unlimited invoices", "Advanced analytics + Export", "Email + WhatsApp + Push notifications", "Marketplace listing & visibility", "Follow-up & expiry reminders", "Priority support 24/7"].map(f => (
+                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text }}>
+                    <span style={{ color: C.success }}>✓</span> {f}
+                  </div>
+                ))}
+              </div>
+              {isPro ? (
+                <Btn label="Current Plan ✓" color={C.success} fullWidth disabled />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <Btn label="⭐ Upgrade to Pro — ₹999/mo" color={C.primary} fullWidth onClick={onUpgrade} />
+                  <div style={{ textAlign: "center", fontSize: 11, color: C.textDim }}>Contact our team to activate instantly</div>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* Feature comparison table */}
+          <Card padding={0}>
+            <div style={{ padding: "16px 16px 0", fontWeight: 700, fontSize: 15, color: C.text }}>Feature Comparison</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={{ padding: "10px 16px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}` }}>FEATURE</th>
+                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, width: 160 }}>FREE TRIAL</th>
+                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.primary, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, background: `${C.primary}08`, width: 160 }}>PRO ⭐</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PLAN_FEATURES.map(f => <PlanFeatureRow key={f.label} {...f} />)}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* FAQ / support */}
+          <div style={{ marginTop: 28, padding: "20px 24px", background: `linear-gradient(135deg,${C.primary}10,${C.accent}08)`, borderRadius: 12, border: `1px solid ${C.primary}22` }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8, color: C.text }}>Need help choosing?</div>
+            <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.8, marginBottom: 14 }}>
+              Our team will help you pick the right plan and get you set up quickly.
+              All plans include onboarding support and data migration.
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {SUPPORT_PHONE && <Btn label={`📞 Call ${SUPPORT_PHONE}`} color={C.primary} outline size="sm" onClick={() => window.open(`tel:${SUPPORT_PHONE}`)} />}
+              {SUPPORT_WA    && <Btn label="💬 WhatsApp Us" color={C.success} size="sm" onClick={() => window.open(`https://wa.me/${SUPPORT_WA.replace(/\D/g,"")}?text=Hi+I+need+help+with+eRickshawDekho`, "_blank")} />}
+              <Btn label={`✉️ Email ${SUPPORT_EMAIL}`} color={C.info} outline size="sm" onClick={() => window.open(`mailto:${SUPPORT_EMAIL}`)} />
+              {!SUPPORT_PHONE && !SUPPORT_WA && <Btn label="📬 Contact Support" color={C.primary} size="sm" onClick={onUpgrade} />}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Support contact — set VITE_SUPPORT_PHONE / VITE_SUPPORT_WA in .env.local
+const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "";
+const SUPPORT_WA    = import.meta.env.VITE_SUPPORT_WA    || "";
+const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || "support@erikshawdekho.com";
+
+function ContactSupportModal({ onClose, onNavigate }) {
+  return (
+    <Modal title="Upgrade to Pro" onClose={onClose} width={420}>
+      <div style={{ textAlign: "center", padding: "8px 0 16px" }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>⭐</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Unlock Pro Features</div>
+        <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.7, marginBottom: 20 }}>
+          Contact our team to activate the Pro plan (₹999/month or ₹9,999/year).
+          We'll set you up within minutes.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {SUPPORT_WA && (
+            <Btn label="💬 WhatsApp Us" color={C.success} fullWidth onClick={() => window.open(`https://wa.me/${SUPPORT_WA.replace(/\D/g, "")}?text=Hi+I+want+to+upgrade+to+Pro+plan`, "_blank")} />
+          )}
+          {SUPPORT_PHONE && (
+            <Btn label={`📞 Call ${SUPPORT_PHONE}`} color={C.primary} outline fullWidth onClick={() => window.open(`tel:${SUPPORT_PHONE}`)} />
+          )}
+          <Btn label={`✉️ Email ${SUPPORT_EMAIL}`} color={C.info} outline fullWidth onClick={() => window.open(`mailto:${SUPPORT_EMAIL}?subject=Pro+Plan+Upgrade`)} />
+        </div>
+        {!SUPPORT_WA && !SUPPORT_PHONE && (
+          <div style={{ marginTop: 14, fontSize: 12, color: C.textDim }}>
+            Admin: set <code>VITE_SUPPORT_WA</code> and <code>VITE_SUPPORT_PHONE</code> env vars to enable direct contact links.
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -1232,6 +2034,15 @@ export default function App() {
   });
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [plan, setPlan] = useState(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Fetch plan once on login; refresh when page changes to account/plans
+  useEffect(() => {
+    if (auth) {
+      api.dashboard().then(d => setPlan(d.plan)).catch(() => {});
+    }
+  }, [auth]);
 
   const handleAuth = (data) => {
     localStorage.setItem("erd_access", data.access);
@@ -1243,48 +2054,58 @@ export default function App() {
   const handleLogout = () => {
     localStorage.clear();
     setAuth(null);
+    setPlan(null);
   };
 
-  if (!auth) return <AuthPage onAuth={handleAuth} />;
+  if (!auth) return <ToastProvider><AuthPage onAuth={handleAuth} /></ToastProvider>;
 
   const dealer = auth.dealer;
+  const goUpgrade = () => setShowUpgradeModal(true);
 
   const renderPage = () => {
     switch (page) {
-      case "dashboard":   return <Dashboard />;
-      case "inventory":   return <Inventory showAdd={showAddVehicle} onAddClose={() => setShowAddVehicle(false)} />;
-      case "leads":       return <Leads />;
-      case "sales":       return <SalesPage />;
-      case "customers":   return <Customers />;
-      case "finance":     return <Finance />;
-      case "reports":     return <Reports />;
+      case "dashboard":   return <Dashboard onNavigate={setPage} />;
+      case "inventory":   return <PlanGate plan={plan} feature="Inventory" onUpgrade={goUpgrade}><Inventory showAdd={showAddVehicle} onAddClose={() => setShowAddVehicle(false)} onNavigate={setPage} /></PlanGate>;
+      case "leads":       return <PlanGate plan={plan} feature="Leads" onUpgrade={goUpgrade}><Leads onNavigate={setPage} /></PlanGate>;
+      case "sales":       return <PlanGate plan={plan} feature="Sales" onUpgrade={goUpgrade}><SalesPage /></PlanGate>;
+      case "customers":   return <PlanGate plan={plan} feature="Customers" onUpgrade={goUpgrade}><Customers /></PlanGate>;
+      case "finance":     return <PlanGate plan={plan} feature="Finance" onUpgrade={goUpgrade}><Finance /></PlanGate>;
+      case "reports":     return <PlanGate plan={plan} feature="Reports" onUpgrade={goUpgrade}><Reports /></PlanGate>;
       case "marketplace": return <Marketplace />;
+      case "plans":       return <PlansPage onUpgrade={goUpgrade} />;
       case "account":     return <AccountPage dealer={dealer} onLogout={handleLogout} />;
-      default:            return <Dashboard />;
+      default:            return <Dashboard onNavigate={setPage} />;
     }
   };
 
   return (
-    <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: ${C.bg}; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: ${C.bg}; }
-        ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
-        select option { background: #fff; color: ${C.text}; }
-      `}</style>
+    <ToastProvider>
+      <PlanCtx.Provider value={plan}>
+        <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
+          <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { background: ${C.bg}; }
+            @keyframes spin { to { transform: rotate(360deg); } }
+            @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+            ::-webkit-scrollbar { width: 6px; }
+            ::-webkit-scrollbar-track { background: ${C.bg}; }
+            ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
+            select option { background: #fff; color: ${C.text}; }
+          `}</style>
 
-      <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
+          <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
 
-      <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
-        <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} />
-        <main style={{ flex: 1 }}>
-          {renderPage()}
-        </main>
-      </div>
-    </div>
+          <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
+            <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} />
+            <main style={{ flex: 1 }}>
+              {renderPage()}
+            </main>
+          </div>
+
+          {showUpgradeModal && <ContactSupportModal onClose={() => setShowUpgradeModal(false)} onNavigate={setPage} />}
+        </div>
+      </PlanCtx.Provider>
+    </ToastProvider>
   );
 }

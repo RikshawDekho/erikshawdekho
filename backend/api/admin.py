@@ -6,6 +6,7 @@ from .models import (
     UserProfile, DealerProfile, Brand, Vehicle,
     Lead, Sale, Customer, Task, FinanceLoan,
     DealerApplication, DealerReview, PublicEnquiry,
+    NotificationLog,
 )
 
 
@@ -45,9 +46,12 @@ class DealerApplicationAdmin(admin.ModelAdmin):
     @admin.action(description='Approve and create dealer accounts')
     def approve_applications(self, request, queryset):
         from datetime import timedelta
+        from .emails import send_dealer_approval_email
+        from .notifications import notify_dealer_welcome
         created = 0
         credentials = []
         now = timezone.now()
+        plan_expires = now + timedelta(days=30)
         for app in queryset.filter(status='pending'):
             temp_pw = secrets.token_urlsafe(10)
             user = User.objects.create_user(
@@ -66,7 +70,7 @@ class DealerApplicationAdmin(admin.ModelAdmin):
                 is_verified=True,
                 plan_type='free',
                 plan_started_at=now,
-                plan_expires_at=now + timedelta(days=30),
+                plan_expires_at=plan_expires,
             )
             UserProfile.objects.create(user=user, user_type='dealer', phone=app.phone, city=app.city)
             app.status = 'approved'
@@ -75,12 +79,31 @@ class DealerApplicationAdmin(admin.ModelAdmin):
             app.save()
             credentials.append(f'{app.dealer_name} → username: {app.phone}, password: {temp_pw}')
             created += 1
+            # Send approval email + WhatsApp
+            expires_str = plan_expires.strftime('%d %b %Y')
+            if app.email:
+                send_dealer_approval_email(
+                    dealer_name=app.dealer_name, email=app.email,
+                    username=app.phone, temp_password=temp_pw,
+                    plan_expires=expires_str,
+                )
+            if app.phone:
+                notify_dealer_welcome(app.dealer_name, app.phone, app.phone)
         msg = f'{created} account(s) created. Credentials: ' + ' | '.join(credentials)
         self.message_user(request, msg)
 
     @admin.action(description='Reject selected applications')
     def reject_applications(self, request, queryset):
-        updated = queryset.filter(status='pending').update(status='rejected', reviewed_at=timezone.now())
+        from .emails import send_dealer_rejection_email
+        now = timezone.now()
+        updated = 0
+        for app in queryset.filter(status='pending'):
+            app.status = 'rejected'
+            app.reviewed_at = now
+            app.save()
+            if app.email:
+                send_dealer_rejection_email(app.dealer_name, app.email)
+            updated += 1
         self.message_user(request, f'{updated} application(s) rejected.')
 
 
@@ -158,3 +181,12 @@ class PublicEnquiryAdmin(admin.ModelAdmin):
     def mark_processed(self, request, queryset):
         updated = queryset.update(is_processed=True)
         self.message_user(request, f'{updated} enquiry(ies) marked as processed.')
+
+
+@admin.register(NotificationLog)
+class NotificationLogAdmin(admin.ModelAdmin):
+    list_display    = ['notif_type', 'channel', 'recipient', 'dealer', 'success', 'sent_at']
+    list_filter     = ['channel', 'notif_type', 'success']
+    search_fields   = ['recipient', 'subject', 'dealer__dealer_name']
+    readonly_fields = ['dealer', 'channel', 'notif_type', 'recipient', 'subject',
+                       'success', 'error_msg', 'sent_at']
