@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
-from api.models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, DealerReview
+from api.models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, DealerReview, UserProfile
 from decimal import Decimal
 from datetime import date, timedelta
 from django.utils import timezone
@@ -221,15 +221,51 @@ class Command(BaseCommand):
                 defaults={'reviewer_name': rname, 'rating': rating, 'comment': comment}
             )
 
+        # ── Demo Account 3: Akram — Driver/Buyer (marketplace user) ─────
+        akram, created3 = User.objects.get_or_create(username='akram')
+        if created3 or True:
+            akram.set_password('akram1234')
+            akram.first_name = 'Mohammed'
+            akram.last_name  = 'Akram'
+            akram.email      = 'akram@erikshawdekho.com'
+            akram.save()
+
+        UserProfile.objects.update_or_create(
+            user=akram,
+            defaults={
+                'user_type': 'driver',
+                'phone':     '+91 77665 44334',
+                'city':      'Delhi',
+            }
+        )
+
+        # Akram's reviews on the main dealer (as a driver who bought a vehicle)
+        akram_reviews = [
+            ('9876543210', 5, 'Kumar Electric ne mujhe bahut achhi service di. Maine Mahindra Treo liya — bilkul sahi kharid!'),
+            ('7766554433', 4, 'Good dealer. Pricing thodi zyada thi lekin quality mein koi compromise nahi.'),
+        ]
+        for idx, (rphone, rating, comment) in enumerate(akram_reviews):
+            DealerReview.objects.update_or_create(
+                dealer=dealer, reviewer_phone=rphone,
+                defaults={
+                    'reviewer_name': 'Mohammed Akram',
+                    'rating': rating,
+                    'comment': comment,
+                }
+            )
+
         self.stdout.write(self.style.SUCCESS(
             f'\n✓ Demo data seeded!\n'
-            f'\n  ── Account 1 (Pro Plan — expires 2099) ──\n'
+            f'\n  ── Account 1: Dealer (Pro Plan — lifetime) ──\n'
             f'  Login:    username=demo  password=demo1234\n'
-            f'  Plan:     Pro (lifetime demo, expires 31 Dec 2099)\n'
-            f'  Features: All unlocked\n'
-            f'\n  ── Account 2 (Expired Plan) ──\n'
+            f'  Plan:     Pro (expires 31 Dec 2099)\n'
+            f'  Features: All unlocked — 10 vehicles, 7 leads, 5 sales, 5+ reviews\n'
+            f'\n  ── Account 2: Dealer (Expired Plan) ──\n'
             f'  Login:    username=demo_expired  password=demo1234\n'
             f'  Plan:     Free trial — expired 30 days ago\n'
-            f'  Features: Minimal (dashboard + account + plans only)\n'
+            f'  Features: Locked (dashboard + plans page only)\n'
+            f'\n  ── Account 3: Driver/Buyer ──\n'
+            f'  Login:    username=akram  password=akram1234\n'
+            f'  Type:     Driver (marketplace browse + review flow)\n'
             f'\n  API: http://localhost:8000/api/\n'
         ))

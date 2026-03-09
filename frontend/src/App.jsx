@@ -1521,16 +1521,18 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
     e.preventDefault();
     if (!enquiryForm.customer_name.trim()) { toast("Please enter your name.", "warning"); return; }
     if (!enquiryForm.phone.trim()) { toast("Please enter your mobile number.", "warning"); return; }
-    if (!/^[6-9]\d{9}$/.test(enquiryForm.phone.replace(/\D/g,"").slice(-10))) {
+    if (!/^[6-9]\d{9}$/.test(enquiryForm.phone.replace(/\D/g, "").slice(-10))) {
       toast("Enter a valid 10-digit Indian mobile number.", "warning"); return;
     }
     setEnquirySending(true);
     try {
       await api.enquiry({ ...enquiryForm, vehicle: v.id });
-      toast("Enquiry sent! Dealer will call within 24 hours.", "success");
+      toast("Enquiry sent! The dealer will call you within 24 hours.", "success");
       setTab("overview");
+      setEnquiryForm({ customer_name: "", phone: "", city: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
     } catch (err) {
-      toast("Failed to send enquiry. Please try again.", "error");
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to send enquiry. Try again.";
+      toast(msg, "error");
     }
     setEnquirySending(false);
   };
@@ -1701,9 +1703,6 @@ function Marketplace() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ fuel_type: "", search: "", city: "" });
   const [detailVehicle, setDetailVehicle] = useState(null);
-  const [enquiryVehicle, setEnquiryVehicle] = useState(null);
-  const [enquiryForm, setEnquiryForm] = useState({ customer_name: "", phone: "", city: "", notes: "" });
-  const [enquirySending, setEnquirySending] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1712,26 +1711,6 @@ function Marketplace() {
   }, [filter]);
 
   useEffect(() => { load(); }, [load]);
-
-  const submitEnquiry = async (e) => {
-    e.preventDefault();
-    if (!enquiryForm.customer_name.trim()) { toast("Please enter your name.", "warning"); return; }
-    if (!enquiryForm.phone.trim()) { toast("Please enter your mobile number.", "warning"); return; }
-    if (!/^[6-9]\d{9}$/.test(enquiryForm.phone.replace(/\D/g, "").slice(-10))) {
-      toast("Enter a valid 10-digit Indian mobile number.", "warning"); return;
-    }
-    setEnquirySending(true);
-    try {
-      await api.enquiry({ ...enquiryForm, vehicle: enquiryVehicle?.id });
-      toast("Enquiry sent! A dealer will call you within 24 hours.", "success");
-      setEnquiryVehicle(null);
-      setEnquiryForm({ customer_name: "", phone: "", city: "", notes: "" });
-    } catch (err) {
-      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to send enquiry. Try again.";
-      toast(msg, "error");
-    }
-    setEnquirySending(false);
-  };
 
   return (
     <div style={{ padding: 24 }}>
@@ -1776,39 +1755,7 @@ function Marketplace() {
         </div>
       )}
 
-      {/* Enquiry modal */}
-      {enquiryVehicle && (
-        <Modal title={`Get Best Price — ${enquiryVehicle.brand_name} ${enquiryVehicle.model_name}`} onClose={() => setEnquiryVehicle(null)} width={480}>
-          <div style={{ background: `${C.primary}08`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.primary }}>
-            🛺 Starting at <b>{fmtINR(enquiryVehicle.price)}</b> · {enquiryVehicle.fuel_type} · {enquiryVehicle.dealer_city || "India"}
-          </div>
-          <form onSubmit={submitEnquiry}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Field label="Your Name" required>
-                <Input value={enquiryForm.customer_name} onChange={v => setEnquiryForm(p => ({ ...p, customer_name: v }))} placeholder="Ramesh Kumar" />
-              </Field>
-              <Field label="Mobile Number" required>
-                <Input value={enquiryForm.phone} onChange={v => setEnquiryForm(p => ({ ...p, phone: v }))} placeholder="9876543210" />
-              </Field>
-              <Field label="Your City">
-                <Input value={enquiryForm.city} onChange={v => setEnquiryForm(p => ({ ...p, city: v }))} placeholder="Delhi" />
-              </Field>
-            </div>
-            <Field label="Message (optional)">
-              <textarea value={enquiryForm.notes} onChange={e => setEnquiryForm(p => ({ ...p, notes: e.target.value }))} rows={2}
-                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
-                placeholder="Any specific requirements..." />
-            </Field>
-            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
-              ✓ A verified dealer will contact you within 24 hours. Your number is never shared with third parties.
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <Btn label="Cancel" outline color={C.textMid} onClick={() => setEnquiryVehicle(null)} />
-              <Btn label={enquirySending ? "Sending..." : "Get Best Price →"} color={C.primary} type="submit" disabled={enquirySending} />
-            </div>
-          </form>
-        </Modal>
-      )}
+      {detailVehicle && <VehicleDetailModal vehicle={detailVehicle} onClose={() => setDetailVehicle(null)} />}
     </div>
   );
 }
@@ -2015,11 +1962,102 @@ function ContactSupportModal({ onClose, onNavigate }) {
         </div>
         {!SUPPORT_WA && !SUPPORT_PHONE && (
           <div style={{ marginTop: 14, fontSize: 12, color: C.textDim }}>
-            Admin: set <code>VITE_SUPPORT_WA</code> and <code>VITE_SUPPORT_PHONE</code> env vars to enable direct contact links.
+            Our team will respond within 1 business day.
           </div>
         )}
       </div>
     </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// LANDING PAGE (shown before any auth choice)
+// ═══════════════════════════════════════════════════════
+function LandingPage({ onDealer, onMarketplace }) {
+  return (
+    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg,${C.primaryD} 0%,${C.primary} 45%,#1a6b44 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Nunito','Segoe UI',sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
+      {/* Brand */}
+      <div style={{ textAlign: "center", marginBottom: 48, color: "#fff" }}>
+        <div style={{ fontSize: 56, marginBottom: 12 }}>🛺</div>
+        <div style={{ fontSize: 32, fontWeight: 800, fontFamily: "Georgia,serif", letterSpacing: -1 }}>
+          eRickshaw<span style={{ color: C.accent }}>Dekho</span><span style={{ opacity: 0.7 }}>.com</span>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 15, opacity: 0.8, maxWidth: 380 }}>
+          India's #1 Platform for eRickshaws & Auto-rickshaws
+        </div>
+      </div>
+
+      {/* Two paths */}
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center", width: "100%", maxWidth: 640 }}>
+        {/* Driver / Buyer */}
+        <div onClick={onMarketplace} style={{
+          flex: 1, minWidth: 260, background: "rgba(255,255,255,0.12)", backdropFilter: "blur(10px)",
+          border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 18, padding: 32,
+          color: "#fff", cursor: "pointer", transition: "all 0.2s", textAlign: "center",
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = ""; }}>
+          <div style={{ fontSize: 44, marginBottom: 14 }}>🔍</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Browse Marketplace</div>
+          <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.7, marginBottom: 20 }}>
+            Search & compare eRickshaws near you. View prices, specs, dealers and reviews. No sign-in needed.
+          </div>
+          <div style={{ background: C.accent, color: "#1a1a1a", borderRadius: 10, padding: "11px 20px", fontWeight: 700, fontSize: 14 }}>
+            Browse eRickshaws →
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.65, marginTop: 10 }}>Driver • Buyer • Fleet Owner</div>
+        </div>
+
+        {/* Dealer */}
+        <div onClick={onDealer} style={{
+          flex: 1, minWidth: 260, background: "rgba(255,255,255,0.12)", backdropFilter: "blur(10px)",
+          border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 18, padding: 32,
+          color: "#fff", cursor: "pointer", transition: "all 0.2s", textAlign: "center",
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = ""; }}>
+          <div style={{ fontSize: 44, marginBottom: 14 }}>🏪</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Dealer Portal</div>
+          <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.7, marginBottom: 20 }}>
+            Manage inventory, leads, sales & invoices. Full GST billing, CRM and analytics for your showroom.
+          </div>
+          <div style={{ background: "#fff", color: C.primary, borderRadius: 10, padding: "11px 20px", fontWeight: 700, fontSize: 14 }}>
+            Dealer Sign In →
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.65, marginTop: 10 }}>Showroom • Dealer • Distributor</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 36, fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>
+        Trusted by 500+ dealers across India · Delhi · UP · Bihar · Rajasthan
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// PUBLIC MARKETPLACE PAGE (no dealer auth required)
+// ═══════════════════════════════════════════════════════
+function PublicMarketplacePage({ onDealerPortal, onBack }) {
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes spin{to{transform:rotate(360deg)}}@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* Top nav */}
+      <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "0 24px", height: 58, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20 }}>
+        <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+          <div style={{ width: 32, height: 32, background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🛺</div>
+          <span style={{ fontWeight: 800, fontSize: 16, fontFamily: "Georgia,serif", color: C.text }}>eRickshaw<span style={{ color: C.accent }}>Dekho</span></span>
+        </button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: C.textDim }}>Are you a dealer?</span>
+          <button onClick={onDealerPortal} style={{ padding: "7px 16px", borderRadius: 8, background: C.primary, border: "none", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            Dealer Portal →
+          </button>
+        </div>
+      </div>
+      <Marketplace />
+    </div>
   );
 }
 
@@ -2032,12 +2070,14 @@ export default function App() {
     const dealer = JSON.parse(localStorage.getItem("erd_dealer") || "null");
     return token ? { token, dealer } : null;
   });
+  // appMode: null = landing, 'dealer' = dealer auth/portal, 'public' = public marketplace
+  const [appMode, setAppMode] = useState(null);
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   const [plan, setPlan] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  // Fetch plan once on login; refresh when page changes to account/plans
+  // Fetch plan once on login
   useEffect(() => {
     if (auth) {
       api.dashboard().then(d => setPlan(d.plan)).catch(() => {});
@@ -2049,15 +2089,47 @@ export default function App() {
     if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
     localStorage.setItem("erd_dealer", JSON.stringify(data.dealer));
     setAuth(data);
+    setAppMode("dealer");
   };
 
   const handleLogout = () => {
     localStorage.clear();
     setAuth(null);
     setPlan(null);
+    setAppMode(null);
   };
 
-  if (!auth) return <ToastProvider><AuthPage onAuth={handleAuth} /></ToastProvider>;
+  // 1. No auth + no mode chosen → landing page
+  if (!auth && appMode === null) {
+    return (
+      <ToastProvider>
+        <LandingPage onDealer={() => setAppMode("dealer")} onMarketplace={() => setAppMode("public")} />
+      </ToastProvider>
+    );
+  }
+
+  // 2. Public marketplace (driver/buyer, no auth required)
+  if (!auth && appMode === "public") {
+    return (
+      <ToastProvider>
+        <PublicMarketplacePage onDealerPortal={() => setAppMode("dealer")} onBack={() => setAppMode(null)} />
+      </ToastProvider>
+    );
+  }
+
+  // 3. Dealer auth flow
+  if (!auth) {
+    return (
+      <ToastProvider>
+        <AuthPage onAuth={handleAuth} />
+        <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
+          <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
+            ← Back to home
+          </button>
+        </div>
+      </ToastProvider>
+    );
+  }
 
   const dealer = auth.dealer;
   const goUpgrade = () => setShowUpgradeModal(true);

@@ -6,11 +6,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 // or paste them directly into App.jsx replacing the old Sales()
 // ═══════════════════════════════════════════════════════════════
 
-const API = "http://localhost:8000/api";
+const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
 async function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem("erd_token");
+  const token = localStorage.getItem("erd_access");
   const res = await fetch(`${API}${path}`, {
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Token ${token}` } : {}), ...opts.headers },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
     ...opts,
   });
   if (!res.ok) throw await res.json();
