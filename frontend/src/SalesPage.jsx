@@ -6,11 +6,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 // or paste them directly into App.jsx replacing the old Sales()
 // ═══════════════════════════════════════════════════════════════
 
-const API = "http://localhost:8000/api";
+const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
 async function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem("erd_token");
+  const token = localStorage.getItem("erd_access");
   const res = await fetch(`${API}${path}`, {
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Token ${token}` } : {}), ...opts.headers },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
     ...opts,
   });
   if (!res.ok) throw await res.json();
@@ -352,9 +352,11 @@ export function SalesPage() {
   const [showAdd,  setShowAdd]  = useState(false);
   const [invoice,  setInvoice]  = useState(null);   // invoice data for modal
   const [invLoading, setInvLoading] = useState(null); // id of invoice being fetched
-  const [vehicles, setVehicles] = useState([]);
-  const [search,   setSearch]   = useState("");
-  const [stats,    setStats]    = useState({ total:0, thisMonth:0, revenue:0, pending:0 });
+  const [vehicles,  setVehicles]  = useState([]);
+  const [search,    setSearch]    = useState("");
+  const [dateFrom,  setDateFrom]  = useState("");
+  const [dateTo,    setDateTo]    = useState("");
+  const [stats,     setStats]     = useState({ total:0, thisMonth:0, revenue:0, pending:0 });
 
   const [form, setForm] = useState({
     vehicle:"", customer_name:"", customer_phone:"",
@@ -367,8 +369,11 @@ export function SalesPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    const p = search ? `?search=${encodeURIComponent(search)}` : "";
-    api.sales.list(p).then(d => {
+    const p = new URLSearchParams();
+    if (search)   p.set("search",    search);
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo)   p.set("date_to",   dateTo);
+    api.sales.list(p.toString() ? `?${p}` : "").then(d => {
       const list = d.results || d;
       setSales(list);
       const now = new Date();
@@ -383,7 +388,7 @@ export function SalesPage() {
         pending:   list.filter(s=>!s.is_delivered).length,
       });
     }).finally(()=>setLoading(false));
-  }, [search]);
+  }, [search, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -460,18 +465,56 @@ export function SalesPage() {
       </div>
 
       {/* ── Toolbar ── */}
-      <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Search by customer or invoice..."
-          style={{flex:1,minWidth:200,padding:"9px 14px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,fontFamily:"inherit",outline:"none",background:"#fff"}}
-          onFocus={e=>e.target.style.borderColor=C.primary} onBlur={e=>e.target.style.borderColor=C.border}/>
-        <Btn label="+ Record New Sale" color={C.primary} icon="💰" onClick={()=>setShowAdd(true)}/>
-      </div>
+      <Card padding={12} style={{marginBottom:14}}>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Search by customer or invoice..."
+            style={{flex:1,minWidth:180,padding:"8px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,fontFamily:"inherit",outline:"none",background:"#fff"}}
+            onFocus={e=>e.target.style.borderColor=C.primary} onBlur={e=>e.target.style.borderColor=C.border}/>
+          <Btn label="↺ Refresh" color={C.primary} outline onClick={load}/>
+          <Btn label="+ Record New Sale" color={C.primary} icon="💰" onClick={()=>setShowAdd(true)}/>
+        </div>
+        {/* Date range filter */}
+        {(() => {
+          const today = new Date();
+          const fmt = d => d.toISOString().split('T')[0];
+          const presets = [
+            { label:'Today',      f:fmt(today), t:fmt(today) },
+            { label:'This Week',  f:fmt(new Date(today-6*86400000)), t:fmt(today) },
+            { label:'This Month', f:fmt(new Date(today.getFullYear(),today.getMonth(),1)), t:fmt(today) },
+            { label:'This Year',  f:fmt(new Date(today.getFullYear(),0,1)), t:fmt(today) },
+          ];
+          return (
+            <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+              {presets.map(p => {
+                const active = dateFrom===p.f && dateTo===p.t;
+                return (
+                  <button key={p.label} onClick={()=>{setDateFrom(p.f);setDateTo(p.t);}}
+                    style={{padding:'4px 10px',borderRadius:14,border:`1.5px solid ${active?C.primary:C.border}`,background:active?C.primary:'#fff',color:active?'#fff':C.textMid,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'inherit'}}>
+                    {p.label}
+                  </button>
+                );
+              })}
+              <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+                style={{padding:'4px 8px',border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:12,fontFamily:'inherit'}}/>
+              <span style={{fontSize:11,color:C.textDim}}>–</span>
+              <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+                style={{padding:'4px 8px',border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:12,fontFamily:'inherit'}}/>
+              {(dateFrom||dateTo) && (
+                <button onClick={()=>{setDateFrom('');setDateTo('');}}
+                  style={{padding:'4px 8px',borderRadius:14,border:`1.5px solid ${C.danger}40`,background:`${C.danger}10`,color:C.danger,cursor:'pointer',fontSize:11,fontFamily:'inherit'}}>
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+          );
+        })()}
+      </Card>
 
       {/* ── Sales table ── */}
       <Card padding={0}>
         <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{fontWeight:700,fontSize:15}}>All Sales</span>
-          <span style={{fontSize:12,color:C.textDim}}>{sales.length} records</span>
+          <span style={{fontWeight:700,fontSize:15}}>All Sales {(dateFrom||dateTo) && <span style={{fontSize:12,color:C.primary,fontWeight:400}}>· filtered</span>}</span>
+          <span style={{fontSize:12,color:C.textDim}}>{sales.length} record{sales.length!==1?'s':''}</span>
         </div>
 
         {loading ? <Spinner /> : (

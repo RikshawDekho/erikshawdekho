@@ -16,7 +16,6 @@ media/
 .env
 .env.*
 !.env.example
-!.env.staging
 
 # Virtual environments
 venv/

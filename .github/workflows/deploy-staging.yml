@@ -10,6 +10,7 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
+
   # ── 1. Run backend tests ────────────────────────────────────────
   test-backend:
     name: Backend Tests (Staging)
@@ -19,8 +20,8 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_DB:       test_erikshaw_staging
-          POSTGRES_USER:     postgres
+          POSTGRES_DB: test_erikshaw_staging
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
         options: >-
@@ -43,23 +44,24 @@ jobs:
       - name: Django checks + tests
         working-directory: backend
         env:
-          SECRET_KEY:  staging-test-secret-key
-          DEBUG:       "True"
-          DB_NAME:     test_erikshaw_staging
-          DB_USER:     postgres
+          SECRET_KEY: staging-test-secret-key
+          DEBUG: "True"
+          DB_NAME: test_erikshaw_staging
+          DB_USER: postgres
           DB_PASSWORD: postgres
-          DB_HOST:     localhost
-          DB_PORT:     "5432"
+          DB_HOST: localhost
+          DB_PORT: "5432"
         run: |
           python manage.py check
           python manage.py test --verbosity=1
 
-  # ── 2. Deploy backend to Railway (staging service) ──────────────
+
+  # ── 2. Deploy backend to Railway (staging) ──────────────────────
   deploy-backend-staging:
     name: Deploy Backend (Railway Staging)
     runs-on: ubuntu-latest
     needs: test-backend
-    if: github.event_name == 'push'   # skip deploy on PRs, tests only
+    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
@@ -67,18 +69,20 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Deploy to Railway staging
+      - name: Deploy to Railway
         working-directory: backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
-        run: railway up --service backend-staging --detach
+        run: |
+          railway up --service backend --detach
+
 
   # ── 3. Deploy frontend preview to Vercel ────────────────────────
   deploy-frontend-staging:
     name: Deploy Frontend (Vercel Preview)
     runs-on: ubuntu-latest
     needs: test-backend
-    if: github.event_name == 'push'   # skip deploy on PRs, tests only
+    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
@@ -93,11 +97,8 @@ jobs:
         run: npm install -g vercel
 
       - name: Deploy preview to Vercel
-        working-directory: frontend
         env:
-          VERCEL_TOKEN:      ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: |
-          URL=$(vercel --token "$VERCEL_TOKEN" 2>&1 | tail -1)
-          echo "Staging preview: $URL"
+        run: vercel --token "$VERCEL_TOKEN"

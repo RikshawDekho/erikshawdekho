@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.db.models import Avg
+from django.utils import timezone
+from datetime import timedelta
 from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile
 
 
@@ -29,6 +31,7 @@ class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
 
 class VehicleListSerializer(serializers.ModelSerializer):
@@ -44,6 +47,7 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_vehicle_name(self, obj):
         if obj.vehicle:
@@ -61,6 +65,7 @@ class SaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sale
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}, 'invoice_number': {'read_only': True}}
 
     def get_vehicle_name(self, obj):
         return f"{obj.vehicle.brand} {obj.vehicle.model_name}"
@@ -70,12 +75,14 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
 
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
 
 class FinanceLoanSerializer(serializers.ModelSerializer):
@@ -83,6 +90,7 @@ class FinanceLoanSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinanceLoan
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_vehicle_name(self, obj):
         if obj.vehicle:
@@ -114,11 +122,15 @@ class RegisterSerializer(serializers.Serializer):
             email=validated_data['email'],
             password=validated_data['password'],
         )
+        now = timezone.now()
         DealerProfile.objects.create(
             user=user,
             dealer_name=validated_data['dealer_name'],
             phone=validated_data['phone'],
             city=validated_data.get('city', 'Delhi'),
+            plan_type='free',
+            plan_started_at=now,
+            plan_expires_at=now + timedelta(days=30),
         )
         UserProfile.objects.create(user=user, user_type='dealer',
                                    phone=validated_data['phone'],
@@ -165,16 +177,23 @@ class DealerReviewSerializer(serializers.ModelSerializer):
 
 
 class PublicVehicleSerializer(serializers.ModelSerializer):
-    brand_name  = serializers.CharField(source='brand.name', read_only=True)
-    dealer_name = serializers.CharField(source='dealer.dealer_name', read_only=True)
-    dealer_city = serializers.CharField(source='dealer.city', read_only=True)
+    brand_name      = serializers.CharField(source='brand.name', read_only=True)
+    dealer_id       = serializers.IntegerField(source='dealer.id', read_only=True)
+    dealer_name     = serializers.CharField(source='dealer.dealer_name', read_only=True)
+    dealer_city     = serializers.CharField(source='dealer.city', read_only=True)
+    dealer_phone    = serializers.CharField(source='dealer.phone', read_only=True)
+    dealer_address  = serializers.CharField(source='dealer.address', read_only=True)
+    dealer_state    = serializers.CharField(source='dealer.state', read_only=True)
+    dealer_verified = serializers.BooleanField(source='dealer.is_verified', read_only=True)
 
     class Meta:
         model  = Vehicle
-        fields = ['id', 'brand_name', 'dealer_name', 'dealer_city', 'model_name',
-                  'fuel_type', 'vehicle_type', 'price', 'stock_status',
-                  'thumbnail', 'year', 'is_featured', 'is_used',
-                  'range_km', 'seating_capacity', 'description']
+        fields = ['id', 'brand_name', 'dealer_id', 'dealer_name', 'dealer_city',
+                  'dealer_phone', 'dealer_address', 'dealer_state', 'dealer_verified',
+                  'model_name', 'fuel_type', 'vehicle_type', 'price', 'stock_status',
+                  'stock_quantity', 'thumbnail', 'year', 'is_featured', 'is_used',
+                  'range_km', 'battery_capacity', 'max_speed', 'payload_kg',
+                  'seating_capacity', 'warranty_years', 'hsn_code', 'description']
 
 
 class PublicDealerSerializer(serializers.ModelSerializer):
@@ -185,7 +204,7 @@ class PublicDealerSerializer(serializers.ModelSerializer):
     class Meta:
         model  = DealerProfile
         fields = ['id', 'dealer_name', 'city', 'state', 'phone', 'address',
-                  'logo', 'avg_rating', 'review_count', 'vehicle_count']
+                  'description', 'logo', 'avg_rating', 'review_count', 'vehicle_count']
 
     def get_avg_rating(self, obj):
         avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']
