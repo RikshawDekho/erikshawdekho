@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
 import { SalesPage } from './SalesPage';
+import { LIGHT_C, DARK_C, ThemeCtx, useC } from './theme';
 
 // ═══════════════════════════════════════════════════════
 // API LAYER
@@ -8,8 +9,9 @@ const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
 
 async function apiFetch(path, opts = {}, _retry = false) {
   const token = localStorage.getItem("erd_access");
+  const isFormData = opts.body instanceof FormData;
   const res = await fetch(`${API}${path}`, {
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
+    headers: { ...(isFormData ? {} : { "Content-Type": "application/json" }), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
     ...opts,
   });
   if (res.status === 401 && !_retry) {
@@ -45,8 +47,8 @@ const api = {
   vehicles: {
     list:   (p="") => apiFetch(`/vehicles/${p}`),
     get:    (id)   => apiFetch(`/vehicles/${id}/`),
-    create: (d)    => apiFetch("/vehicles/", { method: "POST", body: JSON.stringify(d) }),
-    update: (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    create: (d)    => apiFetch("/vehicles/", { method: "POST", body: d instanceof FormData ? d : JSON.stringify(d) }),
+    update: (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
     delete: (id)   => apiFetch(`/vehicles/${id}/`, { method: "DELETE" }),
   },
   leads: {
@@ -87,6 +89,21 @@ const api = {
     update: (d) => apiFetch("/auth/me/", { method: "PATCH", body: JSON.stringify(d) }),
   },
   enquiry: (d) => apiFetch("/public/enquiry/", { method: "POST", body: JSON.stringify(d) }),
+  enquiries: {
+    list:          (p="") => apiFetch(`/dealer/enquiries/${p}`),
+    markProcessed: (id)   => apiFetch("/dealer/enquiries/", { method: "PATCH", body: JSON.stringify({ id, is_processed: true }) }),
+    unreadCount:   ()     => apiFetch("/dealer/enquiries/unread/"),
+  },
+  admin: {
+    stats:          ()         => apiFetch("/admin-portal/stats/"),
+    users:          (p="")     => apiFetch(`/admin-portal/users/${p}`),
+    deleteUser:     (id)       => apiFetch(`/admin-portal/users/${id}/`, { method: "DELETE" }),
+    dealers:        (p="")     => apiFetch(`/admin-portal/dealers/${p}`),
+    verifyDealer:   (id,d)     => apiFetch(`/admin-portal/dealers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    applications:   (p="")     => apiFetch(`/admin-portal/applications/${p}`),
+    updateApp:      (id,d)     => apiFetch(`/admin-portal/applications/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    enquiries:      (p="")     => apiFetch(`/admin-portal/enquiries/${p}`),
+  },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),
     reviews: (id) => apiFetch(`/dealers/${id}/reviews/`),
@@ -106,6 +123,7 @@ const ToastCtx = createContext(() => {});
 function useToast() { return useContext(ToastCtx); }
 
 function ToastProvider({ children }) {
+  const C = useC();
   const [toasts, setToasts] = useState([]);
   const add = useCallback((msg, type = "info") => {
     const id = Date.now() + Math.random();
@@ -141,6 +159,7 @@ const PlanCtx = createContext(null);
 function usePlan() { return useContext(PlanCtx); }
 
 function PlanGate({ children, feature = "This feature", onUpgrade, plan: planProp }) {
+  const C = useC();
   const ctxPlan = usePlan();
   const plan = planProp ?? ctxPlan;
   if (!plan || plan.is_active) return children;
@@ -162,25 +181,9 @@ function PlanGate({ children, feature = "This feature", onUpgrade, plan: planPro
 }
 
 // ═══════════════════════════════════════════════════════
-// DESIGN TOKENS
+// DESIGN TOKENS (module-level fallback = light theme)
 // ═══════════════════════════════════════════════════════
-const C = {
-  primary: "#1a7c4f",   // deep green
-  primaryL: "#22a866",
-  primaryD: "#115c38",
-  accent: "#f59e0b",    // amber - rickshaw yellow
-  accentL: "#fbbf24",
-  bg: "#f0f4f8",
-  surface: "#ffffff",
-  border: "#e2e8f0",
-  text: "#1e293b",
-  textMid: "#475569",
-  textDim: "#94a3b8",
-  danger: "#ef4444",
-  warning: "#f59e0b",
-  success: "#10b981",
-  info: "#3b82f6",
-};
+const C = LIGHT_C;  // fallback for module-level constants; components call useC() for live value
 
 const STOCK_COLOR = { in_stock: C.success, low_stock: C.warning, out_of_stock: C.danger };
 const LEAD_COLOR  = { new:"#6366f1", interested:C.info, follow_up:C.warning, converted:C.success, lost:C.danger };
@@ -192,22 +195,26 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day:"numeri
 // ═══════════════════════════════════════════════════════
 // SHARED COMPONENTS
 // ═══════════════════════════════════════════════════════
-function Badge({ label, color = C.primary }) {
+function Badge({ label, color }) {
+  const C = useC();
+  const col = color ?? C.primary;
   return (
-    <span style={{ background: `${color}18`, color, border: `1px solid ${color}44`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+    <span style={{ background: `${col}18`, color: col, border: `1px solid ${col}44`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
       {label}
     </span>
   );
 }
 
-function Btn({ label, onClick, color = C.primary, outline, size = "md", icon, disabled, fullWidth, type = "button" }) {
+function Btn({ label, onClick, color, outline, size = "md", icon, disabled, fullWidth, type = "button" }) {
+  const C = useC();
+  const col = color ?? C.primary;
   const pad = size === "sm" ? "5px 12px" : size === "lg" ? "12px 28px" : "8px 18px";
   const fs  = size === "sm" ? 12 : size === "lg" ? 15 : 13;
   return (
     <button type={type} onClick={onClick} disabled={disabled} style={{
-      background: outline ? "transparent" : disabled ? "#e2e8f0" : color,
-      border: `2px solid ${disabled ? "#e2e8f0" : color}`,
-      color: outline ? color : disabled ? C.textDim : "#fff",
+      background: outline ? "transparent" : disabled ? C.border : col,
+      border: `2px solid ${disabled ? C.border : col}`,
+      color: outline ? col : disabled ? C.textDim : "#fff",
       padding: pad, borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
       fontSize: fs, fontWeight: 600, fontFamily: "inherit",
       display: "inline-flex", alignItems: "center", gap: 6,
@@ -220,6 +227,7 @@ function Btn({ label, onClick, color = C.primary, outline, size = "md", icon, di
 }
 
 function Card({ children, style = {}, padding = 20 }) {
+  const C = useC();
   return (
     <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, padding, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", ...style }}>
       {children}
@@ -227,27 +235,30 @@ function Card({ children, style = {}, padding = 20 }) {
   );
 }
 
-function StatCard({ icon, label, value, color = C.primary, sub }) {
+function StatCard({ icon, label, value, color, sub }) {
+  const C = useC();
+  const col = color ?? C.primary;
   return (
     <Card style={{ flex: 1, minWidth: 140 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div>
           <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{label}</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color, fontFamily: "Georgia, serif" }}>{value}</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: col, fontFamily: "Georgia, serif" }}>{value}</div>
           {sub && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>{sub}</div>}
         </div>
-        <div style={{ width: 44, height: 44, borderRadius: 10, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{icon}</div>
+        <div style={{ width: 44, height: 44, borderRadius: 10, background: `${col}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{icon}</div>
       </div>
     </Card>
   );
 }
 
 function Table({ cols, rows, onRow }) {
+  const C = useC();
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ background: "#f8fafc" }}>
+          <tr style={{ background: C.bg }}>
             {cols.map(c => (
               <th key={c.key || c.label} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>
                 {c.label.toUpperCase()}
@@ -261,8 +272,8 @@ function Table({ cols, rows, onRow }) {
           )}
           {rows.map((row, i) => (
             <tr key={i} onClick={() => onRow?.(row)} style={{ borderBottom: `1px solid ${C.border}`, cursor: onRow ? "pointer" : "default", transition: "background 0.1s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-              onMouseLeave={e => e.currentTarget.style.background = ""}>
+              onMouseEnter={e => e.currentTarget.style.background = C.bg}
+              onMouseLeave={e => e.currentTarget.style.background = "inherit"}>
               {cols.map(c => (
                 <td key={c.key || c.label} style={{ padding: "12px 14px", color: C.text, verticalAlign: "middle" }}>
                   {c.render ? c.render(row) : row[c.key] ?? "—"}
@@ -277,6 +288,7 @@ function Table({ cols, rows, onRow }) {
 }
 
 function Modal({ title, children, onClose, width = 560 }) {
+  const C = useC();
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => e.target === e.currentTarget && onClose?.()}>
@@ -292,6 +304,7 @@ function Modal({ title, children, onClose, width = 560 }) {
 }
 
 function Field({ label, children, required }) {
+  const C = useC();
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.textMid, marginBottom: 5 }}>{label}{required && <span style={{ color: C.danger }}> *</span>}</label>
@@ -301,9 +314,10 @@ function Field({ label, children, required }) {
 }
 
 function Input({ value, onChange, placeholder, type = "text", required, style = {} }) {
+  const C = useC();
   return (
     <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required}
-      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: "#fff", outline: "none", boxSizing: "border-box", ...style }}
+      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", ...style }}
       onFocus={e => e.target.style.borderColor = C.primary}
       onBlur={e => e.target.style.borderColor = C.border}
     />
@@ -311,9 +325,10 @@ function Input({ value, onChange, placeholder, type = "text", required, style = 
 }
 
 function Select({ value, onChange, options, placeholder, style = {} }) {
+  const C = useC();
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
-      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: "#fff", outline: "none", boxSizing: "border-box", cursor: "pointer", ...style }}>
+      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer", ...style }}>
       {placeholder && <option value="">{placeholder}</option>}
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -321,20 +336,70 @@ function Select({ value, onChange, options, placeholder, style = {} }) {
 }
 
 function Spinner() {
+  const C = useC();
   return <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
     <div style={{ width: 36, height: 36, borderRadius: "50%", border: `4px solid ${C.border}`, borderTop: `4px solid ${C.primary}`, animation: "spin 0.8s linear infinite" }}/>
   </div>;
 }
 
+function ScreenSaver({ onWake }) {
+  return (
+    <div onClick={onWake} onKeyDown={onWake} tabIndex={0}
+      style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer" }}>
+      <div style={{ fontSize: 64, marginBottom: 16, animation: "pulse 2s ease-in-out infinite" }}>🛺</div>
+      <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, opacity: 0.8 }}>eRickshawDekho</div>
+      <div style={{ color: "#fff", fontSize: 13, opacity: 0.5, marginTop: 8 }}>Click anywhere to wake</div>
+      <style>{`@keyframes pulse { 0%,100%{transform:scale(1);opacity:0.8} 50%{transform:scale(1.1);opacity:1} }`}</style>
+    </div>
+  );
+}
+
+function DateFilter({ from, to, onChange }) {
+  const C = useC();
+  const today = new Date();
+  const fmt = d => d.toISOString().split('T')[0];
+  const presets = [
+    { label: 'Today',      f: fmt(today), t: fmt(today) },
+    { label: 'This Week',  f: fmt(new Date(today - 6*86400000)), t: fmt(today) },
+    { label: 'This Month', f: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), t: fmt(today) },
+    { label: 'This Year',  f: fmt(new Date(today.getFullYear(), 0, 1)), t: fmt(today) },
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      {presets.map(p => {
+        const active = from === p.f && to === p.t;
+        return (
+          <button key={p.label} onClick={() => onChange(p.f, p.t)}
+            style={{ padding: '4px 10px', borderRadius: 14, border: `1.5px solid ${active ? C.primary : C.border}`, background: active ? C.primary : '#fff', color: active ? '#fff' : C.textMid, cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+            {p.label}
+          </button>
+        );
+      })}
+      <input type="date" value={from} onChange={e => onChange(e.target.value, to)}
+        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }} />
+      <span style={{ fontSize: 11, color: C.textDim }}>–</span>
+      <input type="date" value={to} onChange={e => onChange(from, e.target.value)}
+        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }} />
+      {(from || to) && (
+        <button onClick={() => onChange('', '')}
+          style={{ padding: '4px 8px', borderRadius: 14, border: `1.5px solid ${C.danger}40`, background: `${C.danger}10`, color: C.danger, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>
+          ✕ Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Pagination({ page, totalPages, onPage }) {
+  const C = useC();
   if (totalPages <= 1) return null;
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "14px 0" }}>
-      <button onClick={() => onPage(page - 1)} disabled={page <= 1} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: "#fff", cursor: page <= 1 ? "not-allowed" : "pointer", color: page <= 1 ? C.textDim : C.text }}>‹</button>
+      <button onClick={() => onPage(page - 1)} disabled={page <= 1} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface, cursor: page <= 1 ? "not-allowed" : "pointer", color: page <= 1 ? C.textDim : C.text }}>‹</button>
       {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(p => (
-        <button key={p} onClick={() => onPage(p)} style={{ width: 34, height: 34, border: `1px solid ${p === page ? C.primary : C.border}`, borderRadius: 6, background: p === page ? C.primary : "#fff", color: p === page ? "#fff" : C.text, cursor: "pointer", fontWeight: p === page ? 700 : 400 }}>{p}</button>
+        <button key={p} onClick={() => onPage(p)} style={{ width: 34, height: 34, border: `1px solid ${p === page ? C.primary : C.border}`, borderRadius: 6, background: p === page ? C.primary : C.surface, color: p === page ? "#fff" : C.text, cursor: "pointer", fontWeight: p === page ? 700 : 400 }}>{p}</button>
       ))}
-      <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: "#fff", cursor: page >= totalPages ? "not-allowed" : "pointer", color: page >= totalPages ? C.textDim : C.text }}>›</button>
+      <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface, cursor: page >= totalPages ? "not-allowed" : "pointer", color: page >= totalPages ? C.textDim : C.text }}>›</button>
     </div>
   );
 }
@@ -343,6 +408,7 @@ function Pagination({ page, totalPages, onPage }) {
 // MINI CHART
 // ═══════════════════════════════════════════════════════
 function BarChart({ data, height = 120 }) {
+  const C = useC();
   if (!data || !data.length) return null;
   const max = Math.max(...data.map(d => d.revenue || 0)) || 1;
   return (
@@ -358,6 +424,7 @@ function BarChart({ data, height = 120 }) {
 }
 
 function DonutChart({ data, size = 100 }) {
+  const C = useC();
   const total = Object.values(data || {}).reduce((a, b) => a + b, 0) || 1;
   const colors = { electric: C.success, petrol: "#f97316", cng: "#06b6d4", lpg: "#8b5cf6", diesel: "#64748b" };
   const entries = Object.entries(data || {});
@@ -389,6 +456,7 @@ function DonutChart({ data, size = 100 }) {
 // AUTH PAGES
 // ═══════════════════════════════════════════════════════
 function AuthPage({ onAuth }) {
+  const C = useC();
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "Delhi" });
   const [fieldErrors, setFieldErrors] = useState({});
@@ -476,12 +544,12 @@ function AuthPage({ onAuth }) {
               <Field label="City"><Input value={form.city} onChange={set("city")} placeholder="Delhi" /></Field>
             </>}
             {fieldErrors.non_field_errors && (
-              <div style={{ background: "#fef2f2", border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
+              <div style={{ background: `${C.danger}12`, border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
                 ✕ {fieldErrors.non_field_errors}
               </div>
             )}
             {fieldErrors.detail && (
-              <div style={{ background: "#fef2f2", border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
+              <div style={{ background: `${C.danger}12`, border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
                 ✕ {fieldErrors.detail}
               </div>
             )}
@@ -518,6 +586,7 @@ const BOTTOM_NAV = [
 ];
 
 function Sidebar({ page, setPage, dealer, onLogout }) {
+  const C = useC();
   return (
     <>
       {/* Desktop sidebar */}
@@ -581,13 +650,38 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
   );
 }
 
-function Topbar({ dealer, page, onAddNew, onProfile }) {
+function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
+  const C = useC();
+  const { isDark, toggle } = useContext(ThemeCtx);
+  const [unread, setUnread] = useState(0);
   const pageLabel = [...NAV, { id: "account", label: "My Account" }, { id: "plans", label: "Plans & Pricing" }].find(n => n.id === page)?.label || page;
+
+  useEffect(() => {
+    if (!dealer) return;
+    const fetchUnread = () => api.enquiries.unreadCount().then(d => setUnread(d.unread || 0)).catch(() => {});
+    fetchUnread();
+    const id = setInterval(fetchUnread, 60000);
+    return () => clearInterval(id);
+  }, [dealer]);
+
   return (
     <div style={{ height: 60, background: C.surface, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", position: "sticky", top: 0, zIndex: 10 }}>
       <div style={{ fontWeight: 700, fontSize: 18, color: C.text }}>{pageLabel}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {page === "inventory" && <Btn label="+ Add Vehicle" color={C.primary} size="sm" onClick={onAddNew} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {page === "inventory" && <Btn label="+ Add Vehicle" size="sm" onClick={onAddNew} />}
+        {/* Bell icon — navigates to Leads → Enquiries tab */}
+        <button onClick={onBell} title="Buyer Enquiries" style={{ position: "relative", background: unread > 0 ? `${C.danger}12` : "none", border: `1.5px solid ${unread > 0 ? C.danger : C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+          🔔
+          {unread > 0 && (
+            <span style={{ position: "absolute", top: -5, right: -5, background: C.danger, color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {unread > 9 ? "9+" : unread}
+            </span>
+          )}
+        </button>
+        {/* Dark mode toggle */}
+        <button onClick={toggle} title={isDark ? "Light Mode" : "Dark Mode"} style={{ background: isDark ? C.surface : C.bg, border: `1.5px solid ${C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+          {isDark ? "☀️" : "🌙"}
+        </button>
         <button onClick={onProfile} style={{
           display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
           background: C.bg, borderRadius: 20, border: `1.5px solid ${C.border}`,
@@ -612,6 +706,7 @@ function Topbar({ dealer, page, onAddNew, onProfile }) {
 // DASHBOARD PAGE
 // ═══════════════════════════════════════════════════════
 function Dashboard({ onNavigate }) {
+  const C = useC();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -750,6 +845,7 @@ function Dashboard({ onNavigate }) {
 // INVENTORY PAGE
 // ═══════════════════════════════════════════════════════
 function Inventory({ showAdd, onAddClose, onNavigate }) {
+  const C = useC();
   const toast = useToast();
   const plan = usePlan();
   const [vehicles, setVehicles] = useState([]);
@@ -759,8 +855,13 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", price: "", stock_quantity: "", year: 2024, description: "" });
+  const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", vehicle_type: "passenger", price: "", stock_quantity: "", year: 2024, description: "", thumbnail: null });
   const [saving, setSaving] = useState(false);
+  const [editVehicle, setEditVehicle] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [viewVehicle, setViewVehicle] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -788,7 +889,23 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     if (!form.price) { toast("Price is required.", "warning"); return; }
     setSaving(true);
     try {
-      await api.vehicles.create({ ...form, brand: form.brand_id });
+      let payload;
+      if (form.thumbnail) {
+        payload = new FormData();
+        payload.append("brand", form.brand_id);
+        payload.append("model_name", form.model_name);
+        payload.append("fuel_type", form.fuel_type);
+        payload.append("vehicle_type", form.vehicle_type);
+        payload.append("price", form.price);
+        if (form.stock_quantity) payload.append("stock_quantity", form.stock_quantity);
+        payload.append("year", form.year);
+        if (form.description) payload.append("description", form.description);
+        payload.append("thumbnail", form.thumbnail);
+      } else {
+        const { thumbnail, brand_id, ...rest } = form;
+        payload = { ...rest, brand: brand_id };
+      }
+      await api.vehicles.create(payload);
       toast("Vehicle added successfully!", "success");
       onAddClose(); load();
     } catch (err) {
@@ -798,9 +915,57 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     setSaving(false);
   };
 
+  const openEdit = (v) => {
+    setEditVehicle(v);
+    setEditForm({ model_name: v.model_name, fuel_type: v.fuel_type, vehicle_type: v.vehicle_type || "passenger", price: v.price, stock_quantity: v.stock_quantity, year: v.year, description: v.description || "", thumbnail: null });
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    if (!editForm.model_name.trim()) { toast("Model name is required.", "warning"); return; }
+    if (!editForm.price) { toast("Price is required.", "warning"); return; }
+    setEditSaving(true);
+    try {
+      let payload;
+      if (editForm.thumbnail) {
+        payload = new FormData();
+        payload.append("model_name", editForm.model_name);
+        payload.append("fuel_type", editForm.fuel_type);
+        payload.append("vehicle_type", editForm.vehicle_type);
+        payload.append("price", editForm.price);
+        if (editForm.stock_quantity) payload.append("stock_quantity", editForm.stock_quantity);
+        payload.append("year", editForm.year);
+        if (editForm.description) payload.append("description", editForm.description);
+        payload.append("thumbnail", editForm.thumbnail);
+      } else {
+        const { thumbnail, ...rest } = editForm;
+        payload = rest;
+      }
+      await api.vehicles.update(editVehicle.id, payload);
+      toast("Vehicle updated successfully!", "success");
+      setEditVehicle(null); load();
+    } catch (err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to update vehicle.";
+      toast(msg, "error");
+    }
+    setEditSaving(false);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await api.vehicles.delete(deleteId);
+      toast("Vehicle removed from inventory.", "success");
+      setDeleteId(null); load();
+    } catch {
+      toast("Failed to delete vehicle.", "error");
+    }
+  };
+
   const cols = [
     { label: "ID",       render: r => <span style={{ color: C.textDim, fontSize: 12 }}>{r.id}</span> },
-    { label: "Thumbnail",render: r => <div style={{ width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛺</div> },
+    { label: "Thumbnail",render: r => r.thumbnail
+        ? <img src={r.thumbnail} alt={r.model_name} style={{ width: 56, height: 40, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.border}` }} />
+        : <div style={{ width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛺</div> },
     { label: "Model",    render: r => <div><div style={{ fontWeight: 600 }}>{r.model_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.brand_name}</div></div> },
     { label: "Brand",    key:    "brand_name" },
     { label: "Fuel",     render: r => <Badge label={r.fuel_type} color={FUEL_COLOR[r.fuel_type]} /> },
@@ -808,9 +973,10 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     { label: "Stock",    render: r => <span style={{ fontWeight: 700, color: STOCK_COLOR[r.stock_status] }}>{r.stock_quantity}</span> },
     { label: "Status",   render: r => <Badge label={r.stock_status.replace("_", " ")} color={STOCK_COLOR[r.stock_status]} /> },
     { label: "Actions",  render: r => (
-      <div style={{ display: "flex", gap: 6 }}>
-        <Btn label="View" size="sm" outline color={C.info} />
-        <Btn label="Edit" size="sm" outline color={C.primary} />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <Btn label="View"   size="sm" outline color={C.info}    onClick={() => setViewVehicle(r)} />
+        <Btn label="Edit"   size="sm" outline color={C.primary} onClick={() => openEdit(r)} />
+        <Btn label="Delete" size="sm" outline color={C.danger}  onClick={() => setDeleteId(r.id)} />
       </div>
     )},
   ];
@@ -855,27 +1021,138 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
       {/* Add Vehicle Modal */}
       {showAdd && (
-        <Modal title="Add New Vehicle" onClose={onAddClose} width={560}>
+        <Modal title="Add New Vehicle" onClose={onAddClose} width={580}>
           <form onSubmit={submit}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <Field label="Brand" required>
                 <Select value={form.brand_id} onChange={setForm_("brand_id")} placeholder="Select brand"
                   options={brands.map(b => ({ value: b.id, label: b.name }))} />
               </Field>
-              <Field label="Model Name" required><Input value={form.model_name} onChange={setForm_("model_name")} placeholder="e.g. YatriKing Pro" required /></Field>
-              <Field label="Fuel Type" required>
-                <Select value={form.fuel_type} onChange={setForm_("fuel_type")} options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"}]} />
+              <Field label="Model Name" required><Input value={form.model_name} onChange={setForm_("model_name")} placeholder="e.g. YatriKing Pro" /></Field>
+              <Field label="Vehicle Type" required>
+                <Select value={form.vehicle_type} onChange={setForm_("vehicle_type")} options={[{value:"passenger",label:"Passenger Rickshaw"},{value:"cargo",label:"Cargo Loader"},{value:"auto",label:"Auto Rickshaw"}]} />
               </Field>
-              <Field label="Price (₹)" required><Input value={form.price} onChange={setForm_("price")} type="number" placeholder="150000" required /></Field>
+              <Field label="Fuel Type" required>
+                <Select value={form.fuel_type} onChange={setForm_("fuel_type")} options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"},{value:"diesel",label:"Diesel"}]} />
+              </Field>
+              <Field label="Price (₹)" required><Input value={form.price} onChange={setForm_("price")} type="number" placeholder="150000" /></Field>
               <Field label="Stock Quantity"><Input value={form.stock_quantity} onChange={setForm_("stock_quantity")} type="number" placeholder="10" /></Field>
               <Field label="Year"><Input value={form.year} onChange={setForm_("year")} type="number" placeholder="2024" /></Field>
             </div>
-            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description..." /></Field>
+            <Field label="Vehicle Photo (optional)" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <input type="file" accept="image/*" onChange={e => setForm_("thumbnail")(e.target.files[0] || null)}
+                  style={{ flex: 1, fontSize: 13, cursor: "pointer", padding: "8px 0" }} />
+                {form.thumbnail && (
+                  <img src={URL.createObjectURL(form.thumbnail)} alt="preview"
+                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+                )}
+              </div>
+            </Field>
+            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} placeholder="Vehicle description, key specs..." /></Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={onAddClose} />
               <Btn label={saving ? "Saving..." : "Add Vehicle"} color={C.primary} type="submit" disabled={saving} />
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* Edit Vehicle Modal */}
+      {editVehicle && (
+        <Modal title={`Edit — ${editVehicle.brand_name} ${editVehicle.model_name}`} onClose={() => setEditVehicle(null)} width={580}>
+          <form onSubmit={saveEdit}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <Field label="Model Name" required>
+                <Input value={editForm.model_name} onChange={v => setEditForm(p => ({ ...p, model_name: v }))} />
+              </Field>
+              <Field label="Vehicle Type">
+                <Select value={editForm.vehicle_type} onChange={v => setEditForm(p => ({ ...p, vehicle_type: v }))}
+                  options={[{value:"passenger",label:"Passenger Rickshaw"},{value:"cargo",label:"Cargo Loader"},{value:"auto",label:"Auto Rickshaw"}]} />
+              </Field>
+              <Field label="Fuel Type">
+                <Select value={editForm.fuel_type} onChange={v => setEditForm(p => ({ ...p, fuel_type: v }))}
+                  options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"},{value:"diesel",label:"Diesel"}]} />
+              </Field>
+              <Field label="Price (₹)" required>
+                <Input value={editForm.price} onChange={v => setEditForm(p => ({ ...p, price: v }))} type="number" />
+              </Field>
+              <Field label="Stock Quantity">
+                <Input value={editForm.stock_quantity} onChange={v => setEditForm(p => ({ ...p, stock_quantity: v }))} type="number" />
+              </Field>
+              <Field label="Year">
+                <Input value={editForm.year} onChange={v => setEditForm(p => ({ ...p, year: v }))} type="number" />
+              </Field>
+            </div>
+            <Field label="Update Photo (optional)" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {editVehicle.thumbnail && !editForm.thumbnail && (
+                  <img src={editVehicle.thumbnail} alt="current"
+                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+                )}
+                <input type="file" accept="image/*" onChange={e => setEditForm(p => ({ ...p, thumbnail: e.target.files[0] || null }))}
+                  style={{ flex: 1, fontSize: 13, cursor: "pointer", padding: "8px 0" }} />
+                {editForm.thumbnail && (
+                  <img src={URL.createObjectURL(editForm.thumbnail)} alt="new preview"
+                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `2px solid ${C.primary}` }} />
+                )}
+              </div>
+            </Field>
+            <Field label="Description">
+              <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3}
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} placeholder="Vehicle description..." />
+            </Field>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setEditVehicle(null)} />
+              <Btn label={editSaving ? "Saving..." : "Save Changes"} color={C.primary} type="submit" disabled={editSaving} />
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* View Vehicle Modal */}
+      {viewVehicle && (
+        <Modal title={`${viewVehicle.brand_name} ${viewVehicle.model_name}`} onClose={() => setViewVehicle(null)} width={500}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {[
+              ["Brand",       viewVehicle.brand_name],
+              ["Model",       viewVehicle.model_name],
+              ["Fuel Type",   viewVehicle.fuel_type],
+              ["Price",       `₹${Number(viewVehicle.price).toLocaleString("en-IN")}`],
+              ["Stock",       viewVehicle.stock_quantity],
+              ["Status",      viewVehicle.stock_status?.replace("_"," ")],
+              ["Year",        viewVehicle.year],
+              ["Type",        viewVehicle.vehicle_type],
+            ].map(([label, val]) => (
+              <div key={label} style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
+                <div style={{ fontSize: 10, color: C.textDim, marginBottom: 2 }}>{label.toUpperCase()}</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{val || "—"}</div>
+              </div>
+            ))}
+          </div>
+          {viewVehicle.description && (
+            <div style={{ marginTop: 14, background: C.bg, borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontSize: 10, color: C.textDim, marginBottom: 4 }}>DESCRIPTION</div>
+              <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>{viewVehicle.description}</div>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+            <Btn label="Edit Vehicle" color={C.primary} onClick={() => { setViewVehicle(null); openEdit(viewVehicle); }} />
+            <Btn label="Close" outline color={C.textMid} onClick={() => setViewVehicle(null)} />
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Confirmation */}
+      {deleteId && (
+        <Modal title="Confirm Delete" onClose={() => setDeleteId(null)} width={400}>
+          <div style={{ fontSize: 14, color: C.text, marginBottom: 20 }}>
+            Are you sure you want to remove this vehicle from inventory? This action marks it as inactive and cannot be undone easily.
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Btn label="Cancel" outline color={C.textMid} onClick={() => setDeleteId(null)} />
+            <Btn label="Yes, Delete" color={C.danger} onClick={confirmDelete} />
+          </div>
         </Modal>
       )}
     </div>
@@ -886,19 +1163,53 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════
 function Leads({ onNavigate }) {
+  const C = useC();
   const toast = useToast();
   const plan = usePlan();
+  const [tab, setTab] = useState("leads"); // "leads" | "enquiries"
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ customer_name: "", phone: "", source: "website", status: "new", notes: "", vehicle: "" });
   const [vehicles, setVehicles] = useState([]);
+  const [enquiries, setEnquiries] = useState([]);
+  const [enquiriesLoading, setEnquiriesLoading] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [enquiryPage, setEnquiryPage] = useState(1);
+  const [enquiryTotal, setEnquiryTotal] = useState(0);
+  const [enquirySearch, setEnquirySearch] = useState("");
+  const [enquiryDateFrom, setEnquiryDateFrom] = useState("");
+  const [enquiryDateTo, setEnquiryDateTo] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    api.leads.list().then(d => setLeads(d.results || d)).finally(() => setLoading(false));
-  }, []);
+    const p = new URLSearchParams();
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo)   p.set("date_to",   dateTo);
+    const qs = p.toString() ? `?${p}` : "";
+    api.leads.list(qs).then(d => setLeads(d.results || d)).finally(() => setLoading(false));
+  }, [dateFrom, dateTo]);
+
+  const loadEnquiries = useCallback(() => {
+    setEnquiriesLoading(true);
+    const p = new URLSearchParams();
+    if (enquirySearch)   p.set("search", enquirySearch);
+    if (enquiryDateFrom) p.set("date_from", enquiryDateFrom);
+    if (enquiryDateTo)   p.set("date_to", enquiryDateTo);
+    p.set("page", enquiryPage);
+    api.enquiries.list(`?${p}`).then(d => { setEnquiries(d.results || []); setEnquiryTotal(d.count || 0); }).catch(() => {}).finally(() => setEnquiriesLoading(false));
+  }, [enquirySearch, enquiryDateFrom, enquiryDateTo, enquiryPage]);
+
   useEffect(() => { load(); api.vehicles.list().then(d => setVehicles(d.results || d)); }, [load]);
+
+  // Poll enquiries every 30 seconds when on that tab
+  useEffect(() => {
+    if (tab !== "enquiries") return;
+    loadEnquiries();
+    const id = setInterval(loadEnquiries, 30000);
+    return () => clearInterval(id);
+  }, [tab, loadEnquiries]);
 
   const setF = k => v => setForm(p => ({ ...p, [k]: v }));
 
@@ -924,6 +1235,12 @@ function Leads({ onNavigate }) {
     setLeads(p => p.map(l => l.id === id ? { ...l, status } : l));
   };
 
+  const markEnquiryProcessed = async (id) => {
+    await api.enquiries.markProcessed(id);
+    setEnquiries(p => p.map(e => e.id === id ? { ...e, is_processed: true } : e));
+    toast("Marked as processed.", "success");
+  };
+
   const cols = [
     { label: "Customer", render: r => <div><div style={{ fontWeight: 600 }}>{r.customer_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.phone}</div></div> },
     { label: "Vehicle",  render: r => <span style={{ fontSize: 12 }}>{r.vehicle_name || "—"}</span> },
@@ -940,13 +1257,101 @@ function Leads({ onNavigate }) {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <Btn label="+ Add Lead" color={C.primary} onClick={() => setShowAdd(true)} />
+      {/* Tab switcher */}
+      <div style={{ display: "flex", gap: 2, marginBottom: 20, background: C.bg, borderRadius: 8, padding: 4, width: "fit-content" }}>
+        {[["leads","Pipeline Leads"],["enquiries","Buyer Enquiries"]].map(([id,label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            padding: "8px 20px", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+            fontWeight: 600, fontSize: 13, background: tab === id ? C.primary : "transparent",
+            color: tab === id ? "#fff" : C.textMid,
+          }}>
+            {label}
+            {id === "enquiries" && enquiries.filter(e => !e.is_processed).length > 0 && (
+              <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 10 }}>
+                {enquiries.filter(e => !e.is_processed).length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
-      <Card padding={0}>
-        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>All Leads ({leads.length})</div>
-        {loading ? <Spinner /> : <Table cols={cols} rows={leads} />}
-      </Card>
+
+      {tab === "leads" && (
+        <>
+          <Card padding={12} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <DateFilter from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn label="↺ Refresh" size="sm" outline color={C.primary} onClick={load} />
+                <Btn label="+ Add Lead" color={C.primary} onClick={() => setShowAdd(true)} />
+              </div>
+            </div>
+          </Card>
+          <Card padding={0}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>
+              Pipeline Leads ({leads.length}){(dateFrom || dateTo) && <span style={{ fontSize: 12, color: C.primary, fontWeight: 400, marginLeft: 8 }}>filtered by date</span>}
+            </div>
+            {loading ? <Spinner /> : <Table cols={cols} rows={leads} />}
+          </Card>
+        </>
+      )}
+
+      {tab === "enquiries" && (
+        <Card padding={0}>
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Buyer Enquiries from Marketplace</div>
+          </div>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <input value={enquirySearch} onChange={e => { setEnquirySearch(e.target.value); setEnquiryPage(1); }}
+              placeholder="Search buyer name / phone..." style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+            <DateFilter from={enquiryDateFrom} to={enquiryDateTo} onChange={(f,t) => { setEnquiryDateFrom(f); setEnquiryDateTo(t); setEnquiryPage(1); }} />
+            <Btn label="Refresh" size="sm" outline onClick={loadEnquiries} />
+          </div>
+          {enquiriesLoading && enquiries.length === 0 ? <Spinner /> : (
+            <div style={{ overflowX: "auto" }}>
+              {enquiries.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", color: C.textDim }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+                  No buyer enquiries yet. Enquiries from the public marketplace will appear here.
+                </div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      {["Buyer", "Phone", "City", "Vehicle Interest", "Message", "Time", "Status"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enquiries.map(e => (
+                      <tr key={e.id} style={{ borderBottom: `1px solid ${C.border}`, background: e.is_processed ? "#fff" : `${C.primary}06` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600 }}>{e.customer_name}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <a href={`tel:${e.phone}`} style={{ color: C.primary, fontWeight: 600, textDecoration: "none" }}>{e.phone}</a>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: C.textMid, fontSize: 12 }}>{e.city || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12 }}>{e.vehicle || "General Inquiry"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textMid, maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.notes || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 11, color: C.textDim, whiteSpace: "nowrap" }}>
+                          {new Date(e.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {e.is_processed
+                            ? <span style={{ fontSize: 11, color: C.success, fontWeight: 600 }}>✓ Done</span>
+                            : <Btn label="Mark Done" size="sm" color={C.success} onClick={() => markEnquiryProcessed(e.id)} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+          <Pagination page={enquiryPage} totalPages={Math.ceil(enquiryTotal/20)} onPage={setEnquiryPage} />
+        </Card>
+      )}
 
       {showAdd && (
         <Modal title="Add New Lead" onClose={() => setShowAdd(false)}>
@@ -961,7 +1366,7 @@ function Leads({ onNavigate }) {
                 <Select value={form.vehicle} onChange={setF("vehicle")} placeholder="Select vehicle" options={vehicles.map(v => ({ value: v.id, label: `${v.brand_name} ${v.model_name}` }))} />
               </Field>
             </div>
-            <Field label="Notes"><textarea value={form.notes} onChange={e => setF("notes")(e.target.value)} rows={2} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} /></Field>
+            <Field label="Notes"><textarea value={form.notes} onChange={e => setF("notes")(e.target.value)} rows={2} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} /></Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAdd(false)} />
               <Btn label="Add Lead" color={C.primary} type="submit" />
@@ -977,6 +1382,7 @@ function Leads({ onNavigate }) {
 // INVOICE VIEW (matching reference image)
 // ═══════════════════════════════════════════════════════
 function InvoiceView({ inv }) {
+  const C = useC();
   if (!inv) return null;
   return (
     <div style={{ fontFamily: "inherit", fontSize: 13, color: C.text }}>
@@ -1062,14 +1468,26 @@ function InvoiceView({ inv }) {
 // CUSTOMERS PAGE
 // ═══════════════════════════════════════════════════════
 function Customers() {
+  const C = useC();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", address: "", gstin: "" });
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const toast = useToast();
-  const load = () => { setLoading(true); api.customers.list().then(d => setCustomers(d.results || d)).finally(() => setLoading(false)); };
-  useEffect(() => { load(); }, []);
+  const load = useCallback(() => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (search)   p.set("search", search);
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo)   p.set("date_to", dateTo);
+    const qs = p.toString() ? `?${p}` : "";
+    api.customers.list(qs).then(d => setCustomers(d.results || d)).finally(() => setLoading(false));
+  }, [search, dateFrom, dateTo]);
+  useEffect(() => { load(); }, [load]);
   const setF = k => v => setForm(p => ({ ...p, [k]: v }));
   const submit = async (e) => {
     e.preventDefault();
@@ -1096,9 +1514,15 @@ function Customers() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <Btn label="+ Add Customer" color={C.primary} onClick={() => setShowAdd(true)} />
-      </div>
+      <Card style={{ marginBottom: 14, padding: 14 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name / phone..."
+            style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+          <DateFilter from={dateFrom} to={dateTo} onChange={(f,t) => { setDateFrom(f); setDateTo(t); }} />
+          <Btn label="↺ Refresh" size="sm" outline onClick={load} />
+          <Btn label="+ Add Customer" onClick={() => setShowAdd(true)} />
+        </div>
+      </Card>
       <Card padding={0}>
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>All Customers</div>
         {loading ? <Spinner /> : <Table cols={cols} rows={customers} />}
@@ -1129,12 +1553,25 @@ function Customers() {
 // FINANCE PAGE
 // ═══════════════════════════════════════════════════════
 function Finance() {
+  const C = useC();
   const [emiForm, setEmiForm] = useState({ principal: 150000, rate: 12, tenure: 36 });
   const [emiResult, setEmiResult] = useState(null);
   const [loans, setLoans] = useState([]);
+  const [loanSearch, setLoanSearch] = useState("");
+  const [loanDateFrom, setLoanDateFrom] = useState("");
+  const [loanDateTo, setLoanDateTo] = useState("");
   const setF = k => v => setEmiForm(p => ({ ...p, [k]: v }));
 
-  useEffect(() => { api.finance.loans().then(d => setLoans(d.results || d)); }, []);
+  const loadLoans = useCallback(() => {
+    const p = new URLSearchParams();
+    if (loanSearch)   p.set("search", loanSearch);
+    if (loanDateFrom) p.set("date_from", loanDateFrom);
+    if (loanDateTo)   p.set("date_to", loanDateTo);
+    const qs = p.toString() ? `?${p}` : "";
+    api.finance.loans(qs).then(d => setLoans(d.results || d));
+  }, [loanSearch, loanDateFrom, loanDateTo]);
+
+  useEffect(() => { loadLoans(); }, [loadLoans]);
 
   const calcEMI = async () => {
     const r = await api.finance.emi({ ...emiForm });
@@ -1180,10 +1617,20 @@ function Finance() {
       </div>
 
       {/* Loans table */}
-      <Card padding={0}>
-        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>Loan Applications</div>
-        <Table cols={cols} rows={loans} />
-      </Card>
+      <div>
+        <Card style={{ marginBottom: 14, padding: 14 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <input value={loanSearch} onChange={e => setLoanSearch(e.target.value)} placeholder="Search customer / bank..."
+              style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+            <DateFilter from={loanDateFrom} to={loanDateTo} onChange={(f,t) => { setLoanDateFrom(f); setLoanDateTo(t); }} />
+            <Btn label="↺ Refresh" size="sm" outline onClick={loadLoans} />
+          </div>
+        </Card>
+        <Card padding={0}>
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>Loan Applications</div>
+          <Table cols={cols} rows={loans} />
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1213,11 +1660,12 @@ function ToggleSwitch({ checked, onChange, label, sub }) {
 }
 
 function AccountPage({ dealer: dealerProp, onLogout }) {
+  const C = useC();
   const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({ dealer_name: "", phone: "", city: "", email: "" });
+  const [editForm, setEditForm] = useState({ dealer_name: "", phone: "", city: "", email: "", address: "", description: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [prefs, setPrefs] = useState({ notify_email: true, notify_whatsapp: true, notify_push: true });
   const [prefsLoading, setPrefsLoading] = useState(true);
@@ -1225,10 +1673,17 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
   const [prefsSaved, setPrefsSaved] = useState(false);
 
   const loadData = () => {
-    api.dashboard().then(d => {
-      setData(d);
-      setEditForm({ dealer_name: d.dealer?.name || "", phone: d.dealer?.phone || "", city: d.dealer?.city || "", email: d.user?.email || "" });
-    }).finally(() => setLoading(false));
+    Promise.all([api.me(), api.dashboard()]).then(([me, dash]) => {
+      setData({ ...me, plan: dash.plan });
+      setEditForm({
+        dealer_name: me.dealer?.name || "",
+        phone: me.dealer?.phone || "",
+        city: me.dealer?.city || "",
+        email: me.user?.email || "",
+        address: me.dealer?.address || "",
+        description: me.dealer?.description || "",
+      });
+    }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -1294,6 +1749,16 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
               <Field label="Phone"><Input value={editForm.phone} onChange={v => setEditForm(p => ({ ...p, phone: v }))} placeholder="9876543210" /></Field>
               <Field label="City"><Input value={editForm.city} onChange={v => setEditForm(p => ({ ...p, city: v }))} placeholder="Delhi" /></Field>
               <Field label="Email"><Input value={editForm.email} onChange={v => setEditForm(p => ({ ...p, email: v }))} type="email" placeholder="you@email.com" /></Field>
+              <div style={{ gridColumn: "span 2" }}>
+                <Field label="Address"><Input value={editForm.address} onChange={v => setEditForm(p => ({ ...p, address: v }))} placeholder="Shop No. 12, Sector 5, Rohini, Delhi" /></Field>
+              </div>
+              <div style={{ gridColumn: "span 2" }}>
+                <Field label="Showroom Description">
+                  <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3}
+                    style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }}
+                    placeholder="Tell buyers about your showroom — specialties, brands, experience, service..." />
+                </Field>
+              </div>
             </div>
             <Btn label={editSaving ? "Saving..." : "Save Changes"} color={C.primary} onClick={saveProfile} disabled={editSaving} />
           </div>
@@ -1397,6 +1862,7 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
 // REPORTS PAGE
 // ═══════════════════════════════════════════════════════
 function Reports() {
+  const C = useC();
   const [data, setData] = useState(null);
   const [period, setPeriod] = useState("month");
 
@@ -1481,7 +1947,7 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
   const [reviews, setReviews] = useState([]);
   const [reviewForm, setReviewForm] = useState({ reviewer_name: "", reviewer_phone: "", rating: 0, comment: "" });
   const [reviewSaving, setReviewSaving] = useState(false);
-  const [enquiryForm, setEnquiryForm] = useState({ customer_name: "", phone: "", city: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
+  const [enquiryForm, setEnquiryForm] = useState({ customer_name: "", phone: "", email: "", pincode: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
   const [enquirySending, setEnquirySending] = useState(false);
 
   useEffect(() => {
@@ -1519,19 +1985,26 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 
   const submitEnquiry = async (e) => {
     e.preventDefault();
-    if (!enquiryForm.customer_name.trim()) { toast("Please enter your name.", "warning"); return; }
-    if (!enquiryForm.phone.trim()) { toast("Please enter your mobile number.", "warning"); return; }
+    if (!enquiryForm.customer_name.trim()) { toast("नाम डालना ज़रूरी है। (Name is required.)", "warning"); return; }
+    if (!enquiryForm.phone.trim()) { toast("मोबाइल नंबर डालना ज़रूरी है। (Mobile number is required.)", "warning"); return; }
     if (!/^[6-9]\d{9}$/.test(enquiryForm.phone.replace(/\D/g, "").slice(-10))) {
-      toast("Enter a valid 10-digit Indian mobile number.", "warning"); return;
+      toast("10 अंकों का सही मोबाइल नंबर डालें। (Enter valid 10-digit mobile.)", "warning"); return;
+    }
+    if (enquiryForm.pincode && !/^\d{6}$/.test(enquiryForm.pincode.trim())) {
+      toast("Pin code 6 digits होना चाहिए। (Pin code must be 6 digits.)", "warning"); return;
+    }
+    if (enquiryForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(enquiryForm.email)) {
+      toast("Valid email address डालें।", "warning"); return;
     }
     setEnquirySending(true);
     try {
-      await api.enquiry({ ...enquiryForm, vehicle: v.id });
-      toast("Enquiry sent! The dealer will call you within 24 hours.", "success");
+      const city = enquiryForm.pincode ? `PIN: ${enquiryForm.pincode}` : "";
+      await api.enquiry({ ...enquiryForm, city, vehicle: v.id });
+      toast("Enquiry भेज दी गई! Dealer 24 घंटों में call करेगा।", "success");
       setTab("overview");
-      setEnquiryForm({ customer_name: "", phone: "", city: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
+      setEnquiryForm({ customer_name: "", phone: "", email: "", pincode: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
     } catch (err) {
-      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to send enquiry. Try again.";
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Enquiry नहीं भेजी जा सकी। फिर कोशिश करें।";
       toast(msg, "error");
     }
     setEnquirySending(false);
@@ -1640,7 +2113,7 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
               </Field>
               <Field label="Your Review">
                 <textarea value={reviewForm.comment} onChange={e => setReviewForm(p => ({ ...p, comment: e.target.value }))} rows={3}
-                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }}
                   placeholder="How was your experience with this dealer?" />
               </Field>
               <Btn label={reviewSaving ? "Submitting..." : "Submit Review"} color={C.primary} type="submit" disabled={reviewSaving} />
@@ -1666,26 +2139,48 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 
       {tab === "enquiry" && (
         <div>
-          <div style={{ background: `${C.primary}08`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.primary }}>
+          <div style={{ background: `${C.primary}08`, borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13, color: C.primary }}>
             🛺 <b>{v.brand_name} {v.model_name}</b> — Starting at {fmtINR(v.price)}
+          </div>
+          <div style={{ background: `${C.success}12`, border: `1px solid ${C.success}40`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>
+            🏪 Your enquiry will be sent to: <b>{v.dealer_name}</b>
+            {v.dealer_city && <span style={{ color: C.textMid }}> · {v.dealer_city}</span>}
+            {v.dealer_verified && <span style={{ marginLeft: 6, color: C.success, fontWeight: 600 }}>✓ Verified</span>}
+          </div>
+          {/* On-road price info banner */}
+          <div style={{ background: `${C.accent}12`, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: C.text, marginBottom: 4 }}>🛣️ On-Road Price में शामिल है:</div>
+            <div style={{ color: C.textMid, lineHeight: 1.7 }}>
+              Ex-Showroom: <b>{fmtINR(v.price)}</b> + Registration + Insurance + State Tax
+              <br/>Dealer आपको exact on-road price बताएगा।
+            </div>
           </div>
           <form onSubmit={submitEnquiry}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Field label="Your Name" required><Input value={enquiryForm.customer_name} onChange={v2 => setEnquiryForm(p => ({ ...p, customer_name: v2 }))} placeholder="Ramesh Kumar" /></Field>
-              <Field label="Mobile Number" required><Input value={enquiryForm.phone} onChange={v2 => setEnquiryForm(p => ({ ...p, phone: v2 }))} placeholder="9876543210" /></Field>
-              <Field label="Your City"><Input value={enquiryForm.city} onChange={v2 => setEnquiryForm(p => ({ ...p, city: v2 }))} placeholder="Delhi" /></Field>
+              <Field label="आपका नाम / Your Name" required>
+                <Input value={enquiryForm.customer_name} onChange={v2 => setEnquiryForm(p => ({ ...p, customer_name: v2 }))} placeholder="Ramesh Kumar" required />
+              </Field>
+              <Field label="Mobile Number *" required>
+                <Input value={enquiryForm.phone} onChange={v2 => setEnquiryForm(p => ({ ...p, phone: v2 }))} placeholder="9876543210" type="tel" required />
+              </Field>
+              <Field label="Pin Code / पिन कोड">
+                <Input value={enquiryForm.pincode} onChange={v2 => setEnquiryForm(p => ({ ...p, pincode: v2 }))} placeholder="110001" type="number" style={{ appearance: "none" }} />
+              </Field>
+              <Field label="Email (Optional)">
+                <Input value={enquiryForm.email} onChange={v2 => setEnquiryForm(p => ({ ...p, email: v2 }))} placeholder="you@email.com" type="email" />
+              </Field>
             </div>
-            <Field label="Message">
+            <Field label="Message / संदेश">
               <textarea value={enquiryForm.notes} onChange={e => setEnquiryForm(p => ({ ...p, notes: e.target.value }))} rows={2}
-                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
-                placeholder="Any specific requirements..." />
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }}
+                placeholder="Koi vishesh requirement... (Any specific requirements...)" />
             </Field>
-            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
-              ✓ Dealer will contact you within 24 hours. Your number is never shared with third parties.
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14, lineHeight: 1.7 }}>
+              ✓ Dealer 24 घंटों में संपर्क करेगा। &nbsp;✓ आपका नंबर किसी third party को नहीं दिया जाएगा।
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <Btn label="Back" outline color={C.textMid} onClick={() => setTab("overview")} />
-              <Btn label={enquirySending ? "Sending..." : "Get Best Price →"} color={C.primary} type="submit" disabled={enquirySending} />
+              <Btn label="वापस / Back" outline color={C.textMid} onClick={() => setTab("overview")} />
+              <Btn label={enquirySending ? "भेज रहे हैं..." : "🛣️ Best Price / On-Road Price पाएं →"} color={C.primary} type="submit" disabled={enquirySending} fullWidth />
             </div>
           </form>
         </div>
@@ -1698,19 +2193,41 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 // MARKETPLACE PAGE (public-facing)
 // ═══════════════════════════════════════════════════════
 function Marketplace() {
+  const C = useC();
   const toast = useToast();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ fuel_type: "", search: "", city: "" });
   const [detailVehicle, setDetailVehicle] = useState(null);
+  const [cityFilter, setCityFilter] = useState("");
+  const [sortBy, setSortBy] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    const p = new URLSearchParams(Object.fromEntries(Object.entries(filter).filter(([, v]) => v)));
+    const p = new URLSearchParams(Object.fromEntries(Object.entries({ ...filter, city: cityFilter || filter.city }).filter(([, v]) => v)));
+    if (sortBy) p.set("ordering", sortBy);
     api.marketplace(`?${p}`).then(d => setVehicles(d.results || [])).finally(() => setLoading(false));
-  }, [filter]);
+  }, [filter, cityFilter, sortBy]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleNearMe = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          const city = prompt("Enter your city to find nearby dealers:");
+          if (city) { setCityFilter(city.trim()); }
+        },
+        () => {
+          const city = prompt("Enter your city to find nearby dealers:");
+          if (city) { setCityFilter(city.trim()); }
+        }
+      );
+    } else {
+      const city = prompt("Enter your city to find nearby dealers:");
+      if (city) { setCityFilter(city.trim()); }
+    }
+  };
 
   return (
     <div style={{ padding: 24 }}>
@@ -1725,14 +2242,31 @@ function Marketplace() {
         </div>
       </div>
 
-      {/* Fuel filter tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+      {/* Fuel filter tabs + city + sort */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
         {["", "electric", "petrol", "cng", "lpg"].map(f => (
           <button key={f} onClick={() => setFilter(p => ({ ...p, fuel_type: f }))}
             style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${filter.fuel_type === f ? C.primary : C.border}`, background: filter.fuel_type === f ? C.primary : "#fff", color: filter.fuel_type === f ? "#fff" : C.textMid, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s" }}>
             {f ? f.charAt(0).toUpperCase() + f.slice(1) : "All eRickshaws"}
           </button>
         ))}
+        <button onClick={handleNearMe}
+          style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${cityFilter ? C.success : C.border}`, background: cityFilter ? C.success : "#fff", color: cityFilter ? "#fff" : C.textMid, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s" }}>
+          📍 {cityFilter ? `Near: ${cityFilter}` : "Near Me"}
+        </button>
+        {cityFilter && (
+          <button onClick={() => setCityFilter("")}
+            style={{ padding: "5px 10px", borderRadius: 14, border: `1.5px solid ${C.danger}40`, background: `${C.danger}10`, color: C.danger, cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>
+            ✕ Clear City
+          </button>
+        )}
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+          style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${C.border}`, fontSize: 12, fontFamily: "inherit", color: C.textMid, cursor: "pointer", background: "#fff" }}>
+          <option value="">Sort: Default</option>
+          <option value="price">Price: Low to High</option>
+          <option value="-price">Price: High to Low</option>
+          <option value="best_price">Best Price Near Me</option>
+        </select>
       </div>
 
       <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 16, color: C.text }}>Browse New & Popular Models</div>
@@ -1742,7 +2276,9 @@ function Marketplace() {
           {vehicles.map(v => (
             <Card key={v.id} style={{ transition: "all 0.2s", border: `1.5px solid ${C.border}`, cursor: "pointer" }}
               onClick={() => setDetailVehicle(v)}>
-              <div style={{ height: 120, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>🛺</div>
+              {v.thumbnail
+                ? <img src={v.thumbnail} alt={v.model_name} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 12 }} />
+                : <div style={{ height: 120, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>🛺</div>}
               <div style={{ fontWeight: 700, fontSize: 14 }}>{v.model_name}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 6, flexWrap: "wrap" }}>
                 <Badge label={v.fuel_type} color={FUEL_COLOR[v.fuel_type]} />
@@ -1795,6 +2331,7 @@ function PlanFeatureRow({ label, free, pro }) {
 }
 
 function PlansPage({ onUpgrade }) {
+  const C = useC();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -1936,37 +2473,438 @@ function PlansPage({ onUpgrade }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════
+// PWA INSTALL PROMPT
+// ═══════════════════════════════════════════════════════
+function PWAInstallPrompt() {
+  const C = useC();
+  const [prompt, setPrompt] = useState(null);
+  const [showIOS, setShowIOS] = useState(false);
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem("erd_pwa_dismissed") === "1");
+
+  useEffect(() => {
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+    if (isIOS && !isStandalone && !dismissed) setShowIOS(true);
+
+    const handler = (e) => { e.preventDefault(); setPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, [dismissed]);
+
+  const dismiss = () => {
+    localStorage.setItem("erd_pwa_dismissed", "1");
+    setDismissed(true); setPrompt(null); setShowIOS(false);
+  };
+
+  const install = async () => {
+    if (!prompt) return;
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === "accepted") setPrompt(null);
+  };
+
+  if (dismissed || (!prompt && !showIOS)) return null;
+
+  return (
+    <div style={{
+      position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+      background: C.surface, border: `1.5px solid ${C.primary}`, borderRadius: 14,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.18)", padding: "14px 20px", zIndex: 9998,
+      display: "flex", alignItems: "center", gap: 14, maxWidth: 400, width: "calc(100% - 40px)",
+    }}>
+      <div style={{ fontSize: 28, flexShrink: 0 }}>🛺</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>Install eRickshawDekho App</div>
+        <div style={{ fontSize: 11, color: C.textMid, marginTop: 2 }}>
+          {showIOS ? "Tap Share → Add to Home Screen for faster access." : "Get faster access and offline support."}
+        </div>
+      </div>
+      {!showIOS && <Btn label="Install" color={C.primary} size="sm" onClick={install} />}
+      <button onClick={dismiss} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: C.textDim, padding: 0, flexShrink: 0 }}>✕</button>
+    </div>
+  );
+}
+
 // Support contact — set VITE_SUPPORT_PHONE / VITE_SUPPORT_WA in .env.local
 const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "";
 const SUPPORT_WA    = import.meta.env.VITE_SUPPORT_WA    || "";
 const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || "support@erikshawdekho.com";
 
 function ContactSupportModal({ onClose, onNavigate }) {
+  const C = useC();
   return (
-    <Modal title="Upgrade to Pro" onClose={onClose} width={420}>
-      <div style={{ textAlign: "center", padding: "8px 0 16px" }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>⭐</div>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Unlock Pro Features</div>
-        <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.7, marginBottom: 20 }}>
-          Contact our team to activate the Pro plan (₹999/month or ₹9,999/year).
-          We'll set you up within minutes.
+    <Modal title="Upgrade to Pro" onClose={onClose} width={440}>
+      {/* Header */}
+      <div style={{ textAlign: "center", padding: "4px 0 20px" }}>
+        <div style={{ width: 64, height: 64, borderRadius: "50%", background: `linear-gradient(135deg,${C.accent},${C.primary})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 14px" }}>⭐</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 6 }}>Unlock Pro Features</div>
+        <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.75 }}>
+          Get unlimited vehicles, leads, invoices, WhatsApp alerts and priority support.
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {SUPPORT_WA && (
-            <Btn label="💬 WhatsApp Us" color={C.success} fullWidth onClick={() => window.open(`https://wa.me/${SUPPORT_WA.replace(/\D/g, "")}?text=Hi+I+want+to+upgrade+to+Pro+plan`, "_blank")} />
-          )}
-          {SUPPORT_PHONE && (
-            <Btn label={`📞 Call ${SUPPORT_PHONE}`} color={C.primary} outline fullWidth onClick={() => window.open(`tel:${SUPPORT_PHONE}`)} />
-          )}
-          <Btn label={`✉️ Email ${SUPPORT_EMAIL}`} color={C.info} outline fullWidth onClick={() => window.open(`mailto:${SUPPORT_EMAIL}?subject=Pro+Plan+Upgrade`)} />
+      </div>
+
+      {/* Pricing callout */}
+      <div style={{ background: `${C.primary}08`, border: `1px solid ${C.primary}22`, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-around", textAlign: "center" }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: C.primary }}>₹999</div>
+          <div style={{ fontSize: 11, color: C.textMid }}>per month</div>
         </div>
-        {!SUPPORT_WA && !SUPPORT_PHONE && (
-          <div style={{ marginTop: 14, fontSize: 12, color: C.textDim }}>
-            Our team will respond within 1 business day.
+        <div style={{ width: 1, background: C.border }} />
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: C.primary }}>₹9,999</div>
+          <div style={{ fontSize: 11, color: C.textMid }}>per year <span style={{ color: C.success, fontWeight: 700 }}>Save 17%</span></div>
+        </div>
+      </div>
+
+      {/* Contact options */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {SUPPORT_WA && (
+          <Btn label="💬 WhatsApp Us — Get started in minutes" color={C.success} fullWidth
+            onClick={() => window.open(`https://wa.me/${SUPPORT_WA.replace(/\D/g, "")}?text=Hi+I+want+to+upgrade+to+Pro+plan`, "_blank")} />
+        )}
+        {SUPPORT_PHONE && (
+          <Btn label={`📞 Call Us — ${SUPPORT_PHONE}`} color={C.primary} fullWidth
+            onClick={() => window.open(`tel:${SUPPORT_PHONE}`)} />
+        )}
+        <Btn label={`✉️ Email — ${SUPPORT_EMAIL}`} color={C.info} outline fullWidth
+          onClick={() => window.open(`mailto:${SUPPORT_EMAIL}?subject=Pro%20Plan%20Upgrade%20Request&body=Hi%2C%20I%27d%20like%20to%20upgrade%20to%20the%20Pro%20plan.%20Please%20get%20in%20touch.`)} />
+      </div>
+
+      <div style={{ marginTop: 14, fontSize: 12, color: C.textDim, textAlign: "center", lineHeight: 1.6 }}>
+        We'll activate your account within minutes during business hours.<br />
+        No hidden charges. Cancel anytime.
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// ADMIN PORTAL
+// ═══════════════════════════════════════════════════════
+const ADMIN_NAV = [
+  { id: "overview",      label: "Overview",     icon: "📊" },
+  { id: "dealers",       label: "Dealers",      icon: "🏪" },
+  { id: "users",         label: "Users",        icon: "👥" },
+  { id: "applications",  label: "Applications", icon: "📋" },
+  { id: "enquiries",     label: "Enquiries",    icon: "💬" },
+];
+
+function AdminPortal({ user, onLogout }) {
+  const C = useC();
+  const { isDark, toggle } = useContext(ThemeCtx);
+  const toast = useToast();
+  const [page, setPage] = useState("overview");
+  const [stats, setStats] = useState(null);
+  const [dealers, setDealers] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [enquiries, setEnquiries] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pg, setPg] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [appFilter, setAppFilter] = useState("pending");
+
+  useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
+
+  const loadPage = useCallback(() => {
+    setLoading(true);
+    const p = new URLSearchParams({ page: pg });
+    if (search)   p.set("search", search);
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo)   p.set("date_to", dateTo);
+    if (appFilter && page === "applications") p.set("status", appFilter);
+    const qs = `?${p}`;
+    const calls = {
+      dealers:      () => api.admin.dealers(qs).then(d => { setDealers(d.results || []); setTotalPages(d.total_pages || 1); }),
+      users:        () => api.admin.users(qs).then(d => { setUsers(d.results || []); setTotalPages(d.total_pages || 1); }),
+      applications: () => api.admin.applications(qs).then(d => { setApplications(d.results || []); setTotalPages(d.total_pages || 1); }),
+      enquiries:    () => api.admin.enquiries(qs).then(d => { setEnquiries(d.results || []); setTotalPages(d.total_pages || 1); }),
+    };
+    (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
+  }, [page, pg, search, dateFrom, dateTo, appFilter]);
+
+  useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
+
+  const verifyDealer = async (id, verified) => {
+    await api.admin.verifyDealer(id, { is_verified: verified });
+    setDealers(p => p.map(d => d.id === id ? { ...d, is_verified: verified } : d));
+    toast(verified ? "Dealer verified!" : "Verification removed.", "success");
+  };
+
+  const handleApp = async (id, status) => {
+    await api.admin.updateApp(id, { status });
+    setApplications(p => p.map(a => a.id === id ? { ...a, status } : a));
+    toast(`Application ${status}.`, "success");
+  };
+
+  const deleteUser = async (id) => {
+    if (!confirm("Delete this user permanently?")) return;
+    await api.admin.deleteUser(id);
+    setUsers(p => p.filter(u => u.id !== id));
+    toast("User deleted.", "success");
+  };
+
+  const sidebarStyle = { width: 200, minWidth: 200, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 };
+
+  return (
+    <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
+      {/* Admin Sidebar */}
+      <div style={sidebarStyle}>
+        <div style={{ padding: "16px 14px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 34, height: 34, background: `linear-gradient(135deg,${C.danger},#b91c1c)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>⚙️</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Admin Portal</div>
+              <div style={{ fontSize: 10, color: C.textDim }}>Super Admin</div>
+            </div>
+          </div>
+        </div>
+        <nav style={{ flex: 1, padding: "10px 8px" }}>
+          {ADMIN_NAV.map(n => (
+            <button key={n.id} onClick={() => { setPage(n.id); setPg(1); setSearch(""); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: page === n.id ? `${C.danger}15` : "transparent", border: "none", borderRadius: 8, color: page === n.id ? C.danger : C.textMid, fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 2, borderLeft: page === n.id ? `3px solid ${C.danger}` : "3px solid transparent" }}>
+              <span>{n.icon}</span>{n.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
+          <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            {isDark ? "☀️" : "🌙"} {isDark ? "Light Mode" : "Dark Mode"}
+          </button>
+          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            🚪 Logout
+          </button>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
+              {ADMIN_NAV.find(n => n.id === page)?.icon} {ADMIN_NAV.find(n => n.id === page)?.label || "Overview"}
+            </div>
+            <div style={{ fontSize: 12, color: C.textDim }}>Logged in as: <b>{user?.username}</b></div>
+          </div>
+        </div>
+
+        {/* Overview stats */}
+        {page === "overview" && stats && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14, marginBottom: 24 }}>
+              {[
+                ["🏪","Total Dealers",        stats.total_dealers,       C.primary],
+                ["✅","Verified Dealers",      stats.verified_dealers,    C.success],
+                ["🚗","Active Vehicles",       stats.total_vehicles,      C.info],
+                ["👥","Pipeline Leads",        stats.total_leads,         C.warning],
+                ["💰","Total Sales",           stats.total_sales,         C.success],
+                ["💬","Total Enquiries",       stats.total_enquiries,     C.info],
+                ["📋","Pending Applications",  stats.pending_applications,C.danger],
+                ["👤","Total Users",           stats.total_users,         C.primary],
+              ].map(([icon,label,value,color]) => (
+                <StatCard key={label} icon={icon} label={label} value={value ?? "—"} color={color} />
+              ))}
+            </div>
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Platform Revenue</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: C.success }}>₹{Number(stats.total_revenue || 0).toLocaleString("en-IN")}</div>
+              <div style={{ fontSize: 12, color: C.textDim, marginTop: 4 }}>Total recorded sales across all dealers</div>
+            </Card>
+          </div>
+        )}
+
+        {/* Dealers */}
+        {page === "dealers" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search dealer / phone..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Dealer","City","Plan","Vehicles","Verified","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dealers.map(d => (
+                      <tr key={d.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{d.dealer_name}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{d.username} · {d.email}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.city}, {d.state}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={d.plan_type} color={d.plan_type === "pro" ? C.success : C.warning} /></td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.vehicle_count}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {d.is_verified ? <span style={{ color: C.success, fontWeight: 700 }}>✓ Verified</span> : <span style={{ color: C.textDim }}>—</span>}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <Btn label={d.is_verified ? "Revoke" : "Verify"} size="sm" color={d.is_verified ? C.danger : C.success} onClick={() => verifyDealer(d.id, !d.is_verified)} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {dealers.length === 0 && <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No dealers found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
+        {/* Users */}
+        {page === "users" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search username / email..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["User","Type","Dealer / Showroom","Joined","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map(u => (
+                      <tr key={u.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{u.username}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{u.email}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={u.user_type} color={u.user_type === "admin" ? C.danger : u.user_type === "dealer" ? C.primary : C.info} /></td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{u.dealer_name || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{new Date(u.date_joined).toLocaleDateString("en-IN")}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {!u.is_superuser && <Btn label="Delete" size="sm" color={C.danger} onClick={() => deleteUser(u.id)} />}
+                        </td>
+                      </tr>
+                    ))}
+                    {users.length === 0 && <tr><td colSpan={5} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No users found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
+        {/* Applications */}
+        {page === "applications" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search dealer name / email..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                {["","pending","approved","rejected"].map(s => (
+                  <button key={s} onClick={() => { setAppFilter(s); setPg(1); }} style={{ padding: "5px 12px", borderRadius: 14, border: `1.5px solid ${appFilter === s ? C.primary : C.border}`, background: appFilter === s ? C.primary : "transparent", color: appFilter === s ? "#fff" : C.textMid, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>
+                    {s || "All"}
+                  </button>
+                ))}
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Dealer","Contact","City","Status","Applied","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {applications.map(a => (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{a.dealer_name}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{a.email}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{a.contact_name}<br/><span style={{ fontSize: 11 }}>{a.phone}</span></td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{a.city}, {a.state}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={a.status} color={a.status === "approved" ? C.success : a.status === "rejected" ? C.danger : C.warning} /></td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{new Date(a.applied_at).toLocaleDateString("en-IN")}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {a.status !== "approved"  && <Btn label="Approve" size="sm" color={C.success} onClick={() => handleApp(a.id, "approved")} />}
+                            {a.status !== "rejected"  && <Btn label="Reject"  size="sm" color={C.danger}  onClick={() => handleApp(a.id, "rejected")} />}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {applications.length === 0 && <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No applications found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
+        {/* Enquiries */}
+        {page === "enquiries" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search buyer / phone..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <DateFilter from={dateFrom} to={dateTo} onChange={(f,t) => { setDateFrom(f); setDateTo(t); setPg(1); }} />
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Buyer","Phone","City","Vehicle","Dealer","Status","Date"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enquiries.map(e => (
+                      <tr key={e.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{e.customer_name}</td>
+                        <td style={{ padding: "12px 14px", color: C.primary }}>{e.phone}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{e.city || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12 }}>{e.vehicle || "General"}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{e.dealer_name || "—"}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={e.is_processed ? "Done" : "New"} color={e.is_processed ? C.success : C.warning} /></td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{new Date(e.created_at).toLocaleDateString("en-IN")}</td>
+                      </tr>
+                    ))}
+                    {enquiries.length === 0 && <tr><td colSpan={7} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No enquiries found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
           </div>
         )}
       </div>
-    </Modal>
+    </div>
   );
 }
 
@@ -1974,6 +2912,7 @@ function ContactSupportModal({ onClose, onNavigate }) {
 // LANDING PAGE (shown before any auth choice)
 // ═══════════════════════════════════════════════════════
 function LandingPage({ onDealer, onMarketplace }) {
+  const C = useC();
   return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(160deg,${C.primaryD} 0%,${C.primary} 45%,#1a6b44 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Nunito','Segoe UI',sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
@@ -2040,6 +2979,7 @@ function LandingPage({ onDealer, onMarketplace }) {
 // PUBLIC MARKETPLACE PAGE (no dealer auth required)
 // ═══════════════════════════════════════════════════════
 function PublicMarketplacePage({ onDealerPortal, onBack }) {
+  const C = useC();
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes spin{to{transform:rotate(360deg)}}@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -2057,6 +2997,7 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
         </div>
       </div>
       <Marketplace />
+      <PWAInstallPrompt />
     </div>
   );
 }
@@ -2065,31 +3006,55 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
 // ROOT APP
 // ═══════════════════════════════════════════════════════
 export default function App() {
+  const [isDark, setIsDark] = useState(() => localStorage.getItem("erd_theme") === "dark");
+  const toggleTheme = () => setIsDark(d => { const next = !d; localStorage.setItem("erd_theme", next ? "dark" : "light"); return next; });
+
   const [auth, setAuth] = useState(() => {
     const token = localStorage.getItem("erd_access");
     const dealer = JSON.parse(localStorage.getItem("erd_dealer") || "null");
-    return token ? { token, dealer } : null;
+    const user   = JSON.parse(localStorage.getItem("erd_user") || "null");
+    return token ? { token, dealer, user } : null;
   });
-  // appMode: null = landing, 'dealer' = dealer auth/portal, 'public' = public marketplace
+  // appMode: null = landing, 'dealer' = dealer auth/portal, 'public' = public marketplace, 'admin' = admin portal
   const [appMode, setAppMode] = useState(null);
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   const [plan, setPlan] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // Screen saver
+  const [sleeping, setSleeping] = useState(false);
+  const sleepTimer = useRef(null);
+  const resetSleep = useCallback(() => {
+    setSleeping(false);
+    clearTimeout(sleepTimer.current);
+    sleepTimer.current = setTimeout(() => setSleeping(true), 5 * 60 * 1000);
+  }, []);
+  useEffect(() => {
+    resetSleep();
+    window.addEventListener("mousemove", resetSleep);
+    window.addEventListener("keydown", resetSleep);
+    return () => {
+      clearTimeout(sleepTimer.current);
+      window.removeEventListener("mousemove", resetSleep);
+      window.removeEventListener("keydown", resetSleep);
+    };
+  }, [resetSleep]);
+
   // Fetch plan once on login
   useEffect(() => {
-    if (auth) {
+    if (auth && appMode !== "admin") {
       api.dashboard().then(d => setPlan(d.plan)).catch(() => {});
     }
-  }, [auth]);
+  }, [auth, appMode]);
 
   const handleAuth = (data) => {
-    localStorage.setItem("erd_access", data.access);
+    localStorage.setItem("erd_access",  data.access);
     if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
     localStorage.setItem("erd_dealer", JSON.stringify(data.dealer));
+    localStorage.setItem("erd_user",   JSON.stringify(data.user));
     setAuth(data);
-    setAppMode("dealer");
+    setAppMode(data.user?.user_type === "admin" || data.user?.is_superuser ? "admin" : "dealer");
   };
 
   const handleLogout = () => {
@@ -2099,35 +3064,54 @@ export default function App() {
     setAppMode(null);
   };
 
+  const C_LIVE = isDark ? DARK_C : LIGHT_C;
+
   // 1. No auth + no mode chosen → landing page
   if (!auth && appMode === null) {
     return (
-      <ToastProvider>
-        <LandingPage onDealer={() => setAppMode("dealer")} onMarketplace={() => setAppMode("public")} />
-      </ToastProvider>
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <LandingPage onDealer={() => setAppMode("dealer")} onMarketplace={() => setAppMode("public")} />
+        </ToastProvider>
+      </ThemeCtx.Provider>
     );
   }
 
   // 2. Public marketplace (driver/buyer, no auth required)
   if (!auth && appMode === "public") {
     return (
-      <ToastProvider>
-        <PublicMarketplacePage onDealerPortal={() => setAppMode("dealer")} onBack={() => setAppMode(null)} />
-      </ToastProvider>
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <PublicMarketplacePage onDealerPortal={() => setAppMode("dealer")} onBack={() => setAppMode(null)} />
+        </ToastProvider>
+      </ThemeCtx.Provider>
     );
   }
 
   // 3. Dealer auth flow
   if (!auth) {
     return (
-      <ToastProvider>
-        <AuthPage onAuth={handleAuth} />
-        <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
-          <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
-            ← Back to home
-          </button>
-        </div>
-      </ToastProvider>
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <AuthPage onAuth={handleAuth} />
+          <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
+            <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
+              ← Back to home
+            </button>
+          </div>
+        </ToastProvider>
+      </ThemeCtx.Provider>
+    );
+  }
+
+  // 4. Admin portal
+  if (auth && (appMode === "admin" || auth.user?.user_type === "admin")) {
+    return (
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <AdminPortal user={auth.user} onLogout={handleLogout} />
+        </ToastProvider>
+      </ThemeCtx.Provider>
     );
   }
 
@@ -2151,33 +3135,37 @@ export default function App() {
   };
 
   return (
-    <ToastProvider>
-      <PlanCtx.Provider value={plan}>
-        <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
-          <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { background: ${C.bg}; }
-            @keyframes spin { to { transform: rotate(360deg); } }
-            @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-            ::-webkit-scrollbar { width: 6px; }
-            ::-webkit-scrollbar-track { background: ${C.bg}; }
-            ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
-            select option { background: #fff; color: ${C.text}; }
-          `}</style>
+    <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+      <ToastProvider>
+        <PlanCtx.Provider value={plan}>
+          <div style={{ display: "flex", background: C_LIVE.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C_LIVE.text }}>
+            <style>{`
+              @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body { background: ${C_LIVE.bg}; }
+              @keyframes spin { to { transform: rotate(360deg); } }
+              @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+              ::-webkit-scrollbar { width: 6px; }
+              ::-webkit-scrollbar-track { background: ${C_LIVE.bg}; }
+              ::-webkit-scrollbar-thumb { background: ${C_LIVE.border}; border-radius: 4px; }
+              select option { background: ${C_LIVE.surface}; color: ${C_LIVE.text}; }
+            `}</style>
 
-          <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
+            <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
 
-          <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
-            <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} />
-            <main style={{ flex: 1 }}>
-              {renderPage()}
-            </main>
+            <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
+              <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onBell={() => setPage("leads")} />
+              <main style={{ flex: 1 }}>
+                {renderPage()}
+              </main>
+            </div>
+
+            {showUpgradeModal && <ContactSupportModal onClose={() => setShowUpgradeModal(false)} onNavigate={setPage} />}
+            <PWAInstallPrompt />
+            {sleeping && <ScreenSaver onWake={resetSleep} />}
           </div>
-
-          {showUpgradeModal && <ContactSupportModal onClose={() => setShowUpgradeModal(false)} onNavigate={setPage} />}
-        </div>
-      </PlanCtx.Provider>
-    </ToastProvider>
+        </PlanCtx.Provider>
+      </ToastProvider>
+    </ThemeCtx.Provider>
   );
 }

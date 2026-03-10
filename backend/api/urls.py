@@ -38,7 +38,21 @@ urlpatterns = [
     path('dealers/<int:dealer_id>/reviews/',  views.submit_dealer_review,  name='dealer-reviews'),
     path('dealers/apply/',                    views.apply_dealer,          name='dealer-apply'),
 
+    # ── Dealer enquiries (authenticated, see assigned public enquiries) ───
+    path('dealer/enquiries/',          views.dealer_enquiries,          name='dealer-enquiries'),
+    path('dealer/enquiries/unread/',   views.dealer_unread_count,       name='dealer-unread-count'),
+
     # ── Notifications ─────────────────────────────────────────────
     path('notifications/preferences/', views.notification_preferences, name='notification-preferences'),
     path('notifications/fcm-token/',   views.update_fcm_token,         name='update-fcm-token'),
+
+    # ── Admin portal ───────────────────────────────────────────────
+    path('admin-portal/stats/',                    views.admin_stats,         name='admin-stats'),
+    path('admin-portal/users/',                    views.admin_users,         name='admin-users'),
+    path('admin-portal/users/<int:user_id>/',      views.admin_users,         name='admin-user-delete'),
+    path('admin-portal/dealers/',                  views.admin_dealers,       name='admin-dealers'),
+    path('admin-portal/dealers/<int:dealer_id>/',  views.admin_dealers,       name='admin-dealer-detail'),
+    path('admin-portal/applications/',             views.admin_applications,  name='admin-applications'),
+    path('admin-portal/applications/<int:app_id>/',views.admin_applications,  name='admin-application-detail'),
+    path('admin-portal/enquiries/',                views.admin_enquiries,     name='admin-enquiries'),
 ]

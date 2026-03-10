@@ -101,13 +101,19 @@ def login_view(request):
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
     dealer = getattr(user, 'dealer_profile', None)
     profile = getattr(user, 'profile', None)
-    user_type = profile.user_type if profile else ('dealer' if dealer else 'driver')
+    if user.is_superuser or user.is_staff:
+        user_type = 'admin'
+    elif profile:
+        user_type = profile.user_type
+    else:
+        user_type = 'dealer' if dealer else 'driver'
     return Response({
         **_jwt_response(user),
         'user': {
             'id': user.id, 'username': user.username, 'email': user.email,
             'first_name': user.first_name, 'last_name': user.last_name,
             'user_type': user_type,
+            'is_superuser': user.is_superuser,
         },
         'dealer': {
             'id':    dealer.id if dealer else None,
@@ -139,6 +145,8 @@ def me(request):
                 dealer.city = data['city'].strip()
             if 'address' in data:
                 dealer.address = data['address'].strip()
+            if 'description' in data:
+                dealer.description = data['description'].strip()
             dealer.save()
 
     return Response({
@@ -150,6 +158,7 @@ def me(request):
             'phone': dealer.phone if dealer else '',
             'gstin': dealer.gstin if dealer else '',
             'address': dealer.address if dealer else '',
+            'description': dealer.description if dealer else '',
             'is_verified': dealer.is_verified if dealer else False,
         }
     })
@@ -270,7 +279,7 @@ def marketplace_vehicles(request):
     if search:   qs = qs.filter(Q(model_name__icontains=search)|Q(brand__name__icontains=search))
     if featured: qs = qs.filter(is_featured=True)
     if city:     qs = qs.filter(dealer__city__icontains=city)
-    serializer = VehicleListSerializer(qs.order_by('-is_featured','-created_at')[:20], many=True)
+    serializer = PublicVehicleSerializer(qs.order_by('-is_featured','-created_at')[:20], many=True)
     return Response({'results': serializer.data, 'count': qs.count()})
 
 
@@ -283,12 +292,16 @@ class LeadViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Lead.objects.filter(dealer=dealer).select_related('vehicle','vehicle__brand')
-        status_f = self.request.query_params.get('status')
-        source_f = self.request.query_params.get('source')
-        search   = self.request.query_params.get('search')
-        if status_f: qs = qs.filter(status=status_f)
-        if source_f: qs = qs.filter(source=source_f)
-        if search:   qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search))
+        status_f  = self.request.query_params.get('status')
+        source_f  = self.request.query_params.get('source')
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if status_f:  qs = qs.filter(status=status_f)
+        if source_f:  qs = qs.filter(source=source_f)
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search))
+        if date_from: qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:   qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -312,8 +325,12 @@ class SaleViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Sale.objects.filter(dealer=dealer).select_related('vehicle','vehicle__brand')
-        search = self.request.query_params.get('search')
-        if search: qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search))
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search))
+        if date_from: qs = qs.filter(sale_date__date__gte=date_from)
+        if date_to:   qs = qs.filter(sale_date__date__lte=date_to)
         return qs.order_by('-sale_date')
 
     def perform_create(self, serializer):
@@ -375,8 +392,12 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Customer.objects.filter(dealer=dealer)
-        search = self.request.query_params.get('search')
-        if search: qs = qs.filter(Q(name__icontains=search)|Q(phone__icontains=search))
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(name__icontains=search)|Q(phone__icontains=search))
+        if date_from: qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:   qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -408,7 +429,15 @@ class FinanceLoanViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return FinanceLoan.objects.filter(dealer=self.request.user.dealer_profile).order_by('-applied_date')
+        dealer = self.request.user.dealer_profile
+        qs = FinanceLoan.objects.filter(dealer=dealer)
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(customer_name__icontains=search))
+        if date_from: qs = qs.filter(applied_date__date__gte=date_from)
+        if date_to:   qs = qs.filter(applied_date__date__lte=date_to)
+        return qs.order_by('-applied_date')
 
     def perform_create(self, serializer):
         serializer.save(dealer=self.request.user.dealer_profile)
@@ -636,6 +665,60 @@ def public_enquiry(request):
     return Response({'message': 'Enquiry submitted! A dealer will call you within 24 hours.'}, status=status.HTTP_201_CREATED)
 
 
+# ─── DEALER ENQUIRIES (authenticated dealers see their assigned public enquiries) ──
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def dealer_enquiries(request):
+    """
+    GET:  Return public enquiries assigned to this dealer (newest first, max 100).
+    PATCH: Mark an enquiry as processed. Body: { "id": <int>, "is_processed": true }
+    """
+    dealer = getattr(request.user, 'dealer_profile', None)
+    if not dealer:
+        return Response({'error': 'Dealer profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'PATCH':
+        enquiry_id = request.data.get('id')
+        is_processed = request.data.get('is_processed', True)
+        try:
+            enq = PublicEnquiry.objects.get(pk=enquiry_id, dealer=dealer)
+            enq.is_processed = is_processed
+            enq.save(update_fields=['is_processed'])
+            return Response({'id': enq.id, 'is_processed': enq.is_processed})
+        except PublicEnquiry.DoesNotExist:
+            return Response({'error': 'Enquiry not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    qs = PublicEnquiry.objects.filter(dealer=dealer).select_related('vehicle', 'vehicle__brand').order_by('-created_at')
+    # Filters
+    date_from = request.query_params.get('date_from')
+    date_to   = request.query_params.get('date_to')
+    search    = request.query_params.get('search')
+    show_unprocessed = request.query_params.get('unprocessed')
+    if date_from: qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:   qs = qs.filter(created_at__date__lte=date_to)
+    if search:    qs = qs.filter(Q(customer_name__icontains=search) | Q(phone__icontains=search) | Q(city__icontains=search))
+    if show_unprocessed == '1': qs = qs.filter(is_processed=False)
+    total = qs.count()
+    # Pagination
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    start = (page - 1) * page_size
+    qs = qs[start:start + page_size]
+    data = [{
+        'id': e.id,
+        'customer_name': e.customer_name,
+        'phone': e.phone,
+        'city': e.city,
+        'notes': e.notes,
+        'vehicle': str(e.vehicle) if e.vehicle else None,
+        'vehicle_id': e.vehicle_id,
+        'is_processed': e.is_processed,
+        'created_at': e.created_at.isoformat(),
+    } for e in qs]
+    return Response({'results': data, 'count': total, 'page': page, 'page_size': page_size, 'total_pages': (total + page_size - 1) // page_size if page_size else 1})
+
+
 # ─── PLATFORM STATS (public) ──────────────────────────────────────
 
 @api_view(['GET'])
@@ -647,6 +730,206 @@ def platform_stats(request):
         'vehicle_count': Vehicle.objects.filter(is_active=True).count(),
         'city_count':    DealerProfile.objects.filter(is_verified=True).values('city').distinct().count(),
     })
+
+
+# ─── DEALER UNREAD COUNT (bell icon) ──────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dealer_unread_count(request):
+    """Return count of unread (unprocessed) public enquiries for bell icon."""
+    dealer = getattr(request.user, 'dealer_profile', None)
+    if not dealer:
+        return Response({'unread': 0})
+    count = PublicEnquiry.objects.filter(dealer=dealer, is_processed=False).count()
+    return Response({'unread': count})
+
+
+# ─── ADMIN PORTAL APIs ────────────────────────────────────────────
+
+def _is_admin(user):
+    return user.is_superuser or user.is_staff or getattr(getattr(user, 'profile', None), 'user_type', '') == 'admin'
+
+
+def admin_required(func):
+    """Decorator: ensures request.user is a platform admin."""
+    from functools import wraps
+    @wraps(func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated or not _is_admin(request.user):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+        return func(request, *args, **kwargs)
+    return wrapper
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_stats(request):
+    """Platform-wide stats for admin dashboard."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    from django.db.models import Sum
+    return Response({
+        'total_dealers':       DealerProfile.objects.count(),
+        'verified_dealers':    DealerProfile.objects.filter(is_verified=True).count(),
+        'total_vehicles':      Vehicle.objects.filter(is_active=True).count(),
+        'total_leads':         Lead.objects.count(),
+        'total_sales':         Sale.objects.count(),
+        'total_enquiries':     PublicEnquiry.objects.count(),
+        'unprocessed_enquiries': PublicEnquiry.objects.filter(is_processed=False).count(),
+        'pending_applications':DealerApplication.objects.filter(status='pending').count(),
+        'total_revenue':       Sale.objects.aggregate(r=Sum('sale_price'))['r'] or 0,
+        'total_users':         User.objects.count(),
+    })
+
+
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def admin_users(request, user_id=None):
+    """List all users or delete a specific user."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    if request.method == 'DELETE' and user_id:
+        try:
+            u = User.objects.get(pk=user_id)
+            if u.is_superuser:
+                return Response({'error': 'Cannot delete superuser.'}, status=status.HTTP_400_BAD_REQUEST)
+            u.delete()
+            return Response({'message': 'User deleted.'})
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+    # GET: list users with pagination
+    search = request.query_params.get('search', '')
+    user_type = request.query_params.get('user_type', '')
+    qs = User.objects.select_related('profile', 'dealer_profile').order_by('-date_joined')
+    if search:
+        qs = qs.filter(Q(username__icontains=search) | Q(email__icontains=search))
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = []
+    for u in qs:
+        profile = getattr(u, 'profile', None)
+        dealer  = getattr(u, 'dealer_profile', None)
+        utype   = profile.user_type if profile else ('dealer' if dealer else 'driver')
+        if user_type and utype != user_type:
+            continue
+        data.append({
+            'id': u.id, 'username': u.username, 'email': u.email,
+            'user_type': utype, 'is_superuser': u.is_superuser,
+            'is_active': u.is_active,
+            'date_joined': u.date_joined.isoformat(),
+            'dealer_name': dealer.dealer_name if dealer else None,
+            'dealer_city': dealer.city if dealer else None,
+            'is_verified': dealer.is_verified if dealer else None,
+        })
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_dealers(request, dealer_id=None):
+    """List all dealers or update a specific dealer (verify/suspend)."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    if request.method == 'PATCH' and dealer_id:
+        try:
+            dealer = DealerProfile.objects.get(pk=dealer_id)
+            if 'is_verified' in request.data:
+                dealer.is_verified = bool(request.data['is_verified'])
+            if 'plan_type' in request.data:
+                dealer.plan_type = request.data['plan_type']
+            dealer.save()
+            return Response({'id': dealer.id, 'is_verified': dealer.is_verified, 'plan_type': dealer.plan_type})
+        except DealerProfile.DoesNotExist:
+            return Response({'error': 'Dealer not found.'}, status=status.HTTP_404_NOT_FOUND)
+    # GET: list all dealers
+    search = request.query_params.get('search', '')
+    city   = request.query_params.get('city', '')
+    verified = request.query_params.get('verified', '')
+    qs = DealerProfile.objects.select_related('user').order_by('-created_at')
+    if search:   qs = qs.filter(Q(dealer_name__icontains=search) | Q(phone__icontains=search))
+    if city:     qs = qs.filter(city__icontains=city)
+    if verified == '1': qs = qs.filter(is_verified=True)
+    if verified == '0': qs = qs.filter(is_verified=False)
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = [{
+        'id': d.id, 'dealer_name': d.dealer_name, 'phone': d.phone,
+        'city': d.city, 'state': d.state, 'gstin': d.gstin,
+        'is_verified': d.is_verified, 'plan_type': d.plan_type,
+        'plan_expires_at': d.plan_expires_at.isoformat() if d.plan_expires_at else None,
+        'created_at': d.created_at.isoformat(),
+        'username': d.user.username, 'email': d.user.email,
+        'vehicle_count': d.vehicles.filter(is_active=True).count(),
+    } for d in qs]
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_applications(request, app_id=None):
+    """List all dealer applications or approve/reject one."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    if request.method == 'PATCH' and app_id:
+        try:
+            app = DealerApplication.objects.get(pk=app_id)
+            new_status = request.data.get('status')
+            if new_status in ('pending', 'approved', 'rejected'):
+                app.status = new_status
+                app.save(update_fields=['status'])
+            return Response({'id': app.id, 'status': app.status})
+        except DealerApplication.DoesNotExist:
+            return Response({'error': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+    # GET: list applications
+    app_status = request.query_params.get('status', '')
+    search     = request.query_params.get('search', '')
+    qs = DealerApplication.objects.order_by('-applied_at')
+    if app_status: qs = qs.filter(status=app_status)
+    if search:     qs = qs.filter(Q(dealer_name__icontains=search) | Q(phone__icontains=search) | Q(email__icontains=search))
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = [{
+        'id': a.id, 'dealer_name': a.dealer_name, 'contact_name': a.contact_name,
+        'phone': a.phone, 'email': a.email, 'city': a.city, 'state': a.state,
+        'gstin': a.gstin, 'message': a.message, 'status': a.status,
+        'applied_at': a.applied_at.isoformat(),
+    } for a in qs]
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_enquiries(request):
+    """List ALL public enquiries across all dealers (admin only)."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    search    = request.query_params.get('search', '')
+    date_from = request.query_params.get('date_from', '')
+    date_to   = request.query_params.get('date_to', '')
+    qs = PublicEnquiry.objects.select_related('dealer', 'vehicle').order_by('-created_at')
+    if search:    qs = qs.filter(Q(customer_name__icontains=search) | Q(phone__icontains=search))
+    if date_from: qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:   qs = qs.filter(created_at__date__lte=date_to)
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = [{
+        'id': e.id, 'customer_name': e.customer_name, 'phone': e.phone,
+        'city': e.city, 'notes': e.notes,
+        'vehicle': str(e.vehicle) if e.vehicle else None,
+        'dealer_name': e.dealer.dealer_name if e.dealer else None,
+        'is_processed': e.is_processed,
+        'created_at': e.created_at.isoformat(),
+    } for e in qs]
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
 
 
 # ─── NOTIFICATION PREFERENCES ─────────────────────────────────────
