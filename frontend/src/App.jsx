@@ -459,15 +459,52 @@ function AuthPage({ onAuth }) {
   const C = useC();
   const toast = useToast();
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "Delhi" });
+  const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "", pincode: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const [authStatus, setAuthStatus] = useState(null); // null | "success" | "error"
+  const [authStatus, setAuthStatus] = useState(null);
+  const [pincodeData, setPincodeData] = useState(null); // { city, state, suggestions: [] }
+  const [pincodeLoading, setPincodeLoading] = useState(false);
+
+  const MAJOR_CITIES = [
+    "Agra","Ahmedabad","Allahabad","Amritsar","Bengaluru","Bhopal","Chandigarh",
+    "Chennai","Delhi","Faridabad","Ghaziabad","Guwahati","Hyderabad","Indore",
+    "Jaipur","Jodhpur","Kanpur","Kochi","Kolkata","Lucknow","Ludhiana",
+    "Meerut","Mumbai","Nagpur","Noida","Patna","Pune","Raipur","Ranchi",
+    "Surat","Varanasi","Visakhapatnam","Others",
+  ];
 
   const set = (k) => (v) => {
     setForm(p => ({ ...p, [k]: v }));
     setFieldErrors(p => ({ ...p, [k]: "" }));
     setAuthStatus(null);
+  };
+
+  const lookupPincode = async (pin) => {
+    if (pin.length !== 6 || !/^\d{6}$/.test(pin)) return;
+    setPincodeLoading(true);
+    setPincodeData(null);
+    try {
+      const res = await fetch(`https://api.postalpincode.in/pincode/${pin}`);
+      const data = await res.json();
+      if (data?.[0]?.Status === "Success" && data[0].PostOffice?.length) {
+        const offices = data[0].PostOffice;
+        const city  = offices[0].District;
+        const state = offices[0].State;
+        const suggestions = [...new Set(offices.map(o => o.District))].slice(0, 5);
+        setPincodeData({ city, state, suggestions });
+        // Auto-fill city if it matches a known major city or just use the district
+        const matched = MAJOR_CITIES.find(c => c.toLowerCase() === city.toLowerCase()) || city;
+        setForm(p => ({ ...p, city: matched }));
+        setFieldErrors(p => ({ ...p, city: "", pincode: "" }));
+      } else {
+        setPincodeData(null);
+        setFieldErrors(p => ({ ...p, pincode: "Pincode not found. Please enter city manually." }));
+      }
+    } catch {
+      setFieldErrors(p => ({ ...p, pincode: "Could not verify pincode. Please enter city manually." }));
+    }
+    setPincodeLoading(false);
   };
 
   const validate = () => {
@@ -491,7 +528,8 @@ function AuthPage({ onAuth }) {
         errs.phone = "Enter a valid 10-digit Indian mobile number (starts with 6–9)";
       if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
         errs.email = "Enter a valid email address";
-      if (form.city && form.city.trim().length < 2) errs.city = "Enter a valid city name";
+      if (!form.city.trim()) errs.city = "City is required";
+      if (form.pincode && !/^\d{6}$/.test(form.pincode)) errs.pincode = "Enter a valid 6-digit pincode";
     }
     return errs;
   };
@@ -604,8 +642,23 @@ function AuthPage({ onAuth }) {
                 <Input value={form.email} onChange={set("email")} type="email" placeholder="you@email.com" autoComplete="email" />
                 <FieldErr k="email" />
               </Field>
-              <Field label="City">
-                <Input value={form.city} onChange={set("city")} placeholder="Delhi" />
+              <Field label="Pincode / ZIP Code">
+                <div style={{ position: "relative" }}>
+                  <Input value={form.pincode} onChange={v => { set("pincode")(v); if (v.length === 6) lookupPincode(v); }} placeholder="e.g. 110085" />
+                  {pincodeLoading && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: C.textMid }}>🔍 Looking up...</span>}
+                </div>
+                <FieldErr k="pincode" />
+                {pincodeData && <div style={{ fontSize: 11, color: C.success, marginTop: 3 }}>✓ {pincodeData.city}, {pincodeData.state}</div>}
+              </Field>
+              <Field label="City / District" required>
+                <select value={form.city} onChange={e => set("city")(e.target.value)}
+                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${fieldErrors.city ? C.danger : C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
+                  <option value="">— Select your city —</option>
+                  {pincodeData?.suggestions?.filter(s => s !== form.city).map(s => (
+                    <option key={s} value={s} style={{ fontWeight: 600, color: C.primary }}>✓ {s} (from pincode)</option>
+                  ))}
+                  {MAJOR_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
                 <FieldErr k="city" />
               </Field>
             </>}
