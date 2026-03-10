@@ -6,7 +6,7 @@ from .models import (
     UserProfile, DealerProfile, Brand, Vehicle,
     Lead, Sale, Customer, Task, FinanceLoan,
     DealerApplication, DealerReview, PublicEnquiry,
-    NotificationLog, Plan,
+    NotificationLog, Plan, DealerAPIKey, PlatformSettings,
 )
 
 
@@ -197,3 +197,15 @@ class PlanAdmin(admin.ModelAdmin):
     list_display  = ['name', 'slug', 'price', 'listing_limit', 'max_dealers', 'signups_count', 'is_active']
     list_editable = ['is_active']
     readonly_fields = ['signups_count', 'is_available']
+
+
+@admin.register(DealerAPIKey)
+class DealerAPIKeyAdmin(admin.ModelAdmin):
+    list_display  = ['dealer', 'service', 'display_name', 'is_active', 'created_at']
+    list_filter   = ['service', 'is_active']
+    search_fields = ['dealer__dealer_name', 'display_name']
+
+
+@admin.register(PlatformSettings)
+class PlatformSettingsAdmin(admin.ModelAdmin):
+    list_display = ['support_name', 'support_email', 'support_phone', 'support_whatsapp', 'updated_at']

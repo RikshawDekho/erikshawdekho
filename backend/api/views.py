@@ -12,7 +12,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource, BlogPost
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource, BlogPost, DealerAPIKey, PlatformSettings
 from .serializers import (
     VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
     CustomerSerializer, TaskSerializer, FinanceLoanSerializer, BrandSerializer,
@@ -107,6 +107,8 @@ def login_view(request):
     user = authenticate(username=login_username, password=password)
     if not user:
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+    if not user.is_active:
+        return Response({"error": "Your account has been deactivated. Please contact support@erikshawdekho.com"}, status=403)
     dealer = getattr(user, 'dealer_profile', None)
     profile = getattr(user, 'profile', None)
     if user.is_superuser or user.is_staff:
@@ -241,6 +243,7 @@ def dashboard(request):
         'upcoming_deliveries': SaleSerializer(upcoming_deliveries, many=True).data,
         'upcoming_tasks': TaskSerializer(upcoming_tasks, many=True).data,
         'sales_chart': sales_chart,
+        'is_verified': dealer.is_verified,
         'plan': {
             'type': dealer.plan_type,
             'is_active': dealer.plan_is_active,
@@ -528,10 +531,14 @@ def emi_calculator(request):
 
 # ─── BRANDS ───────────────────────────────────────────────────────
 
-class BrandViewSet(viewsets.ReadOnlyModelViewSet):
+class BrandViewSet(viewsets.ModelViewSet):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method in ['GET', 'HEAD', 'OPTIONS']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 
 # ─── REPORTS ──────────────────────────────────────────────────────
@@ -1291,3 +1298,144 @@ def reset_password_confirm(request):
         return Response({'success': True, 'message': 'Password reset successfully. Please sign in with your new password.'})
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=404)
+
+
+# ─── ADMIN TOGGLE USER ACTIVE ──────────────────────────────────────
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def admin_toggle_user_active(request, user_id):
+    if not request.user.is_superuser:
+        return Response({"error": "Admin only"}, status=403)
+    try:
+        target = User.objects.get(pk=user_id)
+        target.is_active = not target.is_active
+        target.save(update_fields=["is_active"])
+        return Response({"id": target.id, "is_active": target.is_active})
+    except User.DoesNotExist:
+        return Response({"error": "Not found"}, status=404)
+
+
+# ─── ADMIN CREATE USER ─────────────────────────────────────────────
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_create_user(request):
+    """Admin can create dealer, driver, or staff accounts."""
+    if not request.user.is_superuser:
+        return Response({"error": "Admin only"}, status=403)
+
+    user_type = request.data.get("user_type", "dealer")  # dealer, staff
+    email     = request.data.get("email", "").strip().lower()
+    phone     = request.data.get("phone", "").strip()
+    name      = request.data.get("name", "").strip()
+    password  = request.data.get("password", "")
+    city      = request.data.get("city", "").strip()
+    state     = request.data.get("state", "").strip()
+
+    if not email or not password or not name:
+        return Response({"error": "name, email, password are required"}, status=400)
+
+    if User.objects.filter(email__iexact=email).exists():
+        return Response({"error": "Email already in use"}, status=400)
+
+    # Auto-generate username
+    import re as _re
+    base = _re.sub(r'[^a-zA-Z0-9]', '', email.split('@')[0]).lower()[:20] or 'user'
+    username = base
+    counter = 1
+    while User.objects.filter(username=username).exists():
+        username = f"{base}{counter}"; counter += 1
+
+    user = User.objects.create_user(username=username, email=email, password=password)
+    if user_type == "staff":
+        user.is_staff = True
+        user.save(update_fields=["is_staff"])
+
+    from .models import Plan
+    dealer = DealerProfile.objects.create(
+        user=user,
+        dealer_name=name,
+        phone=phone,
+        city=city,
+        state=state,
+        is_verified=(user_type == "staff"),
+    )
+    # Assign free plan
+    try:
+        free_plan = Plan.objects.get(slug="free")
+        dealer.plan = free_plan
+        dealer.save(update_fields=["plan"])
+    except Plan.DoesNotExist:
+        pass
+
+    return Response({
+        "id": user.id,
+        "username": username,
+        "email": email,
+        "user_type": user_type,
+        "dealer_id": dealer.id,
+    }, status=201)
+
+
+# ─── DEALER API KEYS ───────────────────────────────────────────────
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def dealer_api_keys(request):
+    from django.shortcuts import get_object_or_404
+    dealer = get_object_or_404(DealerProfile, user=request.user)
+    if request.method == "GET":
+        keys = DealerAPIKey.objects.filter(dealer=dealer)
+        data = [{"id": k.id, "service": k.service, "service_label": k.get_service_display(),
+                 "display_name": k.display_name, "api_key": "●●●●" + k.api_key[-4:] if len(k.api_key) > 4 else "●●●●",
+                 "is_active": k.is_active, "extra_config": k.extra_config} for k in keys]
+        return Response(data)
+    # POST — create or update
+    service = request.data.get("service")
+    api_key = request.data.get("api_key", "")
+    api_secret = request.data.get("api_secret", "")
+    extra = request.data.get("extra_config", {})
+    display_name = request.data.get("display_name", "")
+    obj, created = DealerAPIKey.objects.update_or_create(
+        dealer=dealer, service=service,
+        defaults={"api_key": api_key, "api_secret": api_secret, "extra_config": extra,
+                  "display_name": display_name, "is_active": True}
+    )
+    return Response({"id": obj.id, "service": obj.service, "created": created}, status=201 if created else 200)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def dealer_api_key_delete(request, key_id):
+    from django.shortcuts import get_object_or_404
+    dealer = get_object_or_404(DealerProfile, user=request.user)
+    get_object_or_404(DealerAPIKey, pk=key_id, dealer=dealer).delete()
+    return Response(status=204)
+
+
+# ─── PLATFORM SETTINGS ─────────────────────────────────────────────
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def platform_settings(request):
+    s = PlatformSettings.get()
+    return Response({
+        "support_phone": s.support_phone,
+        "support_whatsapp": s.support_whatsapp,
+        "support_email": s.support_email,
+        "support_name": s.support_name,
+    })
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def admin_update_settings(request):
+    if not request.user.is_superuser:
+        return Response({"error": "Admin only"}, status=403)
+    s = PlatformSettings.get()
+    for field in ["support_phone", "support_whatsapp", "support_email", "support_name", "homepage_intro_video_url"]:
+        if field in request.data:
+            setattr(s, field, request.data[field])
+    s.save()
+    return Response({"status": "ok"})

@@ -62,4 +62,16 @@ urlpatterns = [
     path('admin-portal/applications/',             views.admin_applications,  name='admin-applications'),
     path('admin-portal/applications/<int:app_id>/',views.admin_applications,  name='admin-application-detail'),
     path('admin-portal/enquiries/',                views.admin_enquiries,     name='admin-enquiries'),
+
+    # ── Dealer API keys ────────────────────────────────────────────
+    path('dealer/api-keys/',                       views.dealer_api_keys,          name='dealer-api-keys'),
+    path('dealer/api-keys/<int:key_id>/',          views.dealer_api_key_delete,    name='dealer-api-key-delete'),
+
+    # ── Platform settings ──────────────────────────────────────────
+    path('platform/settings/',                     views.platform_settings,        name='platform-settings'),
+
+    # ── Admin extended ─────────────────────────────────────────────
+    path('admin/settings/',                        views.admin_update_settings,    name='admin-update-settings'),
+    path('admin/users/<int:user_id>/toggle-active/', views.admin_toggle_user_active, name='admin-toggle-user-active'),
+    path('admin/create-user/',                     views.admin_create_user,        name='admin-create-user'),
 ]

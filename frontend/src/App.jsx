@@ -1,6 +1,38 @@
 import { useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
 import { SalesPage } from './SalesPage';
 import { LIGHT_C, DARK_C, ThemeCtx, useC } from './theme';
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+
+// ── i18n setup ──────────────────────────────────────────
+const i18nResources = {
+  en: { translation: {
+    "nav.dashboard": "Dashboard", "nav.inventory": "Inventory", "nav.leads": "Leads",
+    "nav.sales": "Sales", "nav.customers": "Customers", "nav.finance": "Finance",
+    "nav.reports": "Reports", "nav.learn": "Learn", "nav.marketplace": "Marketplace",
+    "nav.plans": "Plans", "nav.support": "Support", "nav.account": "My Account",
+    "nav.logout": "Logout", "nav.home": "Home", "nav.stock": "Stock",
+    "common.search": "Search", "common.add": "Add", "common.save": "Save",
+    "common.cancel": "Cancel", "common.close": "Close", "common.loading": "Loading...",
+    "dealer.portal": "Dealer Portal", "dealer.verified": "Verified", "dealer.pending": "Pending Verification",
+  }},
+  hi: { translation: {
+    "nav.dashboard": "डैशबोर्ड", "nav.inventory": "इन्वेंटरी", "nav.leads": "लीड्स",
+    "nav.sales": "बिक्री", "nav.customers": "ग्राहक", "nav.finance": "फाइनेंस",
+    "nav.reports": "रिपोर्ट", "nav.learn": "सीखें", "nav.marketplace": "मार्केटप्लेस",
+    "nav.plans": "प्लान्स", "nav.support": "सहायता", "nav.account": "मेरा खाता",
+    "nav.logout": "लॉगआउट", "nav.home": "होम", "nav.stock": "स्टॉक",
+    "common.search": "खोजें", "common.add": "जोड़ें", "common.save": "सहेजें",
+    "common.cancel": "रद्द करें", "common.close": "बंद करें", "common.loading": "लोड हो रहा है...",
+    "dealer.portal": "डीलर पोर्टल", "dealer.verified": "सत्यापित", "dealer.pending": "सत्यापन लंबित",
+  }},
+};
+i18n.use(initReactI18next).init({
+  resources: i18nResources,
+  lng: localStorage.getItem("erd_lang") || "en",
+  fallbackLng: "en",
+  interpolation: { escapeValue: false },
+});
 
 // ── Debounce hook: delays rapid input (e.g. search) by `delay` ms ──
 function useDebounce(value, delay = 350) {
@@ -150,14 +182,20 @@ const api = {
     applications:       (p="")     => apiFetch(`/admin-portal/applications/${p}`),
     updateApp:          (id,d)     => apiFetch(`/admin-portal/applications/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
     enquiries:          (p="")     => apiFetch(`/admin-portal/enquiries/${p}`),
+    toggleUserActive:   (id)       => apiFetch(`/admin-portal/users/${id}/toggle-active/`, { method: "PATCH" }),
+    createUser:         (d)        => apiFetch("/admin-portal/create-user/", { method: "POST", body: JSON.stringify(d) }),
+    updateSettings:     (d)        => apiFetch("/admin-portal/settings/", { method: "PATCH", body: JSON.stringify(d) }),
   },
   auth: {
     forgotPassword:  (d) => apiFetch("/auth/forgot-password/",  { method: "POST", body: JSON.stringify(d) }),
     resetPassword:   (d) => apiFetch("/auth/reset-password/",   { method: "POST", body: JSON.stringify(d) }),
   },
   dealer: {
-    plans:       ()    => apiFetch("/plans/"),
-    upgradePlan: (d)   => apiFetch("/dealer/upgrade-plan/", { method: "POST", body: JSON.stringify(d) }),
+    plans:           ()       => apiFetch("/plans/"),
+    upgradePlan:     (d)      => apiFetch("/dealer/upgrade-plan/", { method: "POST", body: JSON.stringify(d) }),
+    apiKeys:         ()       => apiFetch("/dealer/api-keys/"),
+    saveApiKey:      (d)      => apiFetch("/dealer/api-keys/", { method: "POST", body: JSON.stringify(d) }),
+    deleteApiKey:    (id)     => apiFetch(`/dealer/api-keys/${id}/`, { method: "DELETE" }),
   },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),
@@ -866,6 +904,7 @@ const BOTTOM_NAV = [
 
 function Sidebar({ page, setPage, dealer, onLogout }) {
   const C = useC();
+  const [showMore, setShowMore] = useState(false);
   return (
     <>
       {/* Desktop sidebar */}
@@ -916,7 +955,43 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
             <span style={{ fontSize: 10, fontWeight: page === n.id ? 700 : 400 }}>{n.label}</span>
           </button>
         ))}
+        <button onClick={() => setShowMore(true)} style={{
+          flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+          background: "transparent", border: "none", cursor: "pointer", color: C.textDim, fontFamily: "inherit",
+        }}>
+          <span style={{ fontSize: 20 }}>⋮⋮⋮</span>
+          <span style={{ fontSize: 10 }}>More</span>
+        </button>
       </div>
+
+      {showMore && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300 }} onClick={() => setShowMore(false)}>
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: C.surface, borderRadius: "20px 20px 0 0", padding: "20px 16px 32px", boxShadow: "0 -8px 40px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 40, height: 4, background: C.border, borderRadius: 2, margin: "0 auto 20px" }} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+              {[
+                { id: "customers",   label: "Customers", icon: "👤" },
+                { id: "finance",     label: "Finance",   icon: "🏦" },
+                { id: "reports",     label: "Reports",   icon: "📈" },
+                { id: "learn",       label: "Learn",     icon: "🎓" },
+                { id: "marketplace", label: "Market",    icon: "🛒" },
+                { id: "plans",       label: "Plans",     icon: "⭐" },
+                { id: "support",     label: "Support",   icon: "🛟" },
+                { id: "account",     label: "Account",   icon: "👤" },
+              ].map(n => (
+                <button key={n.id} onClick={() => { setPage(n.id); setShowMore(false); }} style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "14px 8px",
+                  background: page === n.id ? `${C.primary}15` : C.bg, border: "none", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
+                  color: page === n.id ? C.primary : C.textMid,
+                }}>
+                  <span style={{ fontSize: 24 }}>{n.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: page === n.id ? 700 : 400 }}>{n.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media (max-width: 768px) {
@@ -959,6 +1034,14 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
               {unread > 9 ? "9+" : unread}
             </span>
           )}
+        </button>
+        {/* Language toggle */}
+        <button onClick={() => {
+          const next = i18n.language === "en" ? "hi" : "en";
+          i18n.changeLanguage(next);
+          localStorage.setItem("erd_lang", next);
+        }} style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.textMid, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {i18n.language === "en" ? "हि" : "EN"}
         </button>
         {/* Dark mode toggle */}
         <button onClick={toggle} title={isDark ? "Light Mode" : "Dark Mode"} style={{ background: isDark ? C.surface : C.bg, border: `1.5px solid ${C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
@@ -1027,7 +1110,7 @@ function Dashboard({ onNavigate }) {
       </div>
 
       {/* Verification warning */}
-      {plan && !plan.is_verified && (
+      {data && !data.is_verified && (
         <div style={{ background: `${C.warning}15`, border: `1px solid ${C.warning}44`, borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: C.warning, display: "flex", alignItems: "center", gap: 8 }}>
           ⏳ <span>Your dealership is <b>pending verification</b>. Our team will review and approve it shortly.</span>
         </div>
@@ -1203,6 +1286,8 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [brands, setBrands] = useState([]);
   const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", vehicle_type: "passenger", price: "", stock_quantity: "", year: 2024, description: "", thumbnail: null });
   const [saving, setSaving] = useState(false);
+  const [showAddBrand, setShowAddBrand] = useState(false);
+  const [newBrandName, setNewBrandName] = useState("");
   const [editVehicle, setEditVehicle] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
@@ -1375,8 +1460,12 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
           <form onSubmit={submit}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <Field label="Brand" required>
-                <Select value={form.brand_id} onChange={setForm_("brand_id")} placeholder="Select brand"
-                  options={brands.map(b => ({ value: b.id, label: b.name }))} />
+                <select value={form.brand_id} onChange={e => { if (e.target.value === "__new__") { setShowAddBrand(true); } else { setForm_("brand_id")(e.target.value); } }}
+                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
+                  <option value="">Select brand</option>
+                  {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  <option value="__new__">+ Add New Brand...</option>
+                </select>
               </Field>
               <Field label="Model Name" required><Input value={form.model_name} onChange={setForm_("model_name")} placeholder="e.g. YatriKing Pro" /></Field>
               <Field label="Vehicle Type" required>
@@ -1504,6 +1593,29 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
             <Btn label="Yes, Delete" color={C.danger} onClick={confirmDelete} />
           </div>
         </Modal>
+      )}
+
+      {/* Add Brand Modal */}
+      {showAddBrand && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: C.surface, borderRadius: 12, padding: 24, maxWidth: 320, width: "100%", margin: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12 }}>Add New Brand</div>
+            <input value={newBrandName} onChange={e => setNewBrandName(e.target.value)} placeholder="Brand name" autoFocus
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, marginBottom: 16, boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setShowAddBrand(false); setNewBrandName(""); }} style={{ flex: 1, padding: 10, border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              <button onClick={async () => {
+                if (!newBrandName.trim()) return;
+                try {
+                  const r = await apiFetch("/brands/", { method: "POST", body: JSON.stringify({ name: newBrandName.trim() }) });
+                  setBrands(prev => [...prev, r]);
+                  setForm(f => ({ ...f, brand_id: r.id }));
+                  setShowAddBrand(false); setNewBrandName("");
+                } catch { alert("Failed to create brand. Try again."); }
+              }} style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, background: C.primary, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Create</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2172,6 +2284,87 @@ function ToggleSwitch({ checked, onChange, label, sub }) {
   );
 }
 
+function IntegrationsSection() {
+  const C = useC();
+  const toast = useToast();
+  const [keys, setKeys] = useState([]);
+  const [adding, setAdding] = useState(null);
+  const [form, setForm] = useState({ api_key: "", api_secret: "", display_name: "" });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { api.dealer.apiKeys().then(setKeys).catch(() => {}); }, []);
+
+  const SERVICES = [
+    { id: "twilio", label: "Twilio", desc: "SMS OTP + WhatsApp alerts", icon: "📱", fields: ["api_key", "api_secret"], labels: { api_key: "Account SID", api_secret: "Auth Token" } },
+    { id: "gmail_smtp", label: "Gmail SMTP", desc: "Email marketing & notifications", icon: "📧", fields: ["api_key", "api_secret"], labels: { api_key: "Gmail Address", api_secret: "App Password" } },
+    { id: "whatsapp_business", label: "WhatsApp Business", desc: "Bulk WhatsApp messaging", icon: "💬", fields: ["api_key"], labels: { api_key: "API Token" } },
+    { id: "firebase", label: "Firebase", desc: "Push notifications (mobile/PWA)", icon: "🔔", fields: ["api_key"], labels: { api_key: "Server Key" } },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+        {SERVICES.map(svc => {
+          const existing = keys.find(k => k.service === svc.id);
+          return (
+            <div key={svc.id} style={{ border: `1.5px solid ${existing ? C.success : C.border}`, borderRadius: 12, padding: 16, position: "relative" }}>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>{svc.icon}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{svc.label}</div>
+              <div style={{ fontSize: 12, color: C.textMid, marginBottom: 12 }}>{svc.desc}</div>
+              {existing ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 11, color: C.success, fontWeight: 700 }}>✓ Connected</span>
+                  <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: existing.display_name }); }} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Edit</button>
+                </div>
+              ) : (
+                <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: "" }); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: `1px dashed ${C.primary}`, background: `${C.primary}08`, color: C.primary, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                  + Connect
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 16, fontSize: 12, color: C.textDim, background: `${C.warning}10`, border: `1px solid ${C.warning}33`, borderRadius: 8, padding: "10px 14px" }}>
+        ⚠️ API keys are stored securely. Without connecting a service: SMS OTP login, WhatsApp alerts, push notifications, and email campaigns are disabled but shown in the UI.
+      </div>
+
+      {adding && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: C.surface, borderRadius: 16, padding: 24, maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{adding.icon} Connect {adding.label}</div>
+            <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>{adding.desc}</div>
+            {adding.fields.map(f => (
+              <div key={f} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{adding.labels[f]}</div>
+                <input type={f === "api_secret" ? "password" : "text"} value={form[f]} onChange={e => setForm(p => ({ ...p, [f]: e.target.value }))}
+                  placeholder={`Enter ${adding.labels[f]}`}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <button onClick={() => setAdding(null)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Cancel</button>
+              <button disabled={saving} onClick={async () => {
+                setSaving(true);
+                try {
+                  await api.dealer.saveApiKey({ service: adding.id, ...form });
+                  const updated = await api.dealer.apiKeys();
+                  setKeys(updated);
+                  toast(`${adding.label} connected!`, "success");
+                  setAdding(null);
+                } catch { toast("Failed to save. Check your API key.", "error"); }
+                finally { setSaving(false); }
+              }} style={{ flex: 2, padding: 10, borderRadius: 8, border: "none", background: C.primary, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                {saving ? "Saving..." : "Save & Connect"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccountPage({ dealer: dealerProp, onLogout }) {
   const C = useC();
   const toast = useToast();
@@ -2437,6 +2630,15 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
         }}>
           🚪 Logout
         </button>
+      </Card>
+
+      {/* Integrations section */}
+      <Card style={{ marginTop: 24 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔌 Integrations & API Keys</div>
+        <div style={{ fontSize: 13, color: C.textMid, marginBottom: 16 }}>
+          Connect third-party services to unlock SMS OTP, WhatsApp alerts, and email marketing.
+        </div>
+        <IntegrationsSection />
       </Card>
     </div>
   );
@@ -2858,7 +3060,7 @@ function extractVideoId(url) {
   return null;
 }
 
-function VideoCard({ v, onDelete }) {
+function VideoCard({ v, onDelete, onWatch }) {
   const C = useC();
   const thumb = v.thumbnail_url || (v.video_id ? `https://img.youtube.com/vi/${v.video_id}/hqdefault.jpg` : null)
     || (extractVideoId(v.youtube_url) ? `https://img.youtube.com/vi/${extractVideoId(v.youtube_url)}/hqdefault.jpg` : null);
@@ -2867,7 +3069,7 @@ function VideoCard({ v, onDelete }) {
 
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", cursor: "pointer", transition: "all 0.15s", display: "flex", flexDirection: "column" }}
-      onClick={() => window.open(v.youtube_url, "_blank", "noopener")}
+      onClick={() => onWatch ? onWatch(v) : window.open(v.youtube_url, "_blank", "noopener")}
       onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 6px 20px ${C.primary}18`; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
       {/* Thumbnail */}
@@ -2911,6 +3113,7 @@ const BLOG_CATS = [
 
 function BlogPostCard({ post, onDelete }) {
   const C = useC();
+  const [showContent, setShowContent] = useState(false);
   const auth = JSON.parse(localStorage.getItem("erd_dealer") || "null");
   const canDelete = auth && (post.dealer === null ? false : true);
   return (
@@ -2938,16 +3141,20 @@ function BlogPostCard({ post, onDelete }) {
         {post.excerpt && <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.6, flex: 1, marginBottom: 12, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{post.excerpt}</div>}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
           <span style={{ fontSize: 11, color: C.textDim }}>{new Date(post.created_at).toLocaleDateString("en-IN")}</span>
-          {post.url ? (
-            <a href={post.url} target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: 12, color: C.primary, fontWeight: 700, padding: "4px 12px", border: `1.5px solid ${C.primary}`, borderRadius: 20, background: `${C.primary}08` }}>
-              Read More →
-            </a>
-          ) : post.content ? (
-            <button onClick={() => alert(post.content)} style={{ fontSize: 12, color: C.primary, fontWeight: 700, padding: "4px 12px", border: `1.5px solid ${C.primary}`, borderRadius: 20, background: `${C.primary}08`, cursor: "pointer", fontFamily: "inherit" }}>
-              Read →
-            </button>
-          ) : null}
+          <button onClick={() => post.url ? window.open(post.url, "_blank") : setShowContent(true)} style={{ fontSize: 12, color: C.primary, fontWeight: 700, padding: "4px 12px", border: `1.5px solid ${C.primary}`, borderRadius: 20, background: `${C.primary}08`, cursor: "pointer", fontFamily: "inherit" }}>
+            {post.url ? "Read More →" : "Read →"}
+          </button>
+          {showContent && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setShowContent(false)}>
+              <div style={{ background: "var(--erd-card, #fff)", borderRadius: 16, padding: 24, maxWidth: 560, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: C.text, lineHeight: 1.4 }}>{post.title}</div>
+                  <button onClick={() => setShowContent(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.textDim, marginLeft: 8 }}>×</button>
+                </div>
+                <div style={{ fontSize: 14, color: C.textMid, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{post.content}</div>
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>By {post.dealer_name || "eRickshawDekho"}</div>
       </div>
@@ -3336,6 +3543,9 @@ function Marketplace() {
   const [detailVehicle, setDetailVehicle] = useState(null);
   const [cityFilter, setCityFilter] = useState("");
   const [sortBy, setSortBy] = useState("");
+  const [showCityModal, setShowCityModal] = useState(false);
+  const [cityInput, setCityInput] = useState("");
+  const pendingCityAction = useRef(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -3347,21 +3557,8 @@ function Marketplace() {
   useEffect(() => { load(); }, [load]);
 
   const handleNearMe = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        () => {
-          const city = prompt("Enter your city to find nearby dealers:");
-          if (city) { setCityFilter(city.trim()); }
-        },
-        () => {
-          const city = prompt("Enter your city to find nearby dealers:");
-          if (city) { setCityFilter(city.trim()); }
-        }
-      );
-    } else {
-      const city = prompt("Enter your city to find nearby dealers:");
-      if (city) { setCityFilter(city.trim()); }
-    }
+    pendingCityAction.current = (city) => { setCityFilter(city); };
+    setShowCityModal(true);
   };
 
   return (
@@ -3427,6 +3624,28 @@ function Marketplace() {
       )}
 
       {detailVehicle && <VehicleDetailModal vehicle={detailVehicle} onClose={() => setDetailVehicle(null)} />}
+
+      {showCityModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: C.surface, borderRadius: 16, padding: 24, maxWidth: 360, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4 }}>Find Nearby Dealers</div>
+            <div style={{ fontSize: 13, color: C.textMid, marginBottom: 16 }}>Enter your city to find dealers near you:</div>
+            <input
+              type="text"
+              value={cityInput}
+              onChange={e => setCityInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && cityInput.trim()) { pendingCityAction.current?.(cityInput.trim()); setShowCityModal(false); setCityInput(""); } }}
+              placeholder="e.g. Delhi, Mumbai, Lucknow"
+              autoFocus
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", marginBottom: 16, background: C.bg, color: C.text, boxSizing: "border-box" }}
+            />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowCityModal(false)} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.textMid, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              <button onClick={() => { if (cityInput.trim()) { pendingCityAction.current?.(cityInput.trim()); setShowCityModal(false); setCityInput(""); } }} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: C.primary, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Find Dealers</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3668,27 +3887,22 @@ const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || "support@erikshawdek
 function ContactSupportModal({ onClose, onNavigate }) {
   const C = useC();
   return (
-    <Modal title="Upgrade to Pro" onClose={onClose} width={440}>
+    <Modal title="Upgrade to Early Dealer Plan" onClose={onClose} width={440}>
       {/* Header */}
       <div style={{ textAlign: "center", padding: "4px 0 20px" }}>
         <div style={{ width: 64, height: 64, borderRadius: "50%", background: `linear-gradient(135deg,${C.accent},${C.primary})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 14px" }}>⭐</div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 6 }}>Unlock Pro Features</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 6 }}>Unlock Early Dealer Features</div>
         <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.75 }}>
           Get unlimited vehicles, leads, invoices, WhatsApp alerts and priority support.
         </div>
       </div>
 
-      {/* Pricing callout */}
-      <div style={{ background: `${C.primary}08`, border: `1px solid ${C.primary}22`, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-around", textAlign: "center" }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: C.primary }}>₹999</div>
-          <div style={{ fontSize: 11, color: C.textMid }}>per month</div>
-        </div>
-        <div style={{ width: 1, background: C.border }} />
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: C.primary }}>₹9,999</div>
-          <div style={{ fontSize: 11, color: C.textMid }}>per year <span style={{ color: C.success, fontWeight: 700 }}>Save 17%</span></div>
-        </div>
+      {/* Early Dealer Plan */}
+      <div style={{ background: `${C.primary}08`, border: `2px solid ${C.primary}33`, borderRadius: 12, padding: "16px", marginBottom: 20, textAlign: "center" }}>
+        <div style={{ fontSize: 13, color: C.textMid, marginBottom: 4 }}>Early Dealer Plan</div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: C.primary }}>₹5,000</div>
+        <div style={{ fontSize: 12, color: C.textMid, marginBottom: 8 }}>per year · Unlimited Listings · Priority Ranking</div>
+        <div style={{ fontSize: 11, color: C.success, fontWeight: 700 }}>⚡ Only 100 dealers — First come, first served</div>
       </div>
 
       {/* Contact options */}
@@ -3722,6 +3936,7 @@ const ADMIN_NAV = [
   { id: "users",         label: "Users",        icon: "👥" },
   { id: "applications",  label: "Applications", icon: "📋" },
   { id: "enquiries",     label: "Enquiries",    icon: "💬" },
+  { id: "settings",      label: "Settings",     icon: "⚙️" },
 ];
 
 function AdminPortal({ user, onLogout }) {
@@ -3746,6 +3961,9 @@ function AdminPortal({ user, onLogout }) {
   const [resetPwdInput, setResetPwdInput] = useState("");
   const [resetPwdResult, setResetPwdResult] = useState(null);
   const [resetPwdLoading, setResetPwdLoading] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({ name: "", email: "", phone: "", password: "", user_type: "dealer", city: "", state: "" });
+  const [createUserLoading, setCreateUserLoading] = useState(false);
 
   useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
 
@@ -3916,6 +4134,7 @@ function AdminPortal({ user, onLogout }) {
                 <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search username / email..."
                   style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
                 <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+                <Btn label="+ Create User" size="sm" color={C.primary} onClick={() => setShowCreateUser(true)} />
               </div>
             </Card>
             <Card padding={0}>
@@ -3923,7 +4142,7 @@ function AdminPortal({ user, onLogout }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: C.bg }}>
-                      {["User","Type","Dealer / Showroom","Joined","Actions"].map(h => (
+                      {["User","Type","Dealer / Showroom","Joined","Status","Actions"].map(h => (
                         <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
                       ))}
                     </tr>
@@ -3939,16 +4158,73 @@ function AdminPortal({ user, onLogout }) {
                         <td style={{ padding: "12px 14px", color: C.textMid }}>{u.dealer_name || "—"}</td>
                         <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{new Date(u.date_joined).toLocaleDateString("en-IN")}</td>
                         <td style={{ padding: "12px 14px" }}>
-                          {!u.is_superuser && <Btn label="Delete" size="sm" color={C.danger} onClick={() => deleteUser(u.id)} />}
+                          <Badge label={u.is_active ? "Active" : "Inactive"} color={u.is_active ? C.success : C.textDim} />
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {!u.is_superuser && (
+                              <>
+                                <button onClick={async () => {
+                                  try {
+                                    const r = await api.admin.toggleUserActive(u.id);
+                                    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: r.is_active } : x));
+                                    toast(r.is_active ? "User activated" : "User deactivated", r.is_active ? "success" : "warning");
+                                  } catch { toast("Failed to update user", "error"); }
+                                }} style={{
+                                  padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer",
+                                  background: u.is_active ? `${C.danger}15` : `${C.success}15`,
+                                  color: u.is_active ? C.danger : C.success, fontSize: 12, fontWeight: 700, fontFamily: "inherit"
+                                }}>
+                                  {u.is_active ? "Deactivate" : "Activate"}
+                                </button>
+                                <Btn label="Delete" size="sm" color={C.danger} onClick={() => deleteUser(u.id)} />
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
-                    {users.length === 0 && <tr><td colSpan={5} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No users found</td></tr>}
+                    {users.length === 0 && <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No users found</td></tr>}
                   </tbody>
                 </table>
               )}
             </Card>
             <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+
+            {/* Create User Modal */}
+            {showCreateUser && (
+              <Modal title="Create New User" onClose={() => setShowCreateUser(false)} width={480}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <Field label="Full Name"><Input value={createUserForm.name} onChange={v => setCreateUserForm(p => ({ ...p, name: v }))} placeholder="Dealer name" /></Field>
+                  <Field label="Email *"><Input value={createUserForm.email} onChange={v => setCreateUserForm(p => ({ ...p, email: v }))} type="email" placeholder="user@email.com" /></Field>
+                  <Field label="Phone"><Input value={createUserForm.phone} onChange={v => setCreateUserForm(p => ({ ...p, phone: v }))} placeholder="9876543210" /></Field>
+                  <Field label="Password *"><Input value={createUserForm.password} onChange={v => setCreateUserForm(p => ({ ...p, password: v }))} type="password" placeholder="Min 8 chars" /></Field>
+                  <Field label="User Type">
+                    <Select value={createUserForm.user_type} onChange={v => setCreateUserForm(p => ({ ...p, user_type: v }))}
+                      options={[{value:"dealer",label:"Dealer"},{value:"driver",label:"Driver"},{value:"admin",label:"Admin"}]} />
+                  </Field>
+                  <Field label="City"><Input value={createUserForm.city} onChange={v => setCreateUserForm(p => ({ ...p, city: v }))} placeholder="Delhi" /></Field>
+                </div>
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
+                  <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowCreateUser(false)} />
+                  <Btn label={createUserLoading ? "Creating..." : "Create User"} color={C.primary} disabled={createUserLoading} onClick={async () => {
+                    if (!createUserForm.email || !createUserForm.password) { toast("Email and password are required.", "warning"); return; }
+                    setCreateUserLoading(true);
+                    try {
+                      await api.admin.createUser(createUserForm);
+                      toast("User created successfully!", "success");
+                      setShowCreateUser(false);
+                      setCreateUserForm({ name: "", email: "", phone: "", password: "", user_type: "dealer", city: "", state: "" });
+                      loadPage();
+                    } catch (err) {
+                      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to create user.";
+                      toast(msg, "error");
+                    }
+                    setCreateUserLoading(false);
+                  }} />
+                </div>
+              </Modal>
+            )}
           </div>
         )}
 
@@ -4162,6 +4438,10 @@ function PublicLearnSection() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("videos");
+  const [watchVideo, setWatchVideo] = useState(null);
+  const [showLeadForm, setShowLeadForm] = useState(false);
+  const [leadForm, setLeadForm] = useState({ name: "", phone: "", city: "", model: "" });
+  const [leadSent, setLeadSent] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -4194,7 +4474,7 @@ function PublicLearnSection() {
           <div style={{ textAlign: "center", padding: 40, color: C.textDim }}>No videos available yet.</div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
-            {videos.map(v => <VideoCard key={v.id} v={v} />)}
+            {videos.map(v => <VideoCard key={v.id} v={v} onWatch={(vid) => setWatchVideo(vid)} />)}
           </div>
         )
       ) : (
@@ -4205,6 +4485,72 @@ function PublicLearnSection() {
             {posts.map(p => <BlogPostCard key={p.id} post={p} />)}
           </div>
         )
+      )}
+      {watchVideo && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ maxWidth: 800, width: "100%", position: "relative" }}>
+            <button onClick={() => { setWatchVideo(null); setShowLeadForm(true); }} style={{ position: "absolute", top: -40, right: 0, background: "none", border: "none", color: "#fff", fontSize: 28, cursor: "pointer" }}>×</button>
+            <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, overflow: "hidden", borderRadius: 12 }}>
+              <iframe
+                src={`https://www.youtube.com/embed/${extractVideoId(watchVideo.youtube_url)}?autoplay=1&rel=0`}
+                style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
+                allow="autoplay; encrypted-media" allowFullScreen title={watchVideo.title}
+              />
+            </div>
+            <div style={{ textAlign: "center", marginTop: 16 }}>
+              <button onClick={() => { setWatchVideo(null); setShowLeadForm(true); }} style={{ padding: "10px 28px", borderRadius: 8, background: "#25D366", border: "none", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                💬 Get Free Quote from Dealers
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showLeadForm && !leadSent && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: C.surface, borderRadius: 16, padding: 24, maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4, color: C.text }}>🛺 Get Free Quote</div>
+            <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>Our dealers will contact you within 2 hours</div>
+            {[
+              { key: "name", label: "Your Name *", placeholder: "Full name", type: "text" },
+              { key: "phone", label: "Mobile Number *", placeholder: "10-digit number", type: "tel" },
+              { key: "city", label: "Your City *", placeholder: "e.g. Delhi, Lucknow", type: "text" },
+              { key: "model", label: "Model Interested In", placeholder: "e.g. Vikram 4G Plus (optional)", type: "text" },
+            ].map(f => (
+              <div key={f.key} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{f.label}</div>
+                <input type={f.type} value={leadForm[f.key]} onChange={e => setLeadForm(p => ({ ...p, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button onClick={() => setShowLeadForm(false)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Cancel</button>
+              <button onClick={async () => {
+                if (!leadForm.name || !leadForm.phone || !leadForm.city) return;
+                try {
+                  await apiFetch("/enquiries/", { method: "POST", body: JSON.stringify({
+                    name: leadForm.name, phone: leadForm.phone, city: leadForm.city,
+                    message: `Interested in: ${leadForm.model || "eRickshaw"}. Source: YouTube Video Lead.`,
+                    source: "youtube_video"
+                  }) });
+                  setLeadSent(true);
+                } catch { alert("Failed to submit. Please try again."); }
+              }} style={{ flex: 2, padding: 10, borderRadius: 8, border: "none", background: C.primary, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                Submit — Get Free Quote
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {leadSent && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: C.surface, borderRadius: 16, padding: 32, maxWidth: 320, width: "100%", textAlign: "center" }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 8 }}>Quote Request Sent!</div>
+            <div style={{ fontSize: 14, color: C.textMid, marginBottom: 24 }}>Dealers in your city will contact you within 2 hours.</div>
+            <button onClick={() => { setLeadSent(false); setShowLeadForm(false); setLeadForm({ name: "", phone: "", city: "", model: "" }); }} style={{ padding: "10px 28px", borderRadius: 8, background: C.primary, border: "none", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Close</button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -4231,8 +4577,28 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
           </button>
         </div>
       </div>
-      <Marketplace />
-      <PublicLearnSection />
+      {/* Mobile bottom nav for public */}
+      <div className="erd-public-bottom-nav" style={{ display: "none", position: "fixed", bottom: 0, left: 0, right: 0, background: C.surface, borderTop: `1px solid ${C.border}`, zIndex: 200, padding: "6px 0 8px" }}>
+        {[
+          { label: "Home", icon: "🏠", action: onBack },
+          { label: "Browse", icon: "🛺", action: () => document.querySelector('.erd-marketplace-grid')?.scrollIntoView({ behavior: "smooth" }) },
+          { label: "Learn", icon: "🎓", action: () => document.querySelector('.erd-learn-hub')?.scrollIntoView({ behavior: "smooth" }) },
+          { label: "Dealer Portal", icon: "🏪", action: onDealerPortal },
+        ].map((n, i) => (
+          <button key={i} onClick={n.action} style={{
+            flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+            background: "transparent", border: "none", cursor: "pointer", color: C.textDim, fontFamily: "inherit",
+          }}>
+            <span style={{ fontSize: 22 }}>{n.icon}</span>
+            <span style={{ fontSize: 10 }}>{n.label}</span>
+          </button>
+        ))}
+      </div>
+      <style>{`.erd-public-bottom-nav { display: none; } @media (max-width: 768px) { .erd-public-bottom-nav { display: flex !important; } }`}</style>
+      <div style={{ paddingBottom: 0 }}>
+        <Marketplace />
+        <PublicLearnSection />
+      </div>
       <PWAInstallPrompt />
     </div>
   );
@@ -4259,6 +4625,10 @@ export default function App() {
   const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "support", "account"];
   const [plan, setPlan] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [dealerIsVerified, setDealerIsVerified] = useState(() => {
+    const d = JSON.parse(localStorage.getItem("erd_dealer") || "null");
+    return d?.is_verified ?? true;
+  });
 
   // Screen saver
   const [sleeping, setSleeping] = useState(false);
@@ -4282,7 +4652,7 @@ export default function App() {
   // Fetch plan once on login
   useEffect(() => {
     if (auth && appMode !== "admin") {
-      api.dashboard().then(d => setPlan(d.plan)).catch(() => {});
+      api.dashboard().then(d => { setPlan(d.plan); setDealerIsVerified(d.is_verified ?? true); }).catch(() => {});
     }
   }, [auth, appMode]);
 
@@ -4445,10 +4815,13 @@ export default function App() {
 
             <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }} {...swipeHandlers}>
               <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onBell={() => setPage("leads")} />
-              {dealer && !dealer.is_verified && (
+              {!dealerIsVerified && (
                 <div style={{ background: `${C_LIVE.warning}15`, borderBottom: `1px solid ${C_LIVE.warning}33`, padding: "10px 24px", fontSize: 13, color: C_LIVE.warning, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                   <span>⏳ <b>Your showroom is under verification</b> by platform admin. Your profile will become visible to buyers after approval.</span>
-                  <span style={{ fontSize: 11, color: C_LIVE.textMid }}>Contact: support@erikshawdekho.com</span>
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
+                    <a href="mailto:support@erikshawdekho.com" style={{ fontSize: 11, color: C_LIVE.textMid, textDecoration: "none" }}>✉ support@erikshawdekho.com</a>
+                    <a href="https://wa.me/919999999999?text=Hi+my+dealer+account+is+pending+verification" target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#25D366", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>
+                  </div>
                 </div>
               )}
               <main style={{ flex: 1 }} key={page}>
@@ -4456,6 +4829,11 @@ export default function App() {
               </main>
             </div>
 
+            {/* Floating WhatsApp Support */}
+            <a href={`https://wa.me/919999999999?text=Hi+I+need+help+with+my+dealer+account+on+eRickshawDekho`} target="_blank" rel="noreferrer"
+              style={{ position: "fixed", bottom: 80, right: 16, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(37,211,102,0.4)", textDecoration: "none", fontSize: 26 }}>
+              💬
+            </a>
             {showUpgradeModal && <ContactSupportModal onClose={() => setShowUpgradeModal(false)} onNavigate={setPage} />}
             <PWAInstallPrompt />
             {sleeping && <ScreenSaver onWake={resetSleep} />}

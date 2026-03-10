@@ -152,8 +152,12 @@ class Command(BaseCommand):
                 'is_active': True,
             }
         )
-        # Assign free plan to existing dealers without a plan
-        DealerProfile.objects.filter(plan=None).update(plan=free_plan)
+        # Assign early_dealer plan to the main demo dealer
+        if dealer.plan is None or dealer.plan.slug != 'early_dealer':
+            dealer.plan = early_plan
+            dealer.save(update_fields=['plan'])
+        # Assign free plan to all other dealers without a plan
+        DealerProfile.objects.filter(plan=None).exclude(pk=dealer.pk).update(plan=free_plan)
         self.stdout.write("  ✓ Plans seeded (Free + Early Dealer)")
 
         if options["reset"]:

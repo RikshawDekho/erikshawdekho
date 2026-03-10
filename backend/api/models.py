@@ -427,6 +427,52 @@ class BlogPost(models.Model):
         return self.title
 
 
+class PlatformSettings(models.Model):
+    """Singleton model for platform-wide settings managed by admin."""
+    support_phone    = models.CharField(max_length=20, blank=True, default="")
+    support_whatsapp = models.CharField(max_length=20, blank=True, default="")
+    support_email    = models.EmailField(default="support@erikshawdekho.com")
+    support_name     = models.CharField(max_length=100, default="eRickshawDekho Support")
+    homepage_intro_video_url = models.URLField(blank=True, default="")
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Platform Settings"
+
+    def __str__(self):
+        return "Platform Settings"
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class DealerAPIKey(models.Model):
+    SERVICE_CHOICES = [
+        ('twilio', 'Twilio (SMS/WhatsApp OTP)'),
+        ('gmail_smtp', 'Gmail SMTP (Email Marketing)'),
+        ('whatsapp_business', 'WhatsApp Business API'),
+        ('firebase', 'Firebase (Push Notifications)'),
+    ]
+    dealer       = models.ForeignKey(DealerProfile, on_delete=models.CASCADE, related_name='api_keys')
+    service      = models.CharField(max_length=30, choices=SERVICE_CHOICES)
+    display_name = models.CharField(max_length=100, blank=True)
+    api_key      = models.CharField(max_length=500)
+    api_secret   = models.CharField(max_length=500, blank=True)
+    extra_config = models.JSONField(default=dict, blank=True, help_text='e.g. {"from_number": "+1234567890"}')
+    is_active    = models.BooleanField(default=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('dealer', 'service')
+        ordering = ['service']
+
+    def __str__(self):
+        return f"{self.dealer.dealer_name} — {self.get_service_display()}"
+
+
 # ─── PUBLIC ENQUIRY (no auth needed, no required dealer FK) ───────
 
 class PublicEnquiry(models.Model):

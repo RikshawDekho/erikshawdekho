@@ -1,3 +1,4 @@
+import html2pdf from 'html2pdf.js';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useC } from './theme';
 
@@ -192,6 +193,10 @@ function InvoicePrint({ inv, onClose }) {
   const printRef = useRef();
 
   const handlePrint = () => {
+    const dealerName = (inv.dealer_name || "ERD").replace(/\s+/g, "-").replace(/[^a-zA-Z0-9-]/g, "").toUpperCase();
+    const invNo = (inv.invoice_number || "INV").replace(/\//g, "-");
+    const dateStr = inv.sale_date ? new Date(inv.sale_date).toLocaleDateString("en-GB").replace(/\//g, "") : new Date().toLocaleDateString("en-GB").replace(/\//g, "");
+    document.title = `ERD-INV-${dealerName}-${invNo}-${dateStr}`;
     const content = printRef.current.innerHTML;
     // Remove any existing print frame
     const existing = document.getElementById('erd-print-frame');
@@ -225,27 +230,24 @@ function InvoicePrint({ inv, onClose }) {
       frame.contentWindow.print();
       setTimeout(() => { if (frame.parentNode) frame.parentNode.removeChild(frame); }, 1000);
     }, 400);
+    setTimeout(() => { document.title = "eRickshawDekho"; }, 1500);
   };
 
   const handleDownload = () => {
-    const content = printRef.current.innerHTML;
-    const html = `<!DOCTYPE html><html><head><title>Invoice ${inv.invoice_number}</title>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: 'Nunito', sans-serif; background: #fff; color: #1e293b; font-size: 11px; }
-      .inv-pg { padding: 22px 26px; }
-    </style></head>
-    <body><div class="inv-pg">${content}</div></body></html>`;
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Invoice-${inv.invoice_number}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const dealerName = (inv.dealer_name || "ERD").replace(/\s+/g, "-").replace(/[^a-zA-Z0-9-]/g, "").toUpperCase();
+    const invNo = (inv.invoice_number || "INV").replace(/\//g, "-");
+    const dateStr = inv.sale_date ? new Date(inv.sale_date).toLocaleDateString("en-GB").replace(/\//g, "") : new Date().toLocaleDateString("en-GB").replace(/\//g, "");
+    const filename = `ERD-INV-${dealerName}-${invNo}-${dateStr}.pdf`;
+
+    const element = printRef.current;
+    const opt = {
+      margin: [8, 8, 8, 8],
+      filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
   };
 
   if (!inv) return null;
@@ -259,8 +261,8 @@ function InvoicePrint({ inv, onClose }) {
     <div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginBottom: 12 }}>
         <Btn label="✕ Close"    outline color={C.textMid}  onClick={onClose}     size="sm" />
-        <Btn label="🖨 Print"   color={C.primary}  onClick={handlePrint}    size="sm" />
-        <Btn label="⬇ Download" color={C.primaryD} onClick={handleDownload}  size="sm" />
+        <Btn label="🖨 Print / Save PDF"   color={C.primary}  onClick={handlePrint}    size="sm" />
+        <Btn label="⬇ Download PDF" color={C.primaryD} onClick={handleDownload}  size="sm" />
       </div>
 
       {/* Invoice body — always light (paper document) */}
