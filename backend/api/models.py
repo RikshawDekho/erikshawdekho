@@ -3,7 +3,30 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 
+# ─── USER PROFILE (role + FCM token for all user types) ───────────
+
+class UserProfile(models.Model):
+    USER_TYPES = [
+        ('driver', 'Driver / Buyer'),
+        ('dealer', 'Dealer / Showroom'),
+        ('admin',  'Platform Admin'),
+    ]
+    user      = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    user_type = models.CharField(max_length=20, choices=USER_TYPES, default='dealer')
+    phone     = models.CharField(max_length=15, blank=True)
+    city      = models.CharField(max_length=100, blank=True)
+    fcm_token = models.TextField(blank=True, help_text='Firebase Cloud Messaging device token')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} ({self.user_type})"
+
+
 class DealerProfile(models.Model):
+    PLAN_FREE  = 'free'
+    PLAN_PRO   = 'pro'
+    PLAN_CHOICES = [('free', 'Free Trial'), ('pro', 'Pro')]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='dealer_profile')
     dealer_name = models.CharField(max_length=200)
     gstin = models.CharField(max_length=20, blank=True)
@@ -13,8 +36,32 @@ class DealerProfile(models.Model):
     state = models.CharField(max_length=100, default='Delhi')
     pincode = models.CharField(max_length=10, blank=True)
     logo = models.ImageField(upload_to='dealers/', null=True, blank=True)
+    description = models.TextField(blank=True, help_text='Showroom description visible on public profile')
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    # ── Subscription ──────────────────────────────────────
+    plan_type       = models.CharField(max_length=20, choices=PLAN_CHOICES, default='free')
+    plan_started_at = models.DateTimeField(null=True, blank=True)
+    plan_expires_at = models.DateTimeField(null=True, blank=True)
+    # ── Notification Preferences ──────────────────────────
+    notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
+    notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')
+    notify_push     = models.BooleanField(default=True,  help_text='Receive push notifications')
+
+    @property
+    def plan_is_active(self):
+        from django.utils import timezone
+        if self.plan_expires_at is None:
+            return False
+        return self.plan_expires_at > timezone.now()
+
+    @property
+    def plan_days_remaining(self):
+        from django.utils import timezone
+        if not self.plan_expires_at:
+            return 0
+        delta = self.plan_expires_at - timezone.now()
+        return max(0, delta.days)
 
     def __str__(self):
         return self.dealer_name
@@ -211,3 +258,111 @@ class FinanceLoan(models.Model):
 
     def __str__(self):
         return f"{self.customer_name} - ₹{self.loan_amount}"
+
+
+# ─── DEALER APPLICATION ────────────────────────────────────────────
+
+class DealerApplication(models.Model):
+    STATUS_CHOICES = [
+        ('pending',  'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+    dealer_name  = models.CharField(max_length=200)
+    contact_name = models.CharField(max_length=200)
+    phone        = models.CharField(max_length=15)
+    email        = models.EmailField()
+    city         = models.CharField(max_length=100)
+    state        = models.CharField(max_length=100, blank=True)
+    gstin        = models.CharField(max_length=20, blank=True)
+    message      = models.TextField(blank=True)
+    status       = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    applied_at   = models.DateTimeField(auto_now_add=True)
+    reviewed_at  = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-applied_at']
+
+    def __str__(self):
+        return f"{self.dealer_name} — {self.status}"
+
+
+# ─── DEALER REVIEWS (from drivers/buyers) ─────────────────────────
+
+class DealerReview(models.Model):
+    dealer        = models.ForeignKey(DealerProfile, on_delete=models.CASCADE, related_name='reviews')
+    reviewer_name = models.CharField(max_length=200)
+    reviewer_phone = models.CharField(max_length=15, blank=True)
+    rating        = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comment       = models.TextField()
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.dealer.dealer_name} — {self.rating}★ by {self.reviewer_name}"
+
+
+# ─── PUBLIC ENQUIRY (no auth needed, no required dealer FK) ───────
+
+class PublicEnquiry(models.Model):
+    """Visitor lead from public marketplace / homepage — no login required."""
+    customer_name = models.CharField(max_length=200)
+    phone         = models.CharField(max_length=15)
+    city          = models.CharField(max_length=100, blank=True)
+    vehicle       = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True)
+    dealer        = models.ForeignKey(DealerProfile, on_delete=models.SET_NULL, null=True, blank=True,
+                                      help_text='Auto-assigned based on vehicle or city')
+    notes         = models.TextField(blank=True)
+    is_processed  = models.BooleanField(default=False)
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Public Enquiry'
+        verbose_name_plural = 'Public Enquiries'
+
+    def __str__(self):
+        return f"{self.customer_name} ({self.phone}) — {self.city}"
+
+
+# ─── NOTIFICATION LOG ─────────────────────────────────────────────
+
+class NotificationLog(models.Model):
+    CHANNEL_CHOICES = [
+        ('email',     'Email'),
+        ('whatsapp',  'WhatsApp'),
+        ('push',      'Push Notification'),
+        ('sms',       'SMS'),
+    ]
+    TYPE_CHOICES = [
+        ('welcome',        'Welcome'),
+        ('approval',       'Dealer Approved'),
+        ('rejection',      'Dealer Rejected'),
+        ('plan_expiry',    'Plan Expiry Warning'),
+        ('new_lead',       'New Lead'),
+        ('new_enquiry',    'New Enquiry'),
+        ('emi_due',        'EMI Due Reminder'),
+        ('delivery',       'Delivery Reminder'),
+        ('offer',          'Offer Broadcast'),
+        ('other',          'Other'),
+    ]
+
+    dealer      = models.ForeignKey(DealerProfile, on_delete=models.CASCADE,
+                                    related_name='notification_logs', null=True, blank=True)
+    channel     = models.CharField(max_length=20, choices=CHANNEL_CHOICES)
+    notif_type  = models.CharField(max_length=30, choices=TYPE_CHOICES, default='other')
+    recipient   = models.CharField(max_length=200, help_text='Email or phone number')
+    subject     = models.CharField(max_length=300, blank=True)
+    success     = models.BooleanField(default=False)
+    error_msg   = models.TextField(blank=True)
+    sent_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-sent_at']
+
+    def __str__(self):
+        status = '✓' if self.success else '✗'
+        return f"[{status}] {self.channel} {self.notif_type} → {self.recipient}"

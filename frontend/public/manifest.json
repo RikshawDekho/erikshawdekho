@@ -1,0 +1,56 @@
+{
+  "name": "ErikshawDekho — भारत का ई-रिक्शा प्लेटफॉर्म",
+  "short_name": "ErikshawDekho",
+  "description": "भारत का सबसे भरोसेमंद ई-रिक्शा प्लेटफॉर्म। Compare करें और best price पाएँ।",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#16a34a",
+  "theme_color": "#16a34a",
+  "orientation": "portrait-primary",
+  "lang": "hi-IN",
+  "categories": ["shopping", "automotive", "business"],
+  "icons": [
+    {
+      "src": "/rickshaw.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Marketplace",
+      "short_name": "Marketplace",
+      "url": "/marketplace",
+      "description": "Browse E-Rickshaws"
+    },
+    {
+      "name": "Find Dealers",
+      "short_name": "Dealers",
+      "url": "/dealers",
+      "description": "Find dealers near you"
+    },
+    {
+      "name": "Dealer Login",
+      "short_name": "Dashboard",
+      "url": "/dashboard",
+      "description": "Dealer SaaS Dashboard"
+    }
+  ],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

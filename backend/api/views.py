@@ -1,20 +1,35 @@
+import uuid
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Q, F, ExpressionWrapper, DecimalField, Avg
 from django.utils import timezone
 from datetime import timedelta, date
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import api_view, permission_classes, action
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
-from rest_framework.authtoken.models import Token
+from rest_framework.throttling import AnonRateThrottle
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry
 from .serializers import (
     VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
     CustomerSerializer, TaskSerializer, FinanceLoanSerializer, BrandSerializer,
-    DealerProfileSerializer, RegisterSerializer
+    DealerProfileSerializer, RegisterSerializer, DriverRegisterSerializer,
+    DealerApplicationSerializer, DealerReviewSerializer,
+    PublicDealerSerializer, PublicVehicleSerializer,
 )
+
+
+def _jwt_response(user):
+    """Return JWT access + refresh tokens as a dict."""
+    refresh = RefreshToken.for_user(user)
+    return {'access': str(refresh.access_token), 'refresh': str(refresh)}
+
+
+class AuthThrottle(AnonRateThrottle):
+    scope = 'auth'
 
 
 # ─── AUTH ─────────────────────────────────────────────────────────
@@ -22,14 +37,34 @@ from .serializers import (
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
+    """Register a new dealer account and return JWT tokens."""
+    throttle = AuthThrottle()
+    if not throttle.allow_request(request, None):
+        return Response({'error': 'Too many requests. Try again later.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
     ser = RegisterSerializer(data=request.data)
     if ser.is_valid():
         user = ser.save()
-        token, _ = Token.objects.get_or_create(user=user)
         dealer = user.dealer_profile
+        # Send welcome email + WhatsApp (fire-and-forget — don't block registration)
+        try:
+            from .emails import send_dealer_welcome_email, send_admin_new_dealer_alert
+            from .notifications import notify_dealer_welcome
+            if user.email:
+                expires_str = dealer.plan_expires_at.strftime('%d %b %Y') if dealer.plan_expires_at else 'N/A'
+                send_dealer_welcome_email(
+                    dealer_name=dealer.dealer_name,
+                    email=user.email,
+                    username=user.username,
+                    plan_expires=expires_str,
+                )
+            send_admin_new_dealer_alert(dealer.dealer_name, user.username, dealer.phone, dealer.city)
+            if dealer.phone and dealer.notify_whatsapp:
+                notify_dealer_welcome(dealer.dealer_name, dealer.phone, user.username)
+        except Exception:
+            pass  # Never block registration due to notification failure
         return Response({
-            'token': token.key,
-            'user': {'id': user.id, 'username': user.username, 'email': user.email},
+            **_jwt_response(user),
+            'user':   {'id': user.id, 'username': user.username, 'email': user.email, 'user_type': 'dealer'},
             'dealer': {'id': dealer.id, 'name': dealer.dealer_name, 'city': dealer.city}
         }, status=status.HTTP_201_CREATED)
     return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -37,32 +72,83 @@ def register(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+def register_driver(request):
+    """Register a new driver/buyer account and return JWT tokens."""
+    throttle = AuthThrottle()
+    if not throttle.allow_request(request, None):
+        return Response({'error': 'Too many requests. Try again later.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+    ser = DriverRegisterSerializer(data=request.data)
+    if ser.is_valid():
+        user = ser.save()
+        return Response({
+            **_jwt_response(user),
+            'user': {'id': user.id, 'username': user.username, 'email': user.email, 'user_type': 'driver'},
+        }, status=status.HTTP_201_CREATED)
+    return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def login_view(request):
+    """Authenticate user (dealer or driver) and return JWT tokens."""
+    throttle = AuthThrottle()
+    if not throttle.allow_request(request, None):
+        return Response({'error': 'Too many login attempts. Try again later.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
     username = request.data.get('username')
     password = request.data.get('password')
     user = authenticate(username=username, password=password)
     if not user:
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-    token, _ = Token.objects.get_or_create(user=user)
     dealer = getattr(user, 'dealer_profile', None)
+    profile = getattr(user, 'profile', None)
+    if user.is_superuser or user.is_staff:
+        user_type = 'admin'
+    elif profile:
+        user_type = profile.user_type
+    else:
+        user_type = 'dealer' if dealer else 'driver'
     return Response({
-        'token': token.key,
-        'user': {'id': user.id, 'username': user.username, 'email': user.email,
-                 'first_name': user.first_name, 'last_name': user.last_name},
+        **_jwt_response(user),
+        'user': {
+            'id': user.id, 'username': user.username, 'email': user.email,
+            'first_name': user.first_name, 'last_name': user.last_name,
+            'user_type': user_type,
+            'is_superuser': user.is_superuser,
+        },
         'dealer': {
-            'id': dealer.id if dealer else None,
-            'name': dealer.dealer_name if dealer else username,
-            'city': dealer.city if dealer else '',
+            'id':    dealer.id if dealer else None,
+            'name':  dealer.dealer_name if dealer else username,
+            'city':  dealer.city if dealer else '',
             'phone': dealer.phone if dealer else '',
             'gstin': dealer.gstin if dealer else '',
         }
-    })
+    }, status=status.HTTP_200_OK)
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 def me(request):
     user = request.user
     dealer = getattr(user, 'dealer_profile', None)
+
+    if request.method == 'PATCH':
+        # Update profile fields
+        data = request.data
+        if 'email' in data:
+            user.email = data['email'].strip()
+            user.save(update_fields=['email'])
+        if dealer:
+            if 'dealer_name' in data and data['dealer_name'].strip():
+                dealer.dealer_name = data['dealer_name'].strip()
+            if 'phone' in data and data['phone'].strip():
+                dealer.phone = data['phone'].strip()
+            if 'city' in data:
+                dealer.city = data['city'].strip()
+            if 'address' in data:
+                dealer.address = data['address'].strip()
+            if 'description' in data:
+                dealer.description = data['description'].strip()
+            dealer.save()
+
     return Response({
         'user': {'id': user.id, 'username': user.username, 'email': user.email},
         'dealer': {
@@ -72,6 +158,8 @@ def me(request):
             'phone': dealer.phone if dealer else '',
             'gstin': dealer.gstin if dealer else '',
             'address': dealer.address if dealer else '',
+            'description': dealer.description if dealer else '',
+            'is_verified': dealer.is_verified if dealer else False,
         }
     })
 
@@ -91,9 +179,11 @@ def dashboard(request):
     new_sales = Sale.objects.filter(dealer=dealer, sale_date__gte=month_start).count()
     pending_tasks = Task.objects.filter(dealer=dealer, is_completed=False).count()
 
+    _line_total = ExpressionWrapper(F('sale_price') * F('quantity'), output_field=DecimalField(max_digits=14, decimal_places=2))
+
     monthly_rev = Sale.objects.filter(
         dealer=dealer, sale_date__gte=month_start
-    ).aggregate(total=Sum('sale_price'))['total'] or 0
+    ).annotate(line_total=_line_total).aggregate(total=Sum('line_total'))['total'] or 0
 
     fuel_q = vehicles.values('fuel_type').annotate(count=Count('id'))
     fuel_breakdown = {item['fuel_type']: item['count'] for item in fuel_q}
@@ -114,7 +204,7 @@ def dashboard(request):
         day_end = day.replace(hour=23, minute=59, second=59)
         day_sales = Sale.objects.filter(
             dealer=dealer, sale_date__range=(day_start, day_end)
-        ).aggregate(total=Sum('sale_price'), count=Count('id'))
+        ).annotate(line_total=_line_total).aggregate(total=Sum('line_total'), count=Count('id'))
         sales_chart.append({
             'date': day.strftime('%b %d'),
             'revenue': float(day_sales['total'] or 0),
@@ -133,6 +223,13 @@ def dashboard(request):
         'upcoming_deliveries': SaleSerializer(upcoming_deliveries, many=True).data,
         'upcoming_tasks': TaskSerializer(upcoming_tasks, many=True).data,
         'sales_chart': sales_chart,
+        'plan': {
+            'type': dealer.plan_type,
+            'is_active': dealer.plan_is_active,
+            'days_remaining': dealer.plan_days_remaining,
+            'expires_at': dealer.plan_expires_at.isoformat() if dealer.plan_expires_at else None,
+            'is_verified': dealer.is_verified,
+        },
     })
 
 
@@ -182,7 +279,7 @@ def marketplace_vehicles(request):
     if search:   qs = qs.filter(Q(model_name__icontains=search)|Q(brand__name__icontains=search))
     if featured: qs = qs.filter(is_featured=True)
     if city:     qs = qs.filter(dealer__city__icontains=city)
-    serializer = VehicleListSerializer(qs.order_by('-is_featured','-created_at')[:20], many=True)
+    serializer = PublicVehicleSerializer(qs.order_by('-is_featured','-created_at')[:20], many=True)
     return Response({'results': serializer.data, 'count': qs.count()})
 
 
@@ -195,12 +292,16 @@ class LeadViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Lead.objects.filter(dealer=dealer).select_related('vehicle','vehicle__brand')
-        status_f = self.request.query_params.get('status')
-        source_f = self.request.query_params.get('source')
-        search   = self.request.query_params.get('search')
-        if status_f: qs = qs.filter(status=status_f)
-        if source_f: qs = qs.filter(source=source_f)
-        if search:   qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search))
+        status_f  = self.request.query_params.get('status')
+        source_f  = self.request.query_params.get('source')
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if status_f:  qs = qs.filter(status=status_f)
+        if source_f:  qs = qs.filter(source=source_f)
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search))
+        if date_from: qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:   qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -219,22 +320,29 @@ class LeadViewSet(viewsets.ModelViewSet):
 class SaleViewSet(viewsets.ModelViewSet):
     serializer_class = SaleSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'post', 'head', 'options']  # Sales are immutable once created
 
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Sale.objects.filter(dealer=dealer).select_related('vehicle','vehicle__brand')
-        search = self.request.query_params.get('search')
-        if search: qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search))
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search))
+        if date_from: qs = qs.filter(sale_date__date__gte=date_from)
+        if date_to:   qs = qs.filter(sale_date__date__lte=date_to)
         return qs.order_by('-sale_date')
 
     def perform_create(self, serializer):
         dealer = self.request.user.dealer_profile
-        import random, string
-        inv_no = 'INV-' + ''.join(random.choices(string.digits, k=5))
+        vehicle = serializer.validated_data['vehicle']
+        quantity = serializer.validated_data.get('quantity', 1)
+        if vehicle.stock_quantity < quantity:
+            raise ValidationError({'vehicle': f'Insufficient stock. Available: {vehicle.stock_quantity}'})
+        inv_no = 'INV-' + uuid.uuid4().hex[:8].upper()
         sale = serializer.save(dealer=dealer, invoice_number=inv_no)
         # Decrement stock
-        vehicle = sale.vehicle
-        vehicle.stock_quantity = max(0, vehicle.stock_quantity - sale.quantity)
+        vehicle.stock_quantity -= sale.quantity
         vehicle.save()
 
     @action(detail=True, methods=['get'])
@@ -284,8 +392,12 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Customer.objects.filter(dealer=dealer)
-        search = self.request.query_params.get('search')
-        if search: qs = qs.filter(Q(name__icontains=search)|Q(phone__icontains=search))
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(name__icontains=search)|Q(phone__icontains=search))
+        if date_from: qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:   qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -317,7 +429,15 @@ class FinanceLoanViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return FinanceLoan.objects.filter(dealer=self.request.user.dealer_profile).order_by('-applied_date')
+        dealer = self.request.user.dealer_profile
+        qs = FinanceLoan.objects.filter(dealer=dealer)
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(customer_name__icontains=search))
+        if date_from: qs = qs.filter(applied_date__date__gte=date_from)
+        if date_to:   qs = qs.filter(applied_date__date__lte=date_to)
+        return qs.order_by('-applied_date')
 
     def perform_create(self, serializer):
         serializer.save(dealer=self.request.user.dealer_profile)
@@ -368,8 +488,10 @@ def reports(request):
     else:
         start = now.replace(day=1, hour=0, minute=0, second=0)
 
+    _line_total = ExpressionWrapper(F('sale_price') * F('quantity'), output_field=DecimalField(max_digits=14, decimal_places=2))
+
     sales = Sale.objects.filter(dealer=dealer, sale_date__gte=start)
-    revenue = sales.aggregate(total=Sum('sale_price'))['total'] or 0
+    revenue = sales.annotate(line_total=_line_total).aggregate(total=Sum('line_total'))['total'] or 0
     sale_count = sales.count()
 
     leads = Lead.objects.filter(dealer=dealer, created_at__gte=start)
@@ -377,8 +499,8 @@ def reports(request):
     converted = leads.filter(status='converted').count()
     conversion_rate = round(converted / lead_count * 100, 1) if lead_count else 0
 
-    fuel_sales = sales.values('vehicle__fuel_type').annotate(
-        count=Count('id'), revenue=Sum('sale_price')
+    fuel_sales = sales.annotate(line_total=_line_total).values('vehicle__fuel_type').annotate(
+        count=Count('id'), revenue=Sum('line_total')
     )
 
     return Response({
@@ -391,3 +513,472 @@ def reports(request):
         'fuel_sales': list(fuel_sales),
         'avg_sale_value': float(revenue / sale_count) if sale_count else 0,
     })
+
+
+# ─── PUBLIC DEALER DIRECTORY ───────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def dealer_list(request):
+    """Public listing of verified dealers, searchable by city/state."""
+    qs = DealerProfile.objects.filter(is_verified=True).prefetch_related('reviews', 'vehicles')
+    city   = request.query_params.get('city')
+    state  = request.query_params.get('state')
+    search = request.query_params.get('search')
+    if city:   qs = qs.filter(city__icontains=city)
+    if state:  qs = qs.filter(state__icontains=state)
+    if search: qs = qs.filter(Q(dealer_name__icontains=search) | Q(city__icontains=search))
+    return Response({
+        'results': PublicDealerSerializer(qs[:30], many=True).data,
+        'count':   qs.count(),
+    })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def dealer_detail(request, dealer_id):
+    """Public dealer profile with vehicles and reviews."""
+    try:
+        dealer = DealerProfile.objects.prefetch_related('reviews', 'vehicles').get(pk=dealer_id, is_verified=True)
+    except DealerProfile.DoesNotExist:
+        return Response({'error': 'Dealer not found'}, status=status.HTTP_404_NOT_FOUND)
+    vehicles = Vehicle.objects.filter(dealer=dealer, is_active=True, stock_status__in=['in_stock', 'low_stock']).select_related('brand')
+    reviews  = dealer.reviews.all()[:10]
+    return Response({
+        'dealer':   PublicDealerSerializer(dealer).data,
+        'vehicles': PublicVehicleSerializer(vehicles, many=True).data,
+        'reviews':  DealerReviewSerializer(reviews, many=True).data,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def submit_dealer_review(request, dealer_id):
+    """Submit a review for a dealer (public, no auth required)."""
+    try:
+        dealer = DealerProfile.objects.get(pk=dealer_id, is_verified=True)
+    except DealerProfile.DoesNotExist:
+        return Response({'error': 'Dealer not found'}, status=status.HTTP_404_NOT_FOUND)
+    ser = DealerReviewSerializer(data=request.data)
+    if ser.is_valid():
+        ser.save(dealer=dealer)
+        return Response(ser.data, status=status.HTTP_201_CREATED)
+    return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ─── DEALER APPLICATION (become a dealer) ─────────────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def apply_dealer(request):
+    """Submit an application to become a listed dealer."""
+    ser = DealerApplicationSerializer(data=request.data)
+    if ser.is_valid():
+        ser.save()
+        return Response({
+            'message': 'Application submitted. Our team will contact you within 24 hours.',
+            'data': ser.data,
+        }, status=status.HTTP_201_CREATED)
+    return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ─── PUBLIC ENQUIRY (no auth, works from homepage / marketplace) ──
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def public_enquiry(request):
+    """
+    Accept a visitor enquiry from the public marketplace.
+    Auto-assigns to a dealer based on vehicle → city → first verified dealer.
+    No authentication required.
+    """
+    customer_name = request.data.get('customer_name', '').strip()
+    phone         = request.data.get('phone', '').strip()
+
+    if not customer_name:
+        return Response({'customer_name': 'Name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not phone:
+        return Response({'phone': 'Mobile number is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    vehicle_id = request.data.get('vehicle')
+    city       = request.data.get('city', '').strip()
+    notes      = request.data.get('notes', '').strip()
+
+    vehicle = None
+    dealer  = None
+
+    # 1. Try to match by vehicle → use that vehicle's dealer
+    if vehicle_id:
+        vehicle = Vehicle.objects.filter(pk=vehicle_id, is_active=True).first()
+        if vehicle:
+            dealer = vehicle.dealer
+
+    # 2. Try to find a verified dealer in the same city
+    if not dealer and city:
+        dealer = DealerProfile.objects.filter(is_verified=True, city__icontains=city).first()
+
+    # 3. Fall back to any verified dealer (platform will route)
+    if not dealer:
+        dealer = DealerProfile.objects.filter(is_verified=True).first()
+
+    enquiry = PublicEnquiry.objects.create(
+        customer_name=customer_name,
+        phone=phone,
+        city=city,
+        vehicle=vehicle,
+        dealer=dealer,
+        notes=notes,
+    )
+
+    # Notify the assigned dealer — fire-and-forget, never block the response
+    if dealer:
+        vehicle_name = str(vehicle) if vehicle else 'a vehicle'
+        try:
+            from api.emails import send_public_enquiry_notification
+            dealer_email = dealer.user.email
+            if dealer_email and dealer.notify_email:
+                send_public_enquiry_notification(
+                    dealer_email=dealer_email,
+                    dealer_name=dealer.dealer_name,
+                    customer_name=customer_name,
+                    customer_phone=phone,
+                    city=city,
+                    vehicle_name=vehicle_name,
+                    notes=notes,
+                )
+        except Exception:
+            pass  # Email failure is silent — admin sees it in NotificationLog
+
+        try:
+            from api.notifications import notify_dealer_new_lead
+            if dealer.phone and dealer.notify_whatsapp:
+                notify_dealer_new_lead(
+                    dealer_name=dealer.dealer_name,
+                    dealer_phone=dealer.phone,
+                    customer_name=customer_name,
+                    customer_phone=phone,
+                    vehicle_name=vehicle_name,
+                )
+        except Exception:
+            pass  # WhatsApp failure is silent
+
+    return Response({'message': 'Enquiry submitted! A dealer will call you within 24 hours.'}, status=status.HTTP_201_CREATED)
+
+
+# ─── DEALER ENQUIRIES (authenticated dealers see their assigned public enquiries) ──
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def dealer_enquiries(request):
+    """
+    GET:  Return public enquiries assigned to this dealer (newest first, max 100).
+    PATCH: Mark an enquiry as processed. Body: { "id": <int>, "is_processed": true }
+    """
+    dealer = getattr(request.user, 'dealer_profile', None)
+    if not dealer:
+        return Response({'error': 'Dealer profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'PATCH':
+        enquiry_id = request.data.get('id')
+        is_processed = request.data.get('is_processed', True)
+        try:
+            enq = PublicEnquiry.objects.get(pk=enquiry_id, dealer=dealer)
+            enq.is_processed = is_processed
+            enq.save(update_fields=['is_processed'])
+            return Response({'id': enq.id, 'is_processed': enq.is_processed})
+        except PublicEnquiry.DoesNotExist:
+            return Response({'error': 'Enquiry not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    qs = PublicEnquiry.objects.filter(dealer=dealer).select_related('vehicle', 'vehicle__brand').order_by('-created_at')
+    # Filters
+    date_from = request.query_params.get('date_from')
+    date_to   = request.query_params.get('date_to')
+    search    = request.query_params.get('search')
+    show_unprocessed = request.query_params.get('unprocessed')
+    if date_from: qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:   qs = qs.filter(created_at__date__lte=date_to)
+    if search:    qs = qs.filter(Q(customer_name__icontains=search) | Q(phone__icontains=search) | Q(city__icontains=search))
+    if show_unprocessed == '1': qs = qs.filter(is_processed=False)
+    total = qs.count()
+    # Pagination
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    start = (page - 1) * page_size
+    qs = qs[start:start + page_size]
+    data = [{
+        'id': e.id,
+        'customer_name': e.customer_name,
+        'phone': e.phone,
+        'city': e.city,
+        'notes': e.notes,
+        'vehicle': str(e.vehicle) if e.vehicle else None,
+        'vehicle_id': e.vehicle_id,
+        'is_processed': e.is_processed,
+        'created_at': e.created_at.isoformat(),
+    } for e in qs]
+    return Response({'results': data, 'count': total, 'page': page, 'page_size': page_size, 'total_pages': (total + page_size - 1) // page_size if page_size else 1})
+
+
+# ─── PLATFORM STATS (public) ──────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def platform_stats(request):
+    """Aggregate numbers shown on the public homepage."""
+    return Response({
+        'dealer_count':  DealerProfile.objects.filter(is_verified=True).count(),
+        'vehicle_count': Vehicle.objects.filter(is_active=True).count(),
+        'city_count':    DealerProfile.objects.filter(is_verified=True).values('city').distinct().count(),
+    })
+
+
+# ─── DEALER UNREAD COUNT (bell icon) ──────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dealer_unread_count(request):
+    """Return count of unread (unprocessed) public enquiries for bell icon."""
+    dealer = getattr(request.user, 'dealer_profile', None)
+    if not dealer:
+        return Response({'unread': 0})
+    count = PublicEnquiry.objects.filter(dealer=dealer, is_processed=False).count()
+    return Response({'unread': count})
+
+
+# ─── ADMIN PORTAL APIs ────────────────────────────────────────────
+
+def _is_admin(user):
+    return user.is_superuser or user.is_staff or getattr(getattr(user, 'profile', None), 'user_type', '') == 'admin'
+
+
+def admin_required(func):
+    """Decorator: ensures request.user is a platform admin."""
+    from functools import wraps
+    @wraps(func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated or not _is_admin(request.user):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+        return func(request, *args, **kwargs)
+    return wrapper
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_stats(request):
+    """Platform-wide stats for admin dashboard."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    from django.db.models import Sum
+    return Response({
+        'total_dealers':       DealerProfile.objects.count(),
+        'verified_dealers':    DealerProfile.objects.filter(is_verified=True).count(),
+        'total_vehicles':      Vehicle.objects.filter(is_active=True).count(),
+        'total_leads':         Lead.objects.count(),
+        'total_sales':         Sale.objects.count(),
+        'total_enquiries':     PublicEnquiry.objects.count(),
+        'unprocessed_enquiries': PublicEnquiry.objects.filter(is_processed=False).count(),
+        'pending_applications':DealerApplication.objects.filter(status='pending').count(),
+        'total_revenue':       Sale.objects.aggregate(r=Sum('sale_price'))['r'] or 0,
+        'total_users':         User.objects.count(),
+    })
+
+
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def admin_users(request, user_id=None):
+    """List all users or delete a specific user."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    if request.method == 'DELETE' and user_id:
+        try:
+            u = User.objects.get(pk=user_id)
+            if u.is_superuser:
+                return Response({'error': 'Cannot delete superuser.'}, status=status.HTTP_400_BAD_REQUEST)
+            u.delete()
+            return Response({'message': 'User deleted.'})
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+    # GET: list users with pagination
+    search = request.query_params.get('search', '')
+    user_type = request.query_params.get('user_type', '')
+    qs = User.objects.select_related('profile', 'dealer_profile').order_by('-date_joined')
+    if search:
+        qs = qs.filter(Q(username__icontains=search) | Q(email__icontains=search))
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = []
+    for u in qs:
+        profile = getattr(u, 'profile', None)
+        dealer  = getattr(u, 'dealer_profile', None)
+        utype   = profile.user_type if profile else ('dealer' if dealer else 'driver')
+        if user_type and utype != user_type:
+            continue
+        data.append({
+            'id': u.id, 'username': u.username, 'email': u.email,
+            'user_type': utype, 'is_superuser': u.is_superuser,
+            'is_active': u.is_active,
+            'date_joined': u.date_joined.isoformat(),
+            'dealer_name': dealer.dealer_name if dealer else None,
+            'dealer_city': dealer.city if dealer else None,
+            'is_verified': dealer.is_verified if dealer else None,
+        })
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_dealers(request, dealer_id=None):
+    """List all dealers or update a specific dealer (verify/suspend)."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    if request.method == 'PATCH' and dealer_id:
+        try:
+            dealer = DealerProfile.objects.get(pk=dealer_id)
+            if 'is_verified' in request.data:
+                dealer.is_verified = bool(request.data['is_verified'])
+            if 'plan_type' in request.data:
+                dealer.plan_type = request.data['plan_type']
+            dealer.save()
+            return Response({'id': dealer.id, 'is_verified': dealer.is_verified, 'plan_type': dealer.plan_type})
+        except DealerProfile.DoesNotExist:
+            return Response({'error': 'Dealer not found.'}, status=status.HTTP_404_NOT_FOUND)
+    # GET: list all dealers
+    search = request.query_params.get('search', '')
+    city   = request.query_params.get('city', '')
+    verified = request.query_params.get('verified', '')
+    qs = DealerProfile.objects.select_related('user').order_by('-created_at')
+    if search:   qs = qs.filter(Q(dealer_name__icontains=search) | Q(phone__icontains=search))
+    if city:     qs = qs.filter(city__icontains=city)
+    if verified == '1': qs = qs.filter(is_verified=True)
+    if verified == '0': qs = qs.filter(is_verified=False)
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = [{
+        'id': d.id, 'dealer_name': d.dealer_name, 'phone': d.phone,
+        'city': d.city, 'state': d.state, 'gstin': d.gstin,
+        'is_verified': d.is_verified, 'plan_type': d.plan_type,
+        'plan_expires_at': d.plan_expires_at.isoformat() if d.plan_expires_at else None,
+        'created_at': d.created_at.isoformat(),
+        'username': d.user.username, 'email': d.user.email,
+        'vehicle_count': d.vehicles.filter(is_active=True).count(),
+    } for d in qs]
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_applications(request, app_id=None):
+    """List all dealer applications or approve/reject one."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    if request.method == 'PATCH' and app_id:
+        try:
+            app = DealerApplication.objects.get(pk=app_id)
+            new_status = request.data.get('status')
+            if new_status in ('pending', 'approved', 'rejected'):
+                app.status = new_status
+                app.save(update_fields=['status'])
+            return Response({'id': app.id, 'status': app.status})
+        except DealerApplication.DoesNotExist:
+            return Response({'error': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
+    # GET: list applications
+    app_status = request.query_params.get('status', '')
+    search     = request.query_params.get('search', '')
+    qs = DealerApplication.objects.order_by('-applied_at')
+    if app_status: qs = qs.filter(status=app_status)
+    if search:     qs = qs.filter(Q(dealer_name__icontains=search) | Q(phone__icontains=search) | Q(email__icontains=search))
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = [{
+        'id': a.id, 'dealer_name': a.dealer_name, 'contact_name': a.contact_name,
+        'phone': a.phone, 'email': a.email, 'city': a.city, 'state': a.state,
+        'gstin': a.gstin, 'message': a.message, 'status': a.status,
+        'applied_at': a.applied_at.isoformat(),
+    } for a in qs]
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_enquiries(request):
+    """List ALL public enquiries across all dealers (admin only)."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+    search    = request.query_params.get('search', '')
+    date_from = request.query_params.get('date_from', '')
+    date_to   = request.query_params.get('date_to', '')
+    qs = PublicEnquiry.objects.select_related('dealer', 'vehicle').order_by('-created_at')
+    if search:    qs = qs.filter(Q(customer_name__icontains=search) | Q(phone__icontains=search))
+    if date_from: qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:   qs = qs.filter(created_at__date__lte=date_to)
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+    data = [{
+        'id': e.id, 'customer_name': e.customer_name, 'phone': e.phone,
+        'city': e.city, 'notes': e.notes,
+        'vehicle': str(e.vehicle) if e.vehicle else None,
+        'dealer_name': e.dealer.dealer_name if e.dealer else None,
+        'is_processed': e.is_processed,
+        'created_at': e.created_at.isoformat(),
+    } for e in qs]
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+# ─── NOTIFICATION PREFERENCES ─────────────────────────────────────
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def notification_preferences(request):
+    """Get or update the dealer's notification preferences."""
+    try:
+        dealer = request.user.dealer_profile
+    except DealerProfile.DoesNotExist:
+        return Response({'error': 'Dealer profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        return Response({
+            'notify_email':    dealer.notify_email,
+            'notify_whatsapp': dealer.notify_whatsapp,
+            'notify_push':     dealer.notify_push,
+        })
+
+    # PATCH — update preferences
+    allowed = {'notify_email', 'notify_whatsapp', 'notify_push'}
+    updated = {}
+    for field in allowed:
+        if field in request.data:
+            val = request.data[field]
+            if isinstance(val, bool):
+                setattr(dealer, field, val)
+                updated[field] = val
+    dealer.save(update_fields=list(updated.keys()) or ['notify_email'])
+    return Response({
+        'notify_email':    dealer.notify_email,
+        'notify_whatsapp': dealer.notify_whatsapp,
+        'notify_push':     dealer.notify_push,
+        'message': 'Preferences updated.',
+    })
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_fcm_token(request):
+    """Update FCM device token for push notifications."""
+    token = request.data.get('fcm_token', '').strip()
+    if not token:
+        return Response({'error': 'fcm_token required'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        profile = request.user.profile
+        profile.fcm_token = token
+        profile.save(update_fields=['fcm_token'])
+        return Response({'message': 'FCM token updated.'})
+    except Exception:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
