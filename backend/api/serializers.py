@@ -31,6 +31,7 @@ class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
 
 class VehicleListSerializer(serializers.ModelSerializer):
@@ -46,6 +47,7 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_vehicle_name(self, obj):
         if obj.vehicle:
@@ -63,6 +65,7 @@ class SaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sale
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}, 'invoice_number': {'read_only': True}}
 
     def get_vehicle_name(self, obj):
         return f"{obj.vehicle.brand} {obj.vehicle.model_name}"
@@ -72,12 +75,14 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
 
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
 
 class FinanceLoanSerializer(serializers.ModelSerializer):
@@ -85,6 +90,7 @@ class FinanceLoanSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinanceLoan
         fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_vehicle_name(self, obj):
         if obj.vehicle:

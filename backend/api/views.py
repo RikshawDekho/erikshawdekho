@@ -286,12 +286,16 @@ class LeadViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Lead.objects.filter(dealer=dealer).select_related('vehicle','vehicle__brand')
-        status_f = self.request.query_params.get('status')
-        source_f = self.request.query_params.get('source')
-        search   = self.request.query_params.get('search')
-        if status_f: qs = qs.filter(status=status_f)
-        if source_f: qs = qs.filter(source=source_f)
-        if search:   qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search))
+        status_f  = self.request.query_params.get('status')
+        source_f  = self.request.query_params.get('source')
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if status_f:  qs = qs.filter(status=status_f)
+        if source_f:  qs = qs.filter(source=source_f)
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search))
+        if date_from: qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:   qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -315,8 +319,12 @@ class SaleViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Sale.objects.filter(dealer=dealer).select_related('vehicle','vehicle__brand')
-        search = self.request.query_params.get('search')
-        if search: qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search))
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search))
+        if date_from: qs = qs.filter(sale_date__date__gte=date_from)
+        if date_to:   qs = qs.filter(sale_date__date__lte=date_to)
         return qs.order_by('-sale_date')
 
     def perform_create(self, serializer):

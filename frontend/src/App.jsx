@@ -8,8 +8,9 @@ const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
 
 async function apiFetch(path, opts = {}, _retry = false) {
   const token = localStorage.getItem("erd_access");
+  const isFormData = opts.body instanceof FormData;
   const res = await fetch(`${API}${path}`, {
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
+    headers: { ...(isFormData ? {} : { "Content-Type": "application/json" }), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
     ...opts,
   });
   if (res.status === 401 && !_retry) {
@@ -45,8 +46,8 @@ const api = {
   vehicles: {
     list:   (p="") => apiFetch(`/vehicles/${p}`),
     get:    (id)   => apiFetch(`/vehicles/${id}/`),
-    create: (d)    => apiFetch("/vehicles/", { method: "POST", body: JSON.stringify(d) }),
-    update: (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    create: (d)    => apiFetch("/vehicles/", { method: "POST", body: d instanceof FormData ? d : JSON.stringify(d) }),
+    update: (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
     delete: (id)   => apiFetch(`/vehicles/${id}/`, { method: "DELETE" }),
   },
   leads: {
@@ -328,6 +329,41 @@ function Spinner() {
   return <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
     <div style={{ width: 36, height: 36, borderRadius: "50%", border: `4px solid ${C.border}`, borderTop: `4px solid ${C.primary}`, animation: "spin 0.8s linear infinite" }}/>
   </div>;
+}
+
+function DateFilter({ from, to, onChange }) {
+  const today = new Date();
+  const fmt = d => d.toISOString().split('T')[0];
+  const presets = [
+    { label: 'Today',      f: fmt(today), t: fmt(today) },
+    { label: 'This Week',  f: fmt(new Date(today - 6*86400000)), t: fmt(today) },
+    { label: 'This Month', f: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), t: fmt(today) },
+    { label: 'This Year',  f: fmt(new Date(today.getFullYear(), 0, 1)), t: fmt(today) },
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      {presets.map(p => {
+        const active = from === p.f && to === p.t;
+        return (
+          <button key={p.label} onClick={() => onChange(p.f, p.t)}
+            style={{ padding: '4px 10px', borderRadius: 14, border: `1.5px solid ${active ? C.primary : C.border}`, background: active ? C.primary : '#fff', color: active ? '#fff' : C.textMid, cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+            {p.label}
+          </button>
+        );
+      })}
+      <input type="date" value={from} onChange={e => onChange(e.target.value, to)}
+        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }} />
+      <span style={{ fontSize: 11, color: C.textDim }}>–</span>
+      <input type="date" value={to} onChange={e => onChange(from, e.target.value)}
+        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }} />
+      {(from || to) && (
+        <button onClick={() => onChange('', '')}
+          style={{ padding: '4px 8px', borderRadius: 14, border: `1.5px solid ${C.danger}40`, background: `${C.danger}10`, color: C.danger, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>
+          ✕ Clear
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Pagination({ page, totalPages, onPage }) {
@@ -763,7 +799,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", price: "", stock_quantity: "", year: 2024, description: "" });
+  const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", vehicle_type: "passenger", price: "", stock_quantity: "", year: 2024, description: "", thumbnail: null });
   const [saving, setSaving] = useState(false);
   const [editVehicle, setEditVehicle] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -797,7 +833,23 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     if (!form.price) { toast("Price is required.", "warning"); return; }
     setSaving(true);
     try {
-      await api.vehicles.create({ ...form, brand: form.brand_id });
+      let payload;
+      if (form.thumbnail) {
+        payload = new FormData();
+        payload.append("brand", form.brand_id);
+        payload.append("model_name", form.model_name);
+        payload.append("fuel_type", form.fuel_type);
+        payload.append("vehicle_type", form.vehicle_type);
+        payload.append("price", form.price);
+        if (form.stock_quantity) payload.append("stock_quantity", form.stock_quantity);
+        payload.append("year", form.year);
+        if (form.description) payload.append("description", form.description);
+        payload.append("thumbnail", form.thumbnail);
+      } else {
+        const { thumbnail, brand_id, ...rest } = form;
+        payload = { ...rest, brand: brand_id };
+      }
+      await api.vehicles.create(payload);
       toast("Vehicle added successfully!", "success");
       onAddClose(); load();
     } catch (err) {
@@ -809,7 +861,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   const openEdit = (v) => {
     setEditVehicle(v);
-    setEditForm({ model_name: v.model_name, fuel_type: v.fuel_type, price: v.price, stock_quantity: v.stock_quantity, year: v.year, description: v.description || "" });
+    setEditForm({ model_name: v.model_name, fuel_type: v.fuel_type, vehicle_type: v.vehicle_type || "passenger", price: v.price, stock_quantity: v.stock_quantity, year: v.year, description: v.description || "", thumbnail: null });
   };
 
   const saveEdit = async (e) => {
@@ -818,7 +870,22 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     if (!editForm.price) { toast("Price is required.", "warning"); return; }
     setEditSaving(true);
     try {
-      await api.vehicles.update(editVehicle.id, editForm);
+      let payload;
+      if (editForm.thumbnail) {
+        payload = new FormData();
+        payload.append("model_name", editForm.model_name);
+        payload.append("fuel_type", editForm.fuel_type);
+        payload.append("vehicle_type", editForm.vehicle_type);
+        payload.append("price", editForm.price);
+        if (editForm.stock_quantity) payload.append("stock_quantity", editForm.stock_quantity);
+        payload.append("year", editForm.year);
+        if (editForm.description) payload.append("description", editForm.description);
+        payload.append("thumbnail", editForm.thumbnail);
+      } else {
+        const { thumbnail, ...rest } = editForm;
+        payload = rest;
+      }
+      await api.vehicles.update(editVehicle.id, payload);
       toast("Vehicle updated successfully!", "success");
       setEditVehicle(null); load();
     } catch (err) {
@@ -840,7 +907,9 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   const cols = [
     { label: "ID",       render: r => <span style={{ color: C.textDim, fontSize: 12 }}>{r.id}</span> },
-    { label: "Thumbnail",render: r => <div style={{ width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛺</div> },
+    { label: "Thumbnail",render: r => r.thumbnail
+        ? <img src={r.thumbnail} alt={r.model_name} style={{ width: 56, height: 40, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.border}` }} />
+        : <div style={{ width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛺</div> },
     { label: "Model",    render: r => <div><div style={{ fontWeight: 600 }}>{r.model_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.brand_name}</div></div> },
     { label: "Brand",    key:    "brand_name" },
     { label: "Fuel",     render: r => <Badge label={r.fuel_type} color={FUEL_COLOR[r.fuel_type]} /> },
@@ -896,22 +965,35 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
       {/* Add Vehicle Modal */}
       {showAdd && (
-        <Modal title="Add New Vehicle" onClose={onAddClose} width={560}>
+        <Modal title="Add New Vehicle" onClose={onAddClose} width={580}>
           <form onSubmit={submit}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <Field label="Brand" required>
                 <Select value={form.brand_id} onChange={setForm_("brand_id")} placeholder="Select brand"
                   options={brands.map(b => ({ value: b.id, label: b.name }))} />
               </Field>
-              <Field label="Model Name" required><Input value={form.model_name} onChange={setForm_("model_name")} placeholder="e.g. YatriKing Pro" required /></Field>
-              <Field label="Fuel Type" required>
-                <Select value={form.fuel_type} onChange={setForm_("fuel_type")} options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"}]} />
+              <Field label="Model Name" required><Input value={form.model_name} onChange={setForm_("model_name")} placeholder="e.g. YatriKing Pro" /></Field>
+              <Field label="Vehicle Type" required>
+                <Select value={form.vehicle_type} onChange={setForm_("vehicle_type")} options={[{value:"passenger",label:"Passenger Rickshaw"},{value:"cargo",label:"Cargo Loader"},{value:"auto",label:"Auto Rickshaw"}]} />
               </Field>
-              <Field label="Price (₹)" required><Input value={form.price} onChange={setForm_("price")} type="number" placeholder="150000" required /></Field>
+              <Field label="Fuel Type" required>
+                <Select value={form.fuel_type} onChange={setForm_("fuel_type")} options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"},{value:"diesel",label:"Diesel"}]} />
+              </Field>
+              <Field label="Price (₹)" required><Input value={form.price} onChange={setForm_("price")} type="number" placeholder="150000" /></Field>
               <Field label="Stock Quantity"><Input value={form.stock_quantity} onChange={setForm_("stock_quantity")} type="number" placeholder="10" /></Field>
               <Field label="Year"><Input value={form.year} onChange={setForm_("year")} type="number" placeholder="2024" /></Field>
             </div>
-            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description..." /></Field>
+            <Field label="Vehicle Photo (optional)" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <input type="file" accept="image/*" onChange={e => setForm_("thumbnail")(e.target.files[0] || null)}
+                  style={{ flex: 1, fontSize: 13, cursor: "pointer", padding: "8px 0" }} />
+                {form.thumbnail && (
+                  <img src={URL.createObjectURL(form.thumbnail)} alt="preview"
+                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+                )}
+              </div>
+            </Field>
+            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description, key specs..." /></Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={onAddClose} />
               <Btn label={saving ? "Saving..." : "Add Vehicle"} color={C.primary} type="submit" disabled={saving} />
@@ -922,18 +1004,22 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
       {/* Edit Vehicle Modal */}
       {editVehicle && (
-        <Modal title={`Edit — ${editVehicle.brand_name} ${editVehicle.model_name}`} onClose={() => setEditVehicle(null)} width={560}>
+        <Modal title={`Edit — ${editVehicle.brand_name} ${editVehicle.model_name}`} onClose={() => setEditVehicle(null)} width={580}>
           <form onSubmit={saveEdit}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <Field label="Model Name" required>
-                <Input value={editForm.model_name} onChange={v => setEditForm(p => ({ ...p, model_name: v }))} required />
+                <Input value={editForm.model_name} onChange={v => setEditForm(p => ({ ...p, model_name: v }))} />
+              </Field>
+              <Field label="Vehicle Type">
+                <Select value={editForm.vehicle_type} onChange={v => setEditForm(p => ({ ...p, vehicle_type: v }))}
+                  options={[{value:"passenger",label:"Passenger Rickshaw"},{value:"cargo",label:"Cargo Loader"},{value:"auto",label:"Auto Rickshaw"}]} />
               </Field>
               <Field label="Fuel Type">
                 <Select value={editForm.fuel_type} onChange={v => setEditForm(p => ({ ...p, fuel_type: v }))}
-                  options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"}]} />
+                  options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"},{value:"diesel",label:"Diesel"}]} />
               </Field>
               <Field label="Price (₹)" required>
-                <Input value={editForm.price} onChange={v => setEditForm(p => ({ ...p, price: v }))} type="number" required />
+                <Input value={editForm.price} onChange={v => setEditForm(p => ({ ...p, price: v }))} type="number" />
               </Field>
               <Field label="Stock Quantity">
                 <Input value={editForm.stock_quantity} onChange={v => setEditForm(p => ({ ...p, stock_quantity: v }))} type="number" />
@@ -942,6 +1028,20 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                 <Input value={editForm.year} onChange={v => setEditForm(p => ({ ...p, year: v }))} type="number" />
               </Field>
             </div>
+            <Field label="Update Photo (optional)" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {editVehicle.thumbnail && !editForm.thumbnail && (
+                  <img src={editVehicle.thumbnail} alt="current"
+                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+                )}
+                <input type="file" accept="image/*" onChange={e => setEditForm(p => ({ ...p, thumbnail: e.target.files[0] || null }))}
+                  style={{ flex: 1, fontSize: 13, cursor: "pointer", padding: "8px 0" }} />
+                {editForm.thumbnail && (
+                  <img src={URL.createObjectURL(editForm.thumbnail)} alt="new preview"
+                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `2px solid ${C.primary}` }} />
+                )}
+              </div>
+            </Field>
             <Field label="Description">
               <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3}
                 style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description..." />
@@ -1017,11 +1117,17 @@ function Leads({ onNavigate }) {
   const [vehicles, setVehicles] = useState([]);
   const [enquiries, setEnquiries] = useState([]);
   const [enquiriesLoading, setEnquiriesLoading] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    api.leads.list().then(d => setLeads(d.results || d)).finally(() => setLoading(false));
-  }, []);
+    const p = new URLSearchParams();
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo)   p.set("date_to",   dateTo);
+    const qs = p.toString() ? `?${p}` : "";
+    api.leads.list(qs).then(d => setLeads(d.results || d)).finally(() => setLoading(false));
+  }, [dateFrom, dateTo]);
 
   const loadEnquiries = useCallback(() => {
     setEnquiriesLoading(true);
@@ -1104,11 +1210,19 @@ function Leads({ onNavigate }) {
 
       {tab === "leads" && (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-            <Btn label="+ Add Lead" color={C.primary} onClick={() => setShowAdd(true)} />
-          </div>
+          <Card padding={12} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <DateFilter from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn label="↺ Refresh" size="sm" outline color={C.primary} onClick={load} />
+                <Btn label="+ Add Lead" color={C.primary} onClick={() => setShowAdd(true)} />
+              </div>
+            </div>
+          </Card>
           <Card padding={0}>
-            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>All Leads ({leads.length})</div>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>
+              Pipeline Leads ({leads.length}){(dateFrom || dateTo) && <span style={{ fontSize: 12, color: C.primary, fontWeight: 400, marginLeft: 8 }}>filtered by date</span>}
+            </div>
             {loading ? <Spinner /> : <Table cols={cols} rows={leads} />}
           </Card>
         </>
@@ -1904,8 +2018,13 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 
       {tab === "enquiry" && (
         <div>
-          <div style={{ background: `${C.primary}08`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: C.primary }}>
+          <div style={{ background: `${C.primary}08`, borderRadius: 8, padding: "10px 14px", marginBottom: 8, fontSize: 13, color: C.primary }}>
             🛺 <b>{v.brand_name} {v.model_name}</b> — Starting at {fmtINR(v.price)}
+          </div>
+          <div style={{ background: `${C.success}12`, border: `1px solid ${C.success}40`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>
+            🏪 Your enquiry will be sent to: <b>{v.dealer_name}</b>
+            {v.dealer_city && <span style={{ color: C.textMid }}> · {v.dealer_city}</span>}
+            {v.dealer_verified && <span style={{ marginLeft: 6, color: C.success, fontWeight: 600 }}>✓ Verified</span>}
           </div>
           <form onSubmit={submitEnquiry}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -1980,7 +2099,9 @@ function Marketplace() {
           {vehicles.map(v => (
             <Card key={v.id} style={{ transition: "all 0.2s", border: `1.5px solid ${C.border}`, cursor: "pointer" }}
               onClick={() => setDetailVehicle(v)}>
-              <div style={{ height: 120, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>🛺</div>
+              {v.thumbnail
+                ? <img src={v.thumbnail} alt={v.model_name} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 12 }} />
+                : <div style={{ height: 120, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>🛺</div>}
               <div style={{ fontWeight: 700, fontSize: 14 }}>{v.model_name}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 6, flexWrap: "wrap" }}>
                 <Badge label={v.fuel_type} color={FUEL_COLOR[v.fuel_type]} />
