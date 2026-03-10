@@ -36,6 +36,7 @@ class DealerProfile(models.Model):
     state = models.CharField(max_length=100, default='Delhi')
     pincode = models.CharField(max_length=10, blank=True)
     logo = models.ImageField(upload_to='dealers/', null=True, blank=True)
+    description = models.TextField(blank=True, help_text='Showroom description visible on public profile')
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     # ── Subscription ──────────────────────────────────────

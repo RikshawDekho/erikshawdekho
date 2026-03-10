@@ -198,7 +198,7 @@ class PublicDealerSerializer(serializers.ModelSerializer):
     class Meta:
         model  = DealerProfile
         fields = ['id', 'dealer_name', 'city', 'state', 'phone', 'address',
-                  'logo', 'avg_rating', 'review_count', 'vehicle_count']
+                  'description', 'logo', 'avg_rating', 'review_count', 'vehicle_count']
 
     def get_avg_rating(self, obj):
         avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']

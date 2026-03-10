@@ -139,6 +139,8 @@ def me(request):
                 dealer.city = data['city'].strip()
             if 'address' in data:
                 dealer.address = data['address'].strip()
+            if 'description' in data:
+                dealer.description = data['description'].strip()
             dealer.save()
 
     return Response({
@@ -150,6 +152,7 @@ def me(request):
             'phone': dealer.phone if dealer else '',
             'gstin': dealer.gstin if dealer else '',
             'address': dealer.address if dealer else '',
+            'description': dealer.description if dealer else '',
             'is_verified': dealer.is_verified if dealer else False,
         }
     })
@@ -270,7 +273,7 @@ def marketplace_vehicles(request):
     if search:   qs = qs.filter(Q(model_name__icontains=search)|Q(brand__name__icontains=search))
     if featured: qs = qs.filter(is_featured=True)
     if city:     qs = qs.filter(dealer__city__icontains=city)
-    serializer = VehicleListSerializer(qs.order_by('-is_featured','-created_at')[:20], many=True)
+    serializer = PublicVehicleSerializer(qs.order_by('-is_featured','-created_at')[:20], many=True)
     return Response({'results': serializer.data, 'count': qs.count()})
 
 
@@ -634,6 +637,45 @@ def public_enquiry(request):
             pass  # WhatsApp failure is silent
 
     return Response({'message': 'Enquiry submitted! A dealer will call you within 24 hours.'}, status=status.HTTP_201_CREATED)
+
+
+# ─── DEALER ENQUIRIES (authenticated dealers see their assigned public enquiries) ──
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def dealer_enquiries(request):
+    """
+    GET:  Return public enquiries assigned to this dealer (newest first, max 100).
+    PATCH: Mark an enquiry as processed. Body: { "id": <int>, "is_processed": true }
+    """
+    dealer = getattr(request.user, 'dealer_profile', None)
+    if not dealer:
+        return Response({'error': 'Dealer profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'PATCH':
+        enquiry_id = request.data.get('id')
+        is_processed = request.data.get('is_processed', True)
+        try:
+            enq = PublicEnquiry.objects.get(pk=enquiry_id, dealer=dealer)
+            enq.is_processed = is_processed
+            enq.save(update_fields=['is_processed'])
+            return Response({'id': enq.id, 'is_processed': enq.is_processed})
+        except PublicEnquiry.DoesNotExist:
+            return Response({'error': 'Enquiry not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    qs = PublicEnquiry.objects.filter(dealer=dealer).select_related('vehicle', 'vehicle__brand').order_by('-created_at')[:100]
+    data = [{
+        'id': e.id,
+        'customer_name': e.customer_name,
+        'phone': e.phone,
+        'city': e.city,
+        'notes': e.notes,
+        'vehicle': str(e.vehicle) if e.vehicle else None,
+        'vehicle_id': e.vehicle_id,
+        'is_processed': e.is_processed,
+        'created_at': e.created_at.isoformat(),
+    } for e in qs]
+    return Response({'results': data, 'count': len(data)})
 
 
 # ─── PLATFORM STATS (public) ──────────────────────────────────────

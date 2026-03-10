@@ -38,6 +38,9 @@ urlpatterns = [
     path('dealers/<int:dealer_id>/reviews/',  views.submit_dealer_review,  name='dealer-reviews'),
     path('dealers/apply/',                    views.apply_dealer,          name='dealer-apply'),
 
+    # ── Dealer enquiries (authenticated, see assigned public enquiries) ───
+    path('dealer/enquiries/',          views.dealer_enquiries,          name='dealer-enquiries'),
+
     # ── Notifications ─────────────────────────────────────────────
     path('notifications/preferences/', views.notification_preferences, name='notification-preferences'),
     path('notifications/fcm-token/',   views.update_fcm_token,         name='update-fcm-token'),
