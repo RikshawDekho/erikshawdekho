@@ -370,16 +370,16 @@ function DateFilter({ from, to, onChange }) {
         const active = from === p.f && to === p.t;
         return (
           <button key={p.label} onClick={() => onChange(p.f, p.t)}
-            style={{ padding: '4px 10px', borderRadius: 14, border: `1.5px solid ${active ? C.primary : C.border}`, background: active ? C.primary : '#fff', color: active ? '#fff' : C.textMid, cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+            style={{ padding: '4px 10px', borderRadius: 14, border: `1.5px solid ${active ? C.primary : C.border}`, background: active ? C.primary : C.surface, color: active ? '#fff' : C.textMid, cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
             {p.label}
           </button>
         );
       })}
       <input type="date" value={from} onChange={e => onChange(e.target.value, to)}
-        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }} />
+        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit', background: C.surface, color: C.text, colorScheme: 'inherit' }} />
       <span style={{ fontSize: 11, color: C.textDim }}>–</span>
       <input type="date" value={to} onChange={e => onChange(from, e.target.value)}
-        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }} />
+        style={{ padding: '4px 8px', border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit', background: C.surface, color: C.text, colorScheme: 'inherit' }} />
       {(from || to) && (
         <button onClick={() => onChange('', '')}
           style={{ padding: '4px 8px', borderRadius: 14, border: `1.5px solid ${C.danger}40`, background: `${C.danger}10`, color: C.danger, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>
@@ -733,20 +733,20 @@ function Dashboard({ onNavigate }) {
 
       {/* Verification warning */}
       {plan && !plan.is_verified && (
-        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ background: `${C.warning}15`, border: `1px solid ${C.warning}44`, borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: C.warning, display: "flex", alignItems: "center", gap: 8 }}>
           ⏳ <span>Your dealership is <b>pending verification</b>. Our team will review and approve it shortly.</span>
         </div>
       )}
 
       {/* Plan warnings */}
       {plan && !plan.is_active && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ background: `${C.danger}15`, border: `1px solid ${C.danger}44`, borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: C.danger, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>⚠️ Your <b>{plan.type} plan</b> has expired. Upgrade to continue accessing all features.</span>
-          <Btn label="⭐ View Plans" color="#dc2626" size="sm" onClick={() => onNavigate?.("plans")} />
+          <Btn label="⭐ View Plans" color={C.danger} size="sm" onClick={() => onNavigate?.("plans")} />
         </div>
       )}
       {plan && plan.is_active && plan.days_remaining !== null && plan.days_remaining <= 7 && (
-        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ background: `${C.warning}15`, border: `1px solid ${C.warning}44`, borderRadius: 10, padding: "10px 16px", marginBottom: 12, fontSize: 13, color: C.warning, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
           <span>⚠️ Your <b>{plan.type} plan</b> expires in <b>{plan.days_remaining} day{plan.days_remaining !== 1 ? "s" : ""}</b>.</span>
           <Btn label="⭐ Upgrade Now" color={C.warning} size="sm" onClick={() => onNavigate?.("plans")} />
         </div>
@@ -1316,7 +1316,7 @@ function Leads({ onNavigate }) {
               ) : (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ background: "#f8fafc" }}>
+                    <tr style={{ background: C.bg }}>
                       {["Buyer", "Phone", "City", "Vehicle Interest", "Message", "Time", "Status"].map(h => (
                         <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h.toUpperCase()}</th>
                       ))}
@@ -1324,7 +1324,7 @@ function Leads({ onNavigate }) {
                   </thead>
                   <tbody>
                     {enquiries.map(e => (
-                      <tr key={e.id} style={{ borderBottom: `1px solid ${C.border}`, background: e.is_processed ? "#fff" : `${C.primary}06` }}>
+                      <tr key={e.id} style={{ borderBottom: `1px solid ${C.border}`, background: e.is_processed ? C.surface : `${C.primary}08`, opacity: e.is_processed ? 0.65 : 1 }}>
                         <td style={{ padding: "12px 14px" }}>
                           <div style={{ fontWeight: 600 }}>{e.customer_name}</div>
                         </td>
@@ -1786,14 +1786,14 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
                   {plan.is_active ? `Expires: ${plan.expires_at ? new Date(plan.expires_at).toLocaleDateString("en-IN") : "—"}` : "Plan expired"}
                 </div>
               </div>
-              <Badge label={plan.is_active ? "Active" : "Expired"} color={plan.is_active ? C.success : "#dc2626"} />
+              <Badge label={plan.is_active ? "Active" : "Expired"} color={plan.is_active ? C.success : C.danger} />
             </div>
             {plan.is_active && plan.days_remaining !== null && (
               <div style={{
-                background: plan.days_remaining <= 7 ? "#fef2f2" : "#f0fdf4",
-                border: `1px solid ${plan.days_remaining <= 7 ? "#fecaca" : "#bbf7d0"}`,
+                background: plan.days_remaining <= 7 ? `${C.danger}12` : `${C.success}12`,
+                border: `1px solid ${plan.days_remaining <= 7 ? C.danger + "44" : C.success + "44"}`,
                 borderRadius: 8, padding: "10px 14px", fontSize: 13,
-                color: plan.days_remaining <= 7 ? "#dc2626" : C.success,
+                color: plan.days_remaining <= 7 ? C.danger : C.success,
               }}>
                 {plan.days_remaining <= 7
                   ? `⚠️ Only ${plan.days_remaining} day${plan.days_remaining !== 1 ? "s" : ""} remaining! Contact support to upgrade.`
@@ -1801,7 +1801,7 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
               </div>
             )}
             {!plan.is_active && (
-              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626" }}>
+              <div style={{ background: `${C.danger}15`, border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.danger }}>
                 ⚠️ Your plan has expired. Please contact support to renew.
               </div>
             )}
@@ -1847,8 +1847,8 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
       <Card>
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Account Actions</div>
         <button onClick={onLogout} style={{
-          width: "100%", padding: "12px", background: "#fef2f2", border: "1.5px solid #fecaca",
-          borderRadius: 8, color: "#dc2626", fontWeight: 700, fontSize: 14, cursor: "pointer",
+          width: "100%", padding: "12px", background: `${C.danger}12`, border: `1.5px solid ${C.danger}44`,
+          borderRadius: 8, color: C.danger, fontWeight: 700, fontSize: 14, cursor: "pointer",
           fontFamily: "inherit", transition: "all 0.15s",
         }}>
           🚪 Logout
@@ -2356,10 +2356,10 @@ function PlansPage({ onUpgrade }) {
           {/* Current plan status */}
           {plan && (
             <div style={{
-              background: plan.is_active ? `${C.success}12` : "#fef2f2",
-              border: `1px solid ${plan.is_active ? C.success + "44" : "#fecaca"}`,
+              background: plan.is_active ? `${C.success}12` : `${C.danger}12`,
+              border: `1px solid ${plan.is_active ? C.success + "44" : C.danger + "44"}`,
               borderRadius: 10, padding: "12px 18px", marginBottom: 24,
-              fontSize: 13, color: plan.is_active ? C.success : "#dc2626",
+              fontSize: 13, color: plan.is_active ? C.success : C.danger,
               display: "flex", alignItems: "center", gap: 8,
             }}>
               {plan.is_active
@@ -2440,7 +2440,7 @@ function PlansPage({ onUpgrade }) {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
-                  <tr style={{ background: "#f8fafc" }}>
+                  <tr style={{ background: C.bg }}>
                     <th style={{ padding: "10px 16px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}` }}>FEATURE</th>
                     <th style={{ padding: "10px 16px", textAlign: "center", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, width: 160 }}>FREE TRIAL</th>
                     <th style={{ padding: "10px 16px", textAlign: "center", color: C.primary, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, background: `${C.primary}08`, width: 160 }}>PRO ⭐</th>
@@ -3142,13 +3142,15 @@ export default function App() {
             <style>{`
               @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
               * { box-sizing: border-box; margin: 0; padding: 0; }
-              body { background: ${C_LIVE.bg}; }
+              body { background: ${C_LIVE.bg}; color-scheme: ${isDark ? 'dark' : 'light'}; }
+              :root { color-scheme: ${isDark ? 'dark' : 'light'}; }
               @keyframes spin { to { transform: rotate(360deg); } }
               @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
               ::-webkit-scrollbar { width: 6px; }
               ::-webkit-scrollbar-track { background: ${C_LIVE.bg}; }
               ::-webkit-scrollbar-thumb { background: ${C_LIVE.border}; border-radius: 4px; }
               select option { background: ${C_LIVE.surface}; color: ${C_LIVE.text}; }
+              input[type="date"], input[type="datetime-local"] { color-scheme: ${isDark ? 'dark' : 'light'}; }
             `}</style>
 
             <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />

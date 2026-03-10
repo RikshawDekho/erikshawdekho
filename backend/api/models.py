@@ -140,6 +140,8 @@ class Lead(models.Model):
         ('website', 'Website Lead'),
         ('referral', 'Referral'),
         ('social', 'Social Media'),
+        ('marketplace', 'Marketplace Enquiry'),
+        ('review', 'Buyer Review'),
     ]
     STATUS_CHOICES = [
         ('new', 'New'),
