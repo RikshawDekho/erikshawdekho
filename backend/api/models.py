@@ -43,6 +43,8 @@ class DealerProfile(models.Model):
     plan_type       = models.CharField(max_length=20, choices=PLAN_CHOICES, default='free')
     plan_started_at = models.DateTimeField(null=True, blank=True)
     plan_expires_at = models.DateTimeField(null=True, blank=True)
+    plan            = models.ForeignKey('Plan', on_delete=models.SET_NULL, null=True, blank=True, related_name='dealers')
+    listing_count   = models.IntegerField(default=0, help_text='Cached count of active listings')
     # ── Notification Preferences ──────────────────────────
     notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
     notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')
@@ -72,6 +74,37 @@ class DealerProfile(models.Model):
 
     def __str__(self):
         return self.dealer_name
+
+
+class Plan(models.Model):
+    SLUG_FREE  = 'free'
+    SLUG_EARLY = 'early_dealer'
+
+    name                = models.CharField(max_length=100, unique=True)
+    slug                = models.CharField(max_length=50, unique=True)
+    price               = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    listing_limit       = models.IntegerField(default=3, help_text='Max vehicle listings. 0 = unlimited.')
+    priority_ranking    = models.BooleanField(default=False)
+    featured_badge      = models.BooleanField(default=False)
+    whatsapp_alerts     = models.BooleanField(default=False)
+    analytics_access    = models.BooleanField(default=False)
+    yearly_subscription = models.BooleanField(default=False)
+    max_dealers         = models.IntegerField(default=0, help_text='Max dealers on this plan. 0 = unlimited.')
+    is_active           = models.BooleanField(default=True)
+    created_at          = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def signups_count(self):
+        return DealerProfile.objects.filter(plan=self).count()
+
+    @property
+    def is_available(self):
+        if self.max_dealers == 0:
+            return True
+        return self.signups_count < self.max_dealers
+
+    def __str__(self):
+        return f"{self.name} (₹{self.price})"
 
 
 class Brand(models.Model):
@@ -113,6 +146,7 @@ class Vehicle(models.Model):
     year = models.IntegerField(default=2024)
     is_used = models.BooleanField(default=False)
     thumbnail = models.ImageField(upload_to='vehicles/', null=True, blank=True)
+    thumbnail_url = models.URLField(max_length=500, null=True, blank=True, help_text='External image URL for seeded/demo vehicles')
     # Specs
     range_km = models.IntegerField(null=True, blank=True, help_text='Range in KM (for electric)')
     battery_capacity = models.CharField(max_length=50, blank=True)
@@ -166,6 +200,8 @@ class Lead(models.Model):
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='website')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
     notes = models.TextField(blank=True)
+    buyer_latitude  = models.FloatField(null=True, blank=True, help_text='Buyer GPS latitude')
+    buyer_longitude = models.FloatField(null=True, blank=True, help_text='Buyer GPS longitude')
     follow_up_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -360,6 +396,32 @@ class VideoResource(models.Model):
     def thumbnail_url(self):
         vid = self.video_id
         return f'https://img.youtube.com/vi/{vid}/hqdefault.jpg' if vid else ''
+
+    def __str__(self):
+        return self.title
+
+
+class BlogPost(models.Model):
+    CATEGORY_CHOICES = [
+        ('maintenance', 'Maintenance Tips'),
+        ('earning',     'Earn More'),
+        ('news',        'Industry News'),
+        ('scheme',      'Government Schemes'),
+        ('general',     'General'),
+    ]
+    dealer          = models.ForeignKey(DealerProfile, on_delete=models.CASCADE,
+                                         related_name='blog_posts', null=True, blank=True)
+    title           = models.CharField(max_length=300)
+    excerpt         = models.TextField(blank=True, help_text='Short description shown in card')
+    content         = models.TextField(blank=True, help_text='Full article content (optional)')
+    url             = models.URLField(max_length=500, blank=True, help_text='External article URL')
+    category        = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    cover_image_url = models.URLField(max_length=500, blank=True)
+    is_published    = models.BooleanField(default=True)
+    created_at      = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return self.title

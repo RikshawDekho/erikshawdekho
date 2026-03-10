@@ -12,6 +12,7 @@ router.register(r'tasks',         views.TaskViewSet,        basename='task')
 router.register(r'finance/loans', views.FinanceLoanViewSet, basename='loan')
 router.register(r'brands',        views.BrandViewSet,       basename='brand')
 router.register(r'videos',        views.VideoResourceViewSet, basename='video-resource')
+router.register(r'blogs',         views.BlogPostViewSet,      basename='blog-post')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -45,6 +46,8 @@ urlpatterns = [
     # ── Dealer enquiries (authenticated, see assigned public enquiries) ───
     path('dealer/enquiries/',          views.dealer_enquiries,          name='dealer-enquiries'),
     path('dealer/enquiries/unread/',   views.dealer_unread_count,       name='dealer-unread-count'),
+    path('plans/',                     views.plans_list,                name='plans-list'),
+    path('dealer/upgrade-plan/',       views.upgrade_plan,              name='upgrade-plan'),
 
     # ── Notifications ─────────────────────────────────────────────
     path('notifications/preferences/', views.notification_preferences, name='notification-preferences'),

@@ -12,13 +12,14 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource, BlogPost
 from .serializers import (
     VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
     CustomerSerializer, TaskSerializer, FinanceLoanSerializer, BrandSerializer,
     DealerProfileSerializer, RegisterSerializer, DriverRegisterSerializer,
     DealerApplicationSerializer, DealerReviewSerializer,
     PublicDealerSerializer, PublicVehicleSerializer, VideoResourceSerializer,
+    BlogPostSerializer,
 )
 
 
@@ -96,7 +97,14 @@ def login_view(request):
         return Response({'error': 'Too many login attempts. Try again later.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
     username = request.data.get('username')
     password = request.data.get('password')
-    user = authenticate(username=username, password=password)
+    # Support email login
+    login_username = username
+    if username and '@' in username:
+        try:
+            login_username = User.objects.get(email__iexact=username).username
+        except User.DoesNotExist:
+            pass
+    user = authenticate(username=login_username, password=password)
     if not user:
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
     dealer = getattr(user, 'dealer_profile', None)
@@ -239,6 +247,8 @@ def dashboard(request):
             'days_remaining': dealer.plan_days_remaining,
             'expires_at': dealer.plan_expires_at.isoformat() if dealer.plan_expires_at else None,
             'is_verified': dealer.is_verified,
+            'listing_limit': dealer.plan.listing_limit if dealer.plan else 3,
+            'listing_count': Vehicle.objects.filter(dealer=dealer, is_active=True).count(),
         },
     })
 
@@ -267,7 +277,19 @@ class VehicleViewSet(viewsets.ModelViewSet):
         return VehicleSerializer
 
     def perform_create(self, serializer):
-        serializer.save(dealer=self.request.user.dealer_profile)
+        dealer = self.request.user.dealer_profile
+        # Enforce plan listing limit
+        plan = getattr(dealer, 'plan', None)
+        if plan and plan.listing_limit > 0:
+            current_count = Vehicle.objects.filter(dealer=dealer, is_active=True).count()
+            if current_count >= plan.listing_limit:
+                raise ValidationError({
+                    'error': f'Your {plan.name} allows maximum {plan.listing_limit} vehicle listing(s). Upgrade your plan for unlimited listings.',
+                    'code': 'listing_limit_reached',
+                    'limit': plan.listing_limit,
+                    'current': current_count,
+                })
+        serializer.save(dealer=dealer)
 
     def destroy(self, request, *args, **kwargs):
         vehicle = self.get_object()
@@ -289,7 +311,12 @@ def marketplace_vehicles(request):
     if search:   qs = qs.filter(Q(model_name__icontains=search)|Q(brand__name__icontains=search))
     if featured: qs = qs.filter(is_featured=True)
     if city:     qs = qs.filter(dealer__city__icontains=city)
-    serializer = PublicVehicleSerializer(qs.order_by('-is_featured','-created_at')[:20], many=True)
+    # Priority: early_dealer plan first, then featured, then newest
+    qs = qs.select_related('dealer__plan')
+    qs_priority = qs.filter(dealer__plan__priority_ranking=True)
+    qs_free = qs.exclude(dealer__plan__priority_ranking=True)
+    combined = list(qs_priority.order_by('-is_featured', '-created_at')[:40]) + list(qs_free.order_by('-is_featured', '-created_at')[:20])
+    serializer = PublicVehicleSerializer(combined[:60], many=True)
     return Response({'results': serializer.data, 'count': qs.count()})
 
 
@@ -1076,6 +1103,102 @@ class VideoResourceViewSet(viewsets.ModelViewSet):
         except Exception:
             dealer = None
         serializer.save(dealer=dealer)
+
+
+class BlogPostViewSet(viewsets.ModelViewSet):
+    serializer_class = BlogPostSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return BlogPost.objects.filter(is_published=True).order_by('-created_at')
+        if user.is_superuser or user.is_staff:
+            return BlogPost.objects.all().order_by('-created_at')
+        try:
+            dealer = user.dealerprofile
+            return BlogPost.objects.filter(
+                Q(is_published=True) | Q(dealer=dealer)
+            ).order_by('-created_at')
+        except Exception:
+            return BlogPost.objects.filter(is_published=True).order_by('-created_at')
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        try:
+            dealer = self.request.user.dealerprofile
+        except Exception:
+            dealer = None
+        serializer.save(dealer=dealer)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def plans_list(request):
+    """List all available plans."""
+    from .models import Plan
+    plans = Plan.objects.filter(is_active=True).order_by('price')
+    data = []
+    for p in plans:
+        data.append({
+            'id': p.id,
+            'name': p.name,
+            'slug': p.slug,
+            'price': str(p.price),
+            'listing_limit': p.listing_limit,
+            'priority_ranking': p.priority_ranking,
+            'featured_badge': p.featured_badge,
+            'whatsapp_alerts': p.whatsapp_alerts,
+            'analytics_access': p.analytics_access,
+            'yearly_subscription': p.yearly_subscription,
+            'max_dealers': p.max_dealers,
+            'signups_count': p.signups_count,
+            'is_available': p.is_available,
+        })
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upgrade_plan(request):
+    """Upgrade dealer to Early Dealer plan."""
+    from .models import Plan
+    try:
+        dealer = request.user.dealer_profile
+    except Exception:
+        return Response({'error': 'Dealer profile not found.'}, status=404)
+
+    plan_slug = request.data.get('plan_slug', Plan.SLUG_EARLY)
+    try:
+        target_plan = Plan.objects.get(slug=plan_slug, is_active=True)
+    except Plan.DoesNotExist:
+        return Response({'error': 'Plan not found.'}, status=404)
+
+    if not target_plan.is_available:
+        return Response({
+            'error': f'The {target_plan.name} is no longer available (maximum {target_plan.max_dealers} dealers reached). Please contact support.'
+        }, status=400)
+
+    if dealer.plan and dealer.plan.slug == plan_slug:
+        return Response({'error': f'You are already on the {target_plan.name}.'}, status=400)
+
+    from datetime import timedelta
+    dealer.plan = target_plan
+    dealer.plan_type = 'pro' if plan_slug != Plan.SLUG_FREE else 'free'
+    dealer.plan_started_at = timezone.now()
+    dealer.plan_expires_at = timezone.now() + timedelta(days=365) if target_plan.yearly_subscription else None
+    dealer.save()
+
+    return Response({
+        'message': f'Successfully upgraded to {target_plan.name}!',
+        'plan_name': target_plan.name,
+        'plan_slug': target_plan.slug,
+        'expires_at': dealer.plan_expires_at.isoformat() if dealer.plan_expires_at else None,
+        'listing_limit': target_plan.listing_limit,
+    })
 
 
 # ─── PASSWORD RESET ───────────────────────────────────────────────────────────

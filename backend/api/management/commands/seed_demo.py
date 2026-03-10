@@ -12,7 +12,7 @@ import random, uuid
 
 from api.models import (
     DealerProfile, Brand, Vehicle, Lead, Sale, Customer,
-    Task, FinanceLoan, DealerReview, PublicEnquiry, VideoResource
+    Task, FinanceLoan, DealerReview, PublicEnquiry, VideoResource, BlogPost, Plan
 )
 
 
@@ -117,9 +117,44 @@ class Command(BaseCommand):
         # Always update plan if expired
         if dealer.plan_expires_at and dealer.plan_expires_at < timezone.now():
             dealer.plan_expires_at = timezone.now() + timedelta(days=365)
-            dealer.save()
+            dealer.save(update_fields=['plan_expires_at'])
 
         self.stdout.write(f"  ✓ Demo dealer: username=demo  password=demo1234")
+
+        # ── Plans ─────────────────────────────────────────────────────
+        free_plan, _ = Plan.objects.get_or_create(
+            slug='free',
+            defaults={
+                'name': 'Free Plan',
+                'price': 0,
+                'listing_limit': 3,
+                'priority_ranking': False,
+                'featured_badge': False,
+                'whatsapp_alerts': False,
+                'analytics_access': False,
+                'yearly_subscription': False,
+                'max_dealers': 0,
+                'is_active': True,
+            }
+        )
+        early_plan, _ = Plan.objects.get_or_create(
+            slug='early_dealer',
+            defaults={
+                'name': 'Early Dealer Plan',
+                'price': 5000,
+                'listing_limit': 0,
+                'priority_ranking': True,
+                'featured_badge': True,
+                'whatsapp_alerts': True,
+                'analytics_access': True,
+                'yearly_subscription': True,
+                'max_dealers': 100,
+                'is_active': True,
+            }
+        )
+        # Assign free plan to existing dealers without a plan
+        DealerProfile.objects.filter(plan=None).update(plan=free_plan)
+        self.stdout.write("  ✓ Plans seeded (Free + Early Dealer)")
 
         if options["reset"]:
             Vehicle.objects.filter(dealer=dealer).delete()
@@ -149,7 +184,7 @@ class Command(BaseCommand):
                         "vehicle_type":     vtype,
                         "price":            price,
                         "stock_quantity":   random.randint(3, 12),
-                        "thumbnail":        thumbnail_url,
+                        "thumbnail_url":     thumbnail_url,
                         "year":             2024,
                         "range_km":         random.choice([80, 100, 120, 150]),
                         "battery_capacity": random.choice(["60Ah 48V", "80Ah 48V", "100Ah 48V", "120Ah 60V"]),
@@ -369,6 +404,62 @@ class Command(BaseCommand):
                     }
                 )
             self.stdout.write(f"  ✓ {len(platform_videos)} video resources seeded")
+
+        # ── Blog posts ────────────────────────────────────────────────────
+        BLOG_POSTS = [
+            {
+                "title": "ई-रिक्शा Battery को 5 साल तक कैसे चलाएं — Expert Tips",
+                "excerpt": "सही charging habits और maintenance से आपकी battery की life 3 साल से बढ़कर 5 साल हो सकती है।",
+                "content": "1. हमेशा battery को 20% से नीचे discharge न होने दें। 2. रात को overcharge से बचें — timer लगाएं। 3. गर्मी में battery को direct sunlight से बचाएं। 4. हर महीने terminals को साफ करें। 5. Original charger ही use करें।",
+                "url": "",
+                "category": "maintenance",
+                "cover_image_url": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80",
+                "is_published": True,
+            },
+            {
+                "title": "₹1200/Day कमाएं — Route Planning Guide for eRickshaw Drivers",
+                "excerpt": "सही routes चुनकर और peak hours में काम करके आप daily earning को double कर सकते हैं।",
+                "content": "सुबह 7-9 बजे: School और office routes सबसे profitable होते हैं। दोपहर 12-2 बजे: Market और hospital areas। शाम 5-8 बजे: Return routes और shopping areas। Railway station और bus stand के nearby रहें।",
+                "url": "",
+                "category": "earning",
+                "cover_image_url": "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=600&q=80",
+                "is_published": True,
+            },
+            {
+                "title": "FAME-II Subsidy: ई-रिक्शा पर ₹30,000 तक की सब्सिडी कैसे पाएं",
+                "excerpt": "Government की FAME-II scheme के तहत electric rickshaw खरीदने पर बड़ी subsidy मिलती है। जानिए कैसे apply करें।",
+                "content": "FAME-II scheme के तहत electric 3-wheelers पर ₹10,000 से ₹30,000 तक की subsidy मिलती है। Apply करने के लिए: 1. Authorized dealer से ही खरीदें। 2. Aadhaar और PAN card तैयार रखें। 3. Dealer आपकी तरफ से form भरेगा।",
+                "url": "https://fame2.heavyindustries.gov.in/",
+                "category": "scheme",
+                "cover_image_url": "https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?w=600&q=80",
+                "is_published": True,
+            },
+            {
+                "title": "New eRickshaw Models 2024 — Best Value for Money",
+                "excerpt": "इस साल launch हुए नए models में कौन सा best है? Range, price और features की पूरी comparison।",
+                "content": "2024 में best value-for-money eRickshaw models: 1. Mahindra Treo Yaari — ₹1.15 lakh, 85km range. 2. Lohia Humsafar — ₹1.05 lakh, 80km range. 3. OSM Rage+ — ₹1.35 lakh, premium build quality.",
+                "url": "",
+                "category": "news",
+                "cover_image_url": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=600&q=80",
+                "is_published": True,
+            },
+            {
+                "title": "eRickshaw Registration Process — Complete Guide 2024",
+                "excerpt": "अपना ई-रिक्शा register करने के लिए कौन से documents चाहिए और कहाँ जाएं — step by step guide।",
+                "content": "Documents required: 1. Driving License (LMV/Transport). 2. Aadhar Card. 3. Address Proof. 4. Purchase Invoice. 5. Insurance Certificate. 6. Form 20 (application for registration). RTO में जाकर yellow number plate लें।",
+                "url": "",
+                "category": "general",
+                "cover_image_url": "https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?w=600&q=80",
+                "is_published": True,
+            },
+        ]
+
+        if BlogPost.objects.count() == 0:
+            for bp in BLOG_POSTS:
+                BlogPost.objects.create(**bp)
+            self.stdout.write(f"  ✓ {len(BLOG_POSTS)} blog posts seeded")
+        else:
+            self.stdout.write(f"  ✓ Blog posts already exist ({BlogPost.objects.count()})")
 
         self.stdout.write(self.style.SUCCESS(
             "\n✅ Demo data seeded successfully!\n"

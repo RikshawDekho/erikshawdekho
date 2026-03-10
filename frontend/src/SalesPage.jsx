@@ -193,25 +193,59 @@ function InvoicePrint({ inv, onClose }) {
 
   const handlePrint = () => {
     const content = printRef.current.innerHTML;
-    const win = window.open('', '_blank', 'width=820,height=1160');
-    win.document.write(`
-      <html><head><title>Invoice ${inv.invoice_number}</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Nunito', sans-serif; background: #fff; color: #1e293b; font-size: 11px; }
-        .inv-pg { padding: 22px 26px; }
-        @media print {
-          @page { margin: 8mm 10mm; size: A4 portrait; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .inv-pg { padding: 0; }
-        }
-      </style></head>
-      <body><div class="inv-pg">${content}</div></body></html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 400);
+    // Remove any existing print frame
+    const existing = document.getElementById('erd-print-frame');
+    if (existing) existing.remove();
+    // Create hidden iframe
+    const frame = document.createElement('iframe');
+    frame.id = 'erd-print-frame';
+    Object.assign(frame.style, {
+      position: 'fixed', top: '-9999px', left: '-9999px',
+      width: '1px', height: '1px', border: 'none', opacity: '0'
+    });
+    document.body.appendChild(frame);
+    const doc = frame.contentDocument || frame.contentWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><title>Invoice ${inv.invoice_number}</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Nunito', sans-serif; background: #fff; color: #1e293b; font-size: 11px; }
+      .inv-pg { padding: 22px 26px; }
+      @media print {
+        @page { margin: 8mm 10mm; size: A4 portrait; }
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .inv-pg { padding: 0; }
+      }
+    </style></head>
+    <body><div class="inv-pg">${content}</div></body></html>`);
+    doc.close();
+    frame.contentWindow.focus();
+    setTimeout(() => {
+      frame.contentWindow.print();
+      setTimeout(() => { if (frame.parentNode) frame.parentNode.removeChild(frame); }, 1000);
+    }, 400);
+  };
+
+  const handleDownload = () => {
+    const content = printRef.current.innerHTML;
+    const html = `<!DOCTYPE html><html><head><title>Invoice ${inv.invoice_number}</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Nunito', sans-serif; background: #fff; color: #1e293b; font-size: 11px; }
+      .inv-pg { padding: 22px 26px; }
+    </style></head>
+    <body><div class="inv-pg">${content}</div></body></html>`;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Invoice-${inv.invoice_number}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   if (!inv) return null;
@@ -225,8 +259,8 @@ function InvoicePrint({ inv, onClose }) {
     <div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginBottom: 12 }}>
         <Btn label="✕ Close"    outline color={C.textMid}  onClick={onClose}     size="sm" />
-        <Btn label="🖨 Print"   color={C.primary}           onClick={handlePrint} size="sm" />
-        <Btn label="⬇ Download" color={C.primaryD}          onClick={handlePrint} size="sm" />
+        <Btn label="🖨 Print"   color={C.primary}  onClick={handlePrint}    size="sm" />
+        <Btn label="⬇ Download" color={C.primaryD} onClick={handleDownload}  size="sm" />
       </div>
 
       {/* Invoice body — always light (paper document) */}
@@ -874,13 +908,13 @@ export function SalesPage() {
                 ))}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 12 }}>
-                <Field label="Battery Warranty (months)">
+                <Field label="Battery Warranty (months) (optional)">
                   <Input value={form.battery_warranty_months} onChange={setF("battery_warranty_months")} type="number" placeholder="e.g. 12" />
                 </Field>
-                <Field label="Motor Serial No.">
+                <Field label="Motor Serial No. (optional)">
                   <Input value={form.motor_serial_number} onChange={setF("motor_serial_number")} placeholder="e.g. MT2024005678" />
                 </Field>
-                <Field label="Vehicle Warranty (months)">
+                <Field label="Vehicle Warranty (months) (optional)">
                   <Input value={form.vehicle_warranty_months} onChange={setF("vehicle_warranty_months")} type="number" placeholder="e.g. 12" />
                 </Field>
               </div>

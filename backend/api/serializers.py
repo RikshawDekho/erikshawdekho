@@ -1,9 +1,10 @@
+import re as _re
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.db.models import Avg
 from django.utils import timezone
 from datetime import timedelta
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, VideoResource
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, VideoResource, BlogPost, Plan
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -39,7 +40,7 @@ class VehicleListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
         fields = ['id','brand_name','model_name','fuel_type','vehicle_type',
-                  'price','stock_quantity','stock_status','thumbnail','year','is_featured','is_used']
+                  'price','stock_quantity','stock_status','thumbnail','thumbnail_url','year','is_featured','is_used']
 
 
 class LeadSerializer(serializers.ModelSerializer):
@@ -99,36 +100,67 @@ class FinanceLoanSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.Serializer):
-    username    = serializers.CharField(max_length=150)
     email       = serializers.EmailField()
-    password    = serializers.CharField(min_length=6)
+    password    = serializers.CharField(min_length=8)
     dealer_name = serializers.CharField(max_length=200)
     phone       = serializers.CharField(max_length=15)
     city        = serializers.CharField(max_length=100, required=False, default='Delhi')
-
-    def validate_username(self, value):
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("Username already taken.")
-        return value
+    state       = serializers.CharField(max_length=100, required=False, default='')
+    pincode     = serializers.CharField(max_length=10, required=False, default='')
 
     def validate_email(self, value):
-        if value and User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("An account with this email already exists.")
+        value = value.lower().strip()
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("An account with this email already exists. Please sign in.")
         return value
 
+    def validate_phone(self, value):
+        digits = _re.sub(r'\D', '', value)
+        # Accept Indian numbers: 10 digits or +91XXXXXXXXXX
+        if len(digits) == 12 and digits.startswith('91'):
+            digits = digits[2:]
+        if len(digits) != 10 or not digits[0] in '6789':
+            raise serializers.ValidationError("Enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).")
+        clean = digits
+        if DealerProfile.objects.filter(phone__endswith=clean).exists():
+            raise serializers.ValidationError("An account with this mobile number already exists.")
+        return clean
+
+    def _generate_username(self, email):
+        """Auto-generate unique username from email prefix."""
+        base = _re.sub(r'[^a-zA-Z0-9]', '', email.split('@')[0]).lower()[:20]
+        if not base:
+            base = 'dealer'
+        username = base
+        counter = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base}{counter}"
+            counter += 1
+        return username
+
     def create(self, validated_data):
+        username = self._generate_username(validated_data['email'])
         user = User.objects.create_user(
-            username=validated_data['username'],
+            username=username,
             email=validated_data['email'],
             password=validated_data['password'],
         )
+        # Get free plan
+        try:
+            from .models import Plan
+            free_plan = Plan.objects.get(slug=Plan.SLUG_FREE)
+        except Exception:
+            free_plan = None
         now = timezone.now()
         DealerProfile.objects.create(
             user=user,
             dealer_name=validated_data['dealer_name'],
             phone=validated_data['phone'],
             city=validated_data.get('city', 'Delhi'),
+            state=validated_data.get('state', ''),
+            pincode=validated_data.get('pincode', ''),
             plan_type='free',
+            plan=free_plan,
             plan_started_at=now,
             plan_expires_at=now + timedelta(days=30),
         )
@@ -251,3 +283,26 @@ class VideoResourceSerializer(serializers.ModelSerializer):
 
     def get_dealer_name(self, obj):
         return obj.dealer.dealer_name if obj.dealer else 'eRickshawDekho'
+
+
+class BlogPostSerializer(serializers.ModelSerializer):
+    dealer_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model   = BlogPost
+        fields  = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
+
+    def get_dealer_name(self, obj):
+        return obj.dealer.dealer_name if obj.dealer else 'eRickshawDekho'
+
+
+class PlanSerializer(serializers.ModelSerializer):
+    signups_count = serializers.ReadOnlyField()
+    is_available  = serializers.ReadOnlyField()
+
+    class Meta:
+        model  = Plan
+        fields = ['id', 'name', 'slug', 'price', 'listing_limit', 'priority_ranking',
+                  'featured_badge', 'whatsapp_alerts', 'analytics_access',
+                  'yearly_subscription', 'max_dealers', 'signups_count', 'is_available', 'is_active']

@@ -107,9 +107,10 @@ const api = {
     delete: (id)   => apiFetch(`/tasks/${id}/`, { method: "DELETE" }),
   },
   finance: {
-    loans:   (p="") => apiFetch(`/finance/loans/${p}`),
-    create:  (d)    => apiFetch("/finance/loans/", { method: "POST", body: JSON.stringify(d) }),
-    emi:     (d)    => apiFetch("/finance/emi-calculator/", { method: "POST", body: JSON.stringify(d) }),
+    loans:      (p="") => apiFetch(`/finance/loans/${p}`),
+    create:     (d)    => apiFetch("/finance/loans/", { method: "POST", body: JSON.stringify(d) }),
+    emi:        (d)    => apiFetch("/finance/emi-calculator/", { method: "POST", body: JSON.stringify(d) }),
+    updateLoan: (id,d) => apiFetch(`/finance/loans/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
   },
   reports:  (p="") => apiFetch(`/reports/${p}`),
   brands:   ()     => apiFetch("/brands/"),
@@ -118,6 +119,12 @@ const api = {
     create: (d)    => apiFetch("/videos/", { method: "POST", body: JSON.stringify(d) }),
     update: (id,d) => apiFetch(`/videos/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
     delete: (id)   => apiFetch(`/videos/${id}/`, { method: "DELETE" }),
+  },
+  blogs: {
+    list:   (p="") => apiFetch(`/blogs/${p}`),
+    create: (d)    => apiFetch("/blogs/", { method: "POST", body: JSON.stringify(d) }),
+    update: (id,d) => apiFetch(`/blogs/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    delete: (id)   => apiFetch(`/blogs/${id}/`, { method: "DELETE" }),
   },
   notifications: {
     getPrefs:    ()  => apiFetch("/notifications/preferences/"),
@@ -147,6 +154,10 @@ const api = {
   auth: {
     forgotPassword:  (d) => apiFetch("/auth/forgot-password/",  { method: "POST", body: JSON.stringify(d) }),
     resetPassword:   (d) => apiFetch("/auth/reset-password/",   { method: "POST", body: JSON.stringify(d) }),
+  },
+  dealer: {
+    plans:       ()    => apiFetch("/plans/"),
+    upgradePlan: (d)   => apiFetch("/dealer/upgrade-plan/", { method: "POST", body: JSON.stringify(d) }),
   },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),
@@ -503,7 +514,7 @@ function AuthPage({ onAuth }) {
   const C = useC();
   const toast = useToast();
   const [mode, setMode] = useState("login"); // "login" | "register" | "forgot" | "otp"
-  const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "", pincode: "" });
+  const [form, setForm] = useState({ username: "", password: "", confirm_password: "", email: "", dealer_name: "", phone: "", city: "", state: "", pincode: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [authStatus, setAuthStatus] = useState(null);
@@ -560,10 +571,8 @@ function AuthPage({ onAuth }) {
 
   const validate = () => {
     const errs = {};
-    // Username
-    if (!form.username.trim()) errs.username = "Username is required";
-    else if (form.username.includes(" ")) errs.username = "Username cannot contain spaces";
-    else if (form.username.length < 3) errs.username = "Username must be at least 3 characters";
+    // For login: username is required. For register: email is the identifier.
+    if (mode === "login" && !form.username.trim()) errs.username = "Email or username is required";
     // Password
     if (!form.password) errs.password = "Password is required";
     else if (mode === "register" && form.password.length < 8)
@@ -577,8 +586,10 @@ function AuthPage({ onAuth }) {
       if (!form.phone.trim()) errs.phone = "Mobile number is required";
       else if (!/^[6-9]\d{9}$/.test(form.phone.replace(/\D/g, "").slice(-10)))
         errs.phone = "Enter a valid 10-digit Indian mobile number (starts with 6–9)";
-      if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-        errs.email = "Enter a valid email address";
+      if (!form.email.trim()) errs.email = "Email address is required";
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = "Enter a valid email address";
+      if (form.confirm_password && form.password !== form.confirm_password)
+        errs.confirm_password = "Passwords do not match";
       if (!form.city.trim()) errs.city = "City is required";
       if (form.pincode && !/^\d{6}$/.test(form.pincode)) errs.pincode = "Enter a valid 6-digit pincode";
     }
@@ -598,7 +609,7 @@ function AuthPage({ onAuth }) {
     try {
       const data = mode === "login"
         ? await api.login({ username: form.username, password: form.password })
-        : await api.register(form);
+        : await api.register({ email: form.email, password: form.password, dealer_name: form.dealer_name, phone: form.phone, city: form.city, state: form.state || pincodeData?.state || "", pincode: form.pincode });
       localStorage.setItem("erd_access", data.access);
       if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
       setAuthStatus("success");
@@ -749,47 +760,61 @@ function AuthPage({ onAuth }) {
           )}
 
           <form onSubmit={submit}>
-            <Field label="Username" required>
-              <Input value={form.username} onChange={set("username")} placeholder="Enter your username" autoComplete="username" />
-              <FieldErr k="username" />
-            </Field>
+            {mode === "login" && (
+              <Field label="Email or Username" required>
+                <Input value={form.username} onChange={set("username")} placeholder="Email or username" autoComplete="username" />
+                <FieldErr k="username" />
+              </Field>
+            )}
+            {mode === "register" && (
+              <>
+                <Field label="Dealership / Showroom Name *" required>
+                  <Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="e.g. Sharma eRickshaw Centre" />
+                  <FieldErr k="dealer_name" />
+                </Field>
+                <Field label="Email Address *" required>
+                  <Input value={form.email} onChange={set("email")} type="email" placeholder="dealer@example.com" />
+                  <FieldErr k="email" />
+                </Field>
+                <Field label="Mobile Number *" required>
+                  <Input value={form.phone} onChange={v => { set("phone")(v.replace(/\D/g, "").slice(0, 10)); }} placeholder="10-digit Indian number (starts with 6-9)" />
+                  <FieldErr k="phone" />
+                </Field>
+              </>
+            )}
             <Field label="Password" required>
               <Input value={form.password} onChange={set("password")} type="password" placeholder={mode === "register" ? "Min 8 chars, include a number" : "Your password"} autoComplete={mode === "login" ? "current-password" : "new-password"} />
               <FieldErr k="password" />
             </Field>
-            {mode === "register" && <>
-              <Field label="Dealership Name" required>
-                <Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="e.g. Kumar Electric Vehicles" />
-                <FieldErr k="dealer_name" />
+            {mode === "register" && (
+              <Field label="Confirm Password *" required>
+                <Input value={form.confirm_password} onChange={set("confirm_password")} type="password" placeholder="Repeat your password" />
+                <FieldErr k="confirm_password" />
               </Field>
-              <Field label="Mobile Number" required>
-                <Input value={form.phone} onChange={set("phone")} placeholder="10-digit number (e.g. 9876543210)" />
-                <FieldErr k="phone" />
-              </Field>
-              <Field label="Email (optional)">
-                <Input value={form.email} onChange={set("email")} type="email" placeholder="you@email.com" autoComplete="email" />
-                <FieldErr k="email" />
-              </Field>
-              <Field label="Pincode / ZIP Code">
-                <div style={{ position: "relative" }}>
-                  <Input value={form.pincode} onChange={v => { set("pincode")(v); if (v.length === 6) lookupPincode(v); }} placeholder="e.g. 110085" />
-                  {pincodeLoading && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: C.textMid }}>🔍 Looking up...</span>}
-                </div>
-                <FieldErr k="pincode" />
-                {pincodeData && <div style={{ fontSize: 11, color: C.success, marginTop: 3 }}>✓ {pincodeData.city}, {pincodeData.state}</div>}
-              </Field>
-              <Field label="City / District" required>
-                <select value={form.city} onChange={e => set("city")(e.target.value)}
-                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${fieldErrors.city ? C.danger : C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
-                  <option value="">— Select your city —</option>
-                  {pincodeData?.suggestions?.filter(s => s !== form.city).map(s => (
-                    <option key={s} value={s} style={{ fontWeight: 600, color: C.primary }}>✓ {s} (from pincode)</option>
-                  ))}
-                  {MAJOR_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <FieldErr k="city" />
-              </Field>
-            </>}
+            )}
+            {mode === "register" && (
+              <>
+                <Field label="Pincode / ZIP Code">
+                  <div style={{ position: "relative" }}>
+                    <Input value={form.pincode} onChange={v => { set("pincode")(v); if (v.length === 6) lookupPincode(v); }} placeholder="e.g. 110085" />
+                    {pincodeLoading && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: C.textMid }}>🔍 Looking up...</span>}
+                  </div>
+                  <FieldErr k="pincode" />
+                  {pincodeData && <div style={{ fontSize: 11, color: C.success, marginTop: 3 }}>✓ {pincodeData.city}, {pincodeData.state}</div>}
+                </Field>
+                <Field label="City / District" required>
+                  <select value={form.city} onChange={e => set("city")(e.target.value)}
+                    style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${fieldErrors.city ? C.danger : C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
+                    <option value="">— Select your city —</option>
+                    {pincodeData?.suggestions?.filter(s => s !== form.city).map(s => (
+                      <option key={s} value={s} style={{ fontWeight: 600, color: C.primary }}>✓ {s} (from pincode)</option>
+                    ))}
+                    {MAJOR_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <FieldErr k="city" />
+                </Field>
+              </>
+            )}
             <Btn
               label={loading ? (mode === "login" ? "Signing in..." : "Creating account...") : (mode === "login" ? "Sign In" : "Create Account")}
               type="submit"
@@ -828,6 +853,7 @@ const NAV = [
   { id: "learn",      label: "Learn",      icon: "🎓" },
   { id: "marketplace",label: "Marketplace",icon: "🛒" },
   { id: "plans",      label: "Plans",      icon: "⭐" },
+  { id: "support",    label: "Support",    icon: "🛟" },
 ];
 
 const BOTTOM_NAV = [
@@ -1115,6 +1141,53 @@ function Dashboard({ onNavigate }) {
 }
 
 // ═══════════════════════════════════════════════════════
+// PLAN LISTING BANNER
+// ═══════════════════════════════════════════════════════
+function PlanListingBanner() {
+  const C = useC();
+  const [count, setCount] = useState(null);
+
+  useEffect(() => {
+    api.dashboard().then(d => {
+      if (d.plan?.listing_limit !== undefined) {
+        setCount({ limit: d.plan.listing_limit, current: d.plan.listing_count || 0 });
+      }
+    }).catch(() => {});
+  }, []);
+
+  if (!count || count.limit === 0) return null; // unlimited or no data
+
+  const atLimit = count.current >= count.limit;
+  const pct = Math.min(100, (count.current / count.limit) * 100);
+
+  return (
+    <div style={{
+      margin: "0 24px 16px", padding: "12px 18px", borderRadius: 10,
+      background: atLimit ? `${C.danger}10` : `${C.primary}08`,
+      border: `1.5px solid ${atLimit ? C.danger : C.primary}33`,
+      display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+    }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: atLimit ? C.danger : C.text, marginBottom: 6 }}>
+          {atLimit ? "⚠️ Listing Limit Reached" : "📦 Vehicle Listings"}: {count.current} / {count.limit}
+        </div>
+        <div style={{ height: 6, background: C.border, borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: atLimit ? C.danger : C.primary, borderRadius: 4, transition: "width 0.5s" }} />
+        </div>
+        {atLimit && (
+          <div style={{ fontSize: 12, color: C.danger, marginTop: 6 }}>
+            You have reached the Free Plan limit of {count.limit} listings. Upgrade for unlimited listings.
+          </div>
+        )}
+      </div>
+      {atLimit && (
+        <Btn label="⭐ Upgrade Plan" color={C.primary} size="sm" onClick={() => {}} />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // INVENTORY PAGE
 // ═══════════════════════════════════════════════════════
 function Inventory({ showAdd, onAddClose, onNavigate }) {
@@ -1239,8 +1312,8 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   const cols = [
     { label: "ID",       render: r => <span style={{ color: C.textDim, fontSize: 12 }}>{r.id}</span> },
-    { label: "Thumbnail",render: r => r.thumbnail
-        ? <img src={r.thumbnail} alt={r.model_name} style={{ width: 56, height: 40, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.border}` }} />
+    { label: "Thumbnail",render: r => (r.thumbnail || r.thumbnail_url)
+        ? <img src={r.thumbnail || r.thumbnail_url} alt={r.model_name} style={{ width: 56, height: 40, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.border}` }} />
         : <div style={{ width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛺</div> },
     { label: "Model",    render: r => <div><div style={{ fontWeight: 600 }}>{r.model_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.brand_name}</div></div> },
     { label: "Brand",    key:    "brand_name" },
@@ -1259,6 +1332,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   return (
     <div style={{ padding: 24 }}>
+      <PlanListingBanner />
       {/* Stats */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
@@ -1832,6 +1906,7 @@ function Customers() {
 // ═══════════════════════════════════════════════════════
 function Finance() {
   const C = useC();
+  const toast = useToast();
   const [emiForm, setEmiForm] = useState({ principal: 150000, rate: 12, tenure: 36 });
   const [emiResult, setEmiResult] = useState(null);
   const [loans, setLoans] = useState([]);
@@ -1839,7 +1914,15 @@ function Finance() {
   const debouncedLoanSearch = useDebounce(loanSearch, 350);
   const [loanDateFrom, setLoanDateFrom] = useState("");
   const [loanDateTo, setLoanDateTo] = useState("");
+  const [showNewLoan, setShowNewLoan] = useState(false);
+  const [newLoan, setNewLoan] = useState({ customer_name: "", loan_amount: "", interest_rate: "12.0", tenure_months: "36", bank_name: "", status: "pending" });
+  const [savingLoan, setSavingLoan] = useState(false);
+  const [selectedLoan, setSelectedLoan] = useState(null);
   const setF = k => v => setEmiForm(p => ({ ...p, [k]: v }));
+  const setNL = k => v => setNewLoan(p => ({ ...p, [k]: v }));
+
+  const STATUS_COLORS = { pending: C.warning, approved: C.success, rejected: C.danger, disbursed: C.info };
+  const STATUS_NEXT = { pending: ["approved","rejected"], approved: ["disbursed","rejected"], rejected: [], disbursed: [] };
 
   const loadLoans = useCallback(() => {
     const p = new URLSearchParams();
@@ -1853,26 +1936,47 @@ function Finance() {
   useEffect(() => { loadLoans(); }, [loadLoans]);
 
   const calcEMI = async () => {
-    const r = await api.finance.emi({ ...emiForm });
-    setEmiResult(r);
+    try {
+      const r = await api.finance.emi({ ...emiForm });
+      setEmiResult(r);
+    } catch { toast("EMI calculation failed.", "error"); }
   };
 
-  const cols = [
-    { label: "Customer",   key: "customer_name" },
-    { label: "Vehicle",    render: r => r.vehicle_name || "—" },
-    { label: "Amount",     render: r => fmtINR(r.loan_amount) },
-    { label: "EMI",        render: r => fmtINR(r.emi_amount) },
-    { label: "Tenure",     render: r => `${r.tenure_months} months` },
-    { label: "Bank",       key: "bank_name" },
-    { label: "Status",     render: r => <Badge label={r.status} color={r.status==="approved"?C.success:r.status==="rejected"?C.danger:C.warning} /> },
-  ];
+  const handleNewLoan = async (e) => {
+    e.preventDefault();
+    if (!newLoan.customer_name.trim()) { toast("Customer name required.", "warning"); return; }
+    if (!newLoan.loan_amount || parseFloat(newLoan.loan_amount) <= 0) { toast("Valid loan amount required.", "warning"); return; }
+    setSavingLoan(true);
+    try {
+      // Auto-calculate EMI before saving
+      let emi_amount = null;
+      try {
+        const r = await api.finance.emi({ principal: newLoan.loan_amount, rate: newLoan.interest_rate, tenure: newLoan.tenure_months });
+        emi_amount = r.emi;
+      } catch { /* ignore EMI calc failure */ }
+      await api.finance.create({ ...newLoan, emi_amount });
+      toast("Loan application created!", "success");
+      setShowNewLoan(false);
+      setNewLoan({ customer_name: "", loan_amount: "", interest_rate: "12.0", tenure_months: "36", bank_name: "", status: "pending" });
+      loadLoans();
+    } catch (err) { toast(err?.message || "Failed to create loan.", "error"); }
+    setSavingLoan(false);
+  };
+
+  const updateStatus = async (loan, newStatus) => {
+    try {
+      await api.finance.updateLoan(loan.id, { status: newStatus });
+      setLoans(prev => prev.map(l => l.id === loan.id ? { ...l, status: newStatus } : l));
+      toast(`Status updated to ${newStatus}.`, "success");
+    } catch { toast("Failed to update status.", "error"); }
+  };
 
   return (
     <div className="erd-page-pad erd-finance-layout" style={{ padding: 24, display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
-      {/* EMI Calculator */}
+      {/* Left: EMI Calculator */}
       <div>
         <Card>
-          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 18 }}>💰 EMI Calculator</div>
+          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: C.text }}>💰 EMI Calculator</div>
           <Field label="Loan Amount (₹)"><Input value={emiForm.principal} onChange={setF("principal")} type="number" /></Field>
           <Field label="Interest Rate (% p.a.)"><Input value={emiForm.rate} onChange={setF("rate")} type="number" step="0.1" /></Field>
           <Field label="Tenure (months)"><Input value={emiForm.tenure} onChange={setF("tenure")} type="number" /></Field>
@@ -1880,10 +1984,10 @@ function Finance() {
           {emiResult && (
             <div style={{ marginTop: 18, background: `${C.primary}08`, border: `1.5px solid ${C.primary}33`, borderRadius: 10, padding: 16 }}>
               {[
-                ["Monthly EMI",      fmtINR(emiResult.emi),            C.primary],
-                ["Total Payment",    fmtINR(emiResult.total_payment),  C.text],
-                ["Total Interest",   fmtINR(emiResult.total_interest), C.danger],
-                ["Principal",        fmtINR(emiResult.principal),      C.text],
+                ["Monthly EMI",    fmtINR(emiResult.emi),           C.primary],
+                ["Total Payment",  fmtINR(emiResult.total_payment), C.text],
+                ["Total Interest", fmtINR(emiResult.total_interest),C.danger],
+                ["Principal",      fmtINR(emiResult.principal),     C.text],
               ].map(([l, v, c]) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13 }}>
                   <span style={{ color: C.textMid }}>{l}</span>
@@ -1893,23 +1997,153 @@ function Finance() {
             </div>
           )}
         </Card>
+
+        {/* Quick stats */}
+        <Card style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: C.text }}>📊 Loan Summary</div>
+          {[
+            ["Total Loans", loans.length, C.text],
+            ["Pending",  loans.filter(l => l.status === "pending").length,  C.warning],
+            ["Approved", loans.filter(l => l.status === "approved").length, C.success],
+            ["Disbursed",loans.filter(l => l.status === "disbursed").length,C.info],
+            ["Rejected", loans.filter(l => l.status === "rejected").length, C.danger],
+          ].map(([l, v, c]) => (
+            <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+              <span style={{ color: C.textMid }}>{l}</span>
+              <span style={{ fontWeight: 700, color: c }}>{v}</span>
+            </div>
+          ))}
+        </Card>
       </div>
 
-      {/* Loans table */}
+      {/* Right: Loans table */}
       <div>
         <Card style={{ marginBottom: 14, padding: 14 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <input value={loanSearch} onChange={e => setLoanSearch(e.target.value)} placeholder="Search customer / bank..."
-              style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+              style={{ flex: 1, minWidth: 160, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
             <DateFilter from={loanDateFrom} to={loanDateTo} onChange={(f,t) => { setLoanDateFrom(f); setLoanDateTo(t); }} />
-            <Btn label="↺ Refresh" size="sm" outline onClick={loadLoans} />
+            <Btn label="↺" size="sm" outline onClick={loadLoans} />
+            <Btn label="+ New Loan" color={C.primary} size="sm" onClick={() => setShowNewLoan(true)} />
           </div>
         </Card>
+
         <Card padding={0}>
-          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>Loan Applications</div>
-          <Table cols={cols} rows={loans} />
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Loan Applications</span>
+            <span style={{ fontSize: 12, color: C.textDim }}>{loans.length} total</span>
+          </div>
+          <div className="erd-table-wrap" style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: C.bg }}>
+                  {["Customer","Amount","EMI","Tenure","Bank","Status","Actions"].map(h => (
+                    <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.textMid, whiteSpace: "nowrap", letterSpacing: 0.3 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loans.length === 0 ? (
+                  <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No loan applications. Click "+ New Loan" to add one.</td></tr>
+                ) : loans.map((loan, i) => (
+                  <tr key={loan.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 === 0 ? "transparent" : `${C.bg}80` }}>
+                    <td style={{ padding: "10px 14px", fontWeight: 600, color: C.text }}>{loan.customer_name}</td>
+                    <td style={{ padding: "10px 14px", color: C.primary, fontWeight: 700 }}>{fmtINR(loan.loan_amount)}</td>
+                    <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.emi_amount ? fmtINR(loan.emi_amount) : "—"}</td>
+                    <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.tenure_months}m</td>
+                    <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.bank_name || "—"}</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <Badge label={loan.status} color={STATUS_COLORS[loan.status] || C.textMid} />
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
+                        {(STATUS_NEXT[loan.status] || []).map(s => (
+                          <button key={s} onClick={() => updateStatus(loan, s)} style={{
+                            padding: "3px 10px", borderRadius: 6, border: `1.5px solid ${STATUS_COLORS[s]}`,
+                            background: `${STATUS_COLORS[s]}12`, color: STATUS_COLORS[s],
+                            fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                          }}>{s.charAt(0).toUpperCase() + s.slice(1)}</button>
+                        ))}
+                        <button onClick={() => setSelectedLoan(loan)} style={{
+                          padding: "3px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`,
+                          background: "transparent", color: C.textMid,
+                          fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                        }}>View</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       </div>
+
+      {/* New Loan Modal */}
+      {showNewLoan && (
+        <Modal title="New Loan Application" onClose={() => setShowNewLoan(false)}>
+          <form onSubmit={handleNewLoan}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <Field label="Customer Name *">
+                  <Input value={newLoan.customer_name} onChange={setNL("customer_name")} placeholder="Full name" />
+                </Field>
+              </div>
+              <Field label="Loan Amount (₹) *">
+                <Input value={newLoan.loan_amount} onChange={setNL("loan_amount")} type="number" placeholder="150000" />
+              </Field>
+              <Field label="Interest Rate (% p.a.)">
+                <Input value={newLoan.interest_rate} onChange={setNL("interest_rate")} type="number" step="0.1" placeholder="12.0" />
+              </Field>
+              <Field label="Tenure (months)">
+                <Input value={newLoan.tenure_months} onChange={setNL("tenure_months")} type="number" placeholder="36" />
+              </Field>
+              <Field label="Bank / Financer">
+                <Input value={newLoan.bank_name} onChange={setNL("bank_name")} placeholder="HDFC Bank, SBI, etc." />
+              </Field>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <Field label="Status">
+                  <Select value={newLoan.status} onChange={setNL("status")}
+                    options={[{value:"pending",label:"Pending"},{value:"approved",label:"Approved"},{value:"disbursed",label:"Disbursed"},{value:"rejected",label:"Rejected"}]} />
+                </Field>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowNewLoan(false)} />
+              <Btn label={savingLoan ? "Saving..." : "Create Application"} color={C.primary} type="submit" disabled={savingLoan} />
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Loan Detail Modal */}
+      {selectedLoan && (
+        <Modal title={`Loan — ${selectedLoan.customer_name}`} onClose={() => setSelectedLoan(null)}>
+          <div style={{ display: "grid", gap: 12 }}>
+            {[
+              ["Customer",    selectedLoan.customer_name],
+              ["Loan Amount", fmtINR(selectedLoan.loan_amount)],
+              ["Monthly EMI", selectedLoan.emi_amount ? fmtINR(selectedLoan.emi_amount) : "—"],
+              ["Interest",    `${selectedLoan.interest_rate}% p.a.`],
+              ["Tenure",      `${selectedLoan.tenure_months} months`],
+              ["Bank",        selectedLoan.bank_name || "—"],
+              ["Status",      selectedLoan.status],
+              ["Applied On",  new Date(selectedLoan.applied_date).toLocaleDateString("en-IN")],
+            ].map(([l, v]) => (
+              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+                <span style={{ color: C.textMid }}>{l}</span>
+                <span style={{ fontWeight: 700, color: C.text }}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {(STATUS_NEXT[selectedLoan.status] || []).map(s => (
+              <Btn key={s} label={`Mark ${s}`} color={STATUS_COLORS[s] || C.primary} size="sm"
+                onClick={() => { updateStatus(selectedLoan, s); setSelectedLoan(l => l ? { ...l, status: s } : l); }} />
+            ))}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -2215,41 +2449,106 @@ function Reports() {
   const C = useC();
   const [data, setData] = useState(null);
   const [period, setPeriod] = useState("month");
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { api.reports(`?period=${period}`).then(setData); }, [period]);
+  useEffect(() => {
+    setLoading(true);
+    api.reports(`?period=${period}`).then(setData).finally(() => setLoading(false));
+  }, [period]);
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        {["week","month","year"].map(p => (
-          <Btn key={p} label={p.charAt(0).toUpperCase() + p.slice(1)} color={C.primary} outline={period !== p} size="sm" onClick={() => setPeriod(p)} />
-        ))}
-      </div>
-      {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14, marginBottom: 24 }}>
-          <StatCard icon="💰" label="Revenue"        value={fmtINR(data.revenue)}                color={C.primary} />
-          <StatCard icon="🛺" label="Sales"          value={data.sale_count}                     color={C.success} />
-          <StatCard icon="👥" label="Leads"          value={data.lead_count}                     color={C.info}    />
-          <StatCard icon="✅" label="Conversion"     value={`${data.conversion_rate}%`}          color={C.accent}  />
-          <StatCard icon="📊" label="Avg Sale Value" value={fmtINR(data.avg_sale_value)}         color={C.textMid} />
-          <StatCard icon="🎯" label="Converted"      value={data.converted_leads}                color={C.success} />
+    <div className="erd-page-pad" style={{ padding: 24, maxWidth: 1200 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>📈 Analytics & Reports</div>
+          <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>Track your dealership performance over time</div>
         </div>
-      )}
-      <Card>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Sales by Fuel Type</div>
-        {data?.fuel_sales?.map((f, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: FUEL_COLOR[f.vehicle__fuel_type] || "#94a3b8" }} />
-              <span style={{ textTransform: "capitalize" }}>{f.vehicle__fuel_type}</span>
-            </div>
-            <div style={{ display: "flex", gap: 24 }}>
-              <span style={{ color: C.textMid }}>Units: <b>{f.count}</b></span>
-              <span style={{ color: C.primary }}>Revenue: <b>{fmtINR(f.revenue)}</b></span>
-            </div>
+        <div style={{ display: "flex", gap: 4, background: C.bg, padding: 4, borderRadius: 10 }}>
+          {["week","month","year"].map(p => (
+            <button key={p} onClick={() => setPeriod(p)} style={{
+              padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer",
+              fontFamily: "inherit", fontWeight: 700, fontSize: 13, transition: "all 0.15s",
+              background: period === p ? C.surface : "transparent",
+              color: period === p ? C.primary : C.textMid,
+              boxShadow: period === p ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+            }}>
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? <Spinner /> : !data ? (
+        <div style={{ textAlign: "center", padding: 60, color: C.textDim }}>Could not load report data</div>
+      ) : (
+        <>
+          {/* KPI stat cards */}
+          <div className="erd-stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+            <StatCard icon="💰" label="Revenue"         value={fmtINR(data.revenue)}          color={C.primary} />
+            <StatCard icon="🛺" label="Sales"           value={data.sale_count}               color={C.success} />
+            <StatCard icon="👥" label="New Leads"       value={data.lead_count}               color={C.info}    />
+            <StatCard icon="✅" label="Conversion Rate" value={`${data.conversion_rate}%`}   color={C.accent}  />
+            <StatCard icon="📊" label="Avg Sale Value"  value={fmtINR(data.avg_sale_value)}  color={C.warning} />
+            <StatCard icon="🎯" label="Leads Converted" value={data.converted_leads}          color={C.success} />
           </div>
-        ))}
-      </Card>
+
+          {/* Sales by Fuel Type */}
+          <Card style={{ marginBottom: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: C.text, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <span>⚡</span> Sales by Vehicle Type
+            </div>
+            {!data.fuel_sales?.length ? (
+              <div style={{ textAlign: "center", padding: 24, color: C.textDim, fontSize: 13 }}>No sales data for this period</div>
+            ) : (
+              <div>
+                {data.fuel_sales.map((f, i) => {
+                  const maxRev = Math.max(...data.fuel_sales.map(x => x.revenue || 0));
+                  const pct = maxRev > 0 ? ((f.revenue || 0) / maxRev) * 100 : 0;
+                  return (
+                    <div key={i} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 13 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: FUEL_COLOR[f.vehicle__fuel_type] || "#94a3b8", flexShrink: 0 }} />
+                          <span style={{ fontWeight: 600, color: C.text, textTransform: "capitalize" }}>{f.vehicle__fuel_type || "Unknown"}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 24 }}>
+                          <span style={{ color: C.textMid }}>Units: <b style={{ color: C.text }}>{f.count}</b></span>
+                          <span style={{ color: C.primary }}>Revenue: <b>{fmtINR(f.revenue)}</b></span>
+                        </div>
+                      </div>
+                      <div style={{ height: 6, background: C.border, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${pct}%`, background: FUEL_COLOR[f.vehicle__fuel_type] || C.primary, borderRadius: 4, transition: "width 0.5s ease" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          {/* Period summary */}
+          <Card>
+            <div style={{ fontWeight: 700, fontSize: 15, color: C.text, marginBottom: 16 }}>📅 Period Summary — {period.charAt(0).toUpperCase() + period.slice(1)}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+              {[
+                { label: "Total Revenue", value: fmtINR(data.revenue), icon: "💰", color: C.primary },
+                { label: "Sales Made", value: data.sale_count, icon: "🛺", color: C.success },
+                { label: "Leads Received", value: data.lead_count, icon: "📩", color: C.info },
+                { label: "Leads Converted", value: data.converted_leads, icon: "✅", color: C.accent },
+                { label: "Average Sale", value: fmtINR(data.avg_sale_value), icon: "📊", color: C.warning },
+                { label: "Conversion %", value: `${data.conversion_rate}%`, icon: "🎯", color: C.success },
+              ].map(({ label, value, icon, color }) => (
+                <div key={label} style={{ background: `${color}08`, border: `1px solid ${color}20`, borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
+                  <div style={{ fontSize: 20, marginBottom: 6 }}>{icon}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color }}>{value}</div>
+                  <div style={{ fontSize: 11, color: C.textMid, marginTop: 4 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
@@ -2601,52 +2900,255 @@ function VideoCard({ v, onDelete }) {
   );
 }
 
+const BLOG_CATS = [
+  { id: "",            label: "All Posts" },
+  { id: "maintenance", label: "🔧 Maintenance" },
+  { id: "earning",     label: "💰 Earn More" },
+  { id: "news",        label: "📰 News" },
+  { id: "scheme",      label: "🏛 Schemes" },
+  { id: "general",     label: "📝 General" },
+];
+
+function BlogPostCard({ post, onDelete }) {
+  const C = useC();
+  const auth = JSON.parse(localStorage.getItem("erd_dealer") || "null");
+  const canDelete = auth && (post.dealer === null ? false : true);
+  return (
+    <div style={{
+      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
+      overflow: "hidden", display: "flex", flexDirection: "column",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.06)", transition: "transform 0.15s",
+    }}
+      onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
+      onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
+    >
+      {post.cover_image_url && (
+        <img src={post.cover_image_url} alt={post.title}
+          style={{ width: "100%", height: 140, objectFit: "cover" }}
+          onError={e => e.target.style.display = "none"} />
+      )}
+      <div style={{ padding: 16, flex: 1, display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.primary, textTransform: "uppercase", letterSpacing: 0.5, background: `${C.primary}12`, padding: "2px 8px", borderRadius: 20 }}>
+            {BLOG_CATS.find(c => c.id === post.category)?.label?.replace(/^[^\s]+\s/, '') || post.category}
+          </span>
+          {canDelete && <button onClick={() => onDelete(post.id)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textDim, fontSize: 14, padding: 2 }}>✕</button>}
+        </div>
+        <div style={{ fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 8, lineHeight: 1.4 }}>{post.title}</div>
+        {post.excerpt && <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.6, flex: 1, marginBottom: 12, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{post.excerpt}</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
+          <span style={{ fontSize: 11, color: C.textDim }}>{new Date(post.created_at).toLocaleDateString("en-IN")}</span>
+          {post.url ? (
+            <a href={post.url} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 12, color: C.primary, fontWeight: 700, padding: "4px 12px", border: `1.5px solid ${C.primary}`, borderRadius: 20, background: `${C.primary}08` }}>
+              Read More →
+            </a>
+          ) : post.content ? (
+            <button onClick={() => alert(post.content)} style={{ fontSize: 12, color: C.primary, fontWeight: 700, padding: "4px 12px", border: `1.5px solid ${C.primary}`, borderRadius: 20, background: `${C.primary}08`, cursor: "pointer", fontFamily: "inherit" }}>
+              Read →
+            </button>
+          ) : null}
+        </div>
+        <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>By {post.dealer_name || "eRickshawDekho"}</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// SUPPORT PAGE
+// ═══════════════════════════════════════════════════════
+const SP_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "1800-XXX-XXXX";
+const SP_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || "support@erikshawdekho.com";
+const SP_WA    = import.meta.env.VITE_SUPPORT_WA    || "919876543210";
+
+function SupportPage() {
+  const C = useC();
+  return (
+    <div className="erd-page-pad" style={{ padding: 24, maxWidth: 900 }}>
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>🛟 Support Center</div>
+        <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>We're here to help. Reach us anytime.</div>
+      </div>
+
+      {/* Two columns */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }} className="erd-two-col">
+        {/* Dealer Support */}
+        <Card>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.primary, marginBottom: 4 }}>🏪 Dealer Support</div>
+          <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>For showroom owners and dealers on our platform</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[
+              { icon: "📞", label: "Call Us", value: SP_PHONE, action: () => window.open(`tel:${SP_PHONE}`) },
+              { icon: "💬", label: "WhatsApp", value: "Chat with us", action: () => window.open(`https://wa.me/${SP_WA}?text=Hi+I+need+help+with+my+dealer+account`) },
+              { icon: "✉️", label: "Email", value: SP_EMAIL, action: () => window.open(`mailto:${SP_EMAIL}?subject=Dealer Support`) },
+            ].map(({ icon, label, value, action }) => (
+              <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
+                <span style={{ fontSize: 20 }}>{icon}</span>
+                <div>
+                  <div style={{ fontSize: 12, color: C.textDim, fontWeight: 600 }}>{label}</div>
+                  <div style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{value}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div style={{ marginTop: 20, background: `${C.primary}08`, border: `1px solid ${C.primary}22`, borderRadius: 8, padding: "12px 14px", fontSize: 12, color: C.textMid }}>
+            <div style={{ fontWeight: 700, color: C.primary, marginBottom: 4 }}>Onboarding Help</div>
+            <div>Need help setting up your dealer profile, adding vehicles, or getting your first leads? Our team guides you through the whole process.</div>
+          </div>
+        </Card>
+
+        {/* Driver / Buyer Support */}
+        <Card>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.info, marginBottom: 4 }}>🛺 Driver Support</div>
+          <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>For eRickshaw drivers and buyers using the platform</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[
+              { icon: "📞", label: "Driver Helpline", value: SP_PHONE, action: () => window.open(`tel:${SP_PHONE}`) },
+              { icon: "💬", label: "WhatsApp Help", value: "Get vehicle advice", action: () => window.open(`https://wa.me/${SP_WA}?text=Hi+I+need+help+finding+an+eRickshaw`) },
+              { icon: "✉️", label: "Email Support", value: SP_EMAIL, action: () => window.open(`mailto:${SP_EMAIL}?subject=Driver Support`) },
+            ].map(({ icon, label, value, action }) => (
+              <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
+                <span style={{ fontSize: 20 }}>{icon}</span>
+                <div>
+                  <div style={{ fontSize: 12, color: C.textDim, fontWeight: 600 }}>{label}</div>
+                  <div style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{value}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div style={{ marginTop: 20, background: `${C.info}08`, border: `1px solid ${C.info}22`, borderRadius: 8, padding: "12px 14px", fontSize: 12, color: C.textMid }}>
+            <div style={{ fontWeight: 700, color: C.info, marginBottom: 4 }}>Buying Guidance</div>
+            <div>Compare eRickshaw models, understand EMI options, and connect with verified dealers. We help you make the right purchase decision.</div>
+          </div>
+        </Card>
+      </div>
+
+      {/* FAQ */}
+      <Card>
+        <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 18 }}>❓ Frequently Asked Questions</div>
+        {[
+          { q: "My account is under verification. How long does it take?", a: "Admin verification typically takes 24-48 hours on business days. You'll receive an email once approved." },
+          { q: "How do I upgrade to Early Dealer Plan?", a: "Go to Plans & Pricing from the left navigation and click 'Upgrade Now'. ₹5000/year gets you unlimited listings + priority ranking." },
+          { q: "I forgot my password. How do I reset it?", a: "On the login screen, click 'Forgot password?' and enter your registered email address. You'll receive a 6-digit OTP." },
+          { q: "How do I add more than 3 vehicles?", a: "The Free Plan allows 3 vehicle listings. Upgrade to Early Dealer Plan for unlimited listings." },
+          { q: "How are leads distributed to dealers?", a: "When a buyer submits an enquiry, leads go to dealers matching the vehicle type and location. Priority dealers appear first." },
+          { q: "Can I use the platform on mobile?", a: "Yes! Install our app from your browser — tap 'Add to Home Screen' on Chrome/Safari. Fully works as PWA." },
+        ].map(({ q, a }, i) => (
+          <details key={i} style={{ borderBottom: `1px solid ${C.border}`, padding: "14px 0" }}>
+            <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 14, color: C.text, listStyle: "none", display: "flex", justifyContent: "space-between" }}>
+              {q} <span style={{ color: C.primary, fontSize: 16 }}>+</span>
+            </summary>
+            <div style={{ fontSize: 13, color: C.textMid, marginTop: 10, lineHeight: 1.7 }}>{a}</div>
+          </details>
+        ))}
+      </Card>
+
+      {/* Pro plan CTA */}
+      <div style={{ marginTop: 20, background: `linear-gradient(135deg,${C.primary}12,${C.accent}08)`, border: `1.5px solid ${C.primary}33`, borderRadius: 14, padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>Need Pro Plan Assistance?</div>
+          <div style={{ fontSize: 13, color: C.textMid, marginTop: 4 }}>Our team activates your Early Dealer Plan within minutes during business hours.</div>
+        </div>
+        <Btn label="⭐ Upgrade to Early Dealer — ₹5000/yr" color={C.primary} onClick={() => window.open(`https://wa.me/${SP_WA}?text=Hi+I+want+to+upgrade+to+Early+Dealer+Plan`)} />
+      </div>
+    </div>
+  );
+}
+
 function LearnPage() {
   const C = useC();
   const toast = useToast();
+  // tab: "videos" | "blogs"
+  const [tab, setTab] = useState("videos");
+
+  // ── Videos state ──
   const [videos, setVideos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [cat, setCat] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ title: "", youtube_url: "", description: "", category: "tutorial" });
-  const [adding, setAdding] = useState(false);
-  const [preview, setPreview] = useState(null);
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [videoCat, setVideoCat] = useState("");
+  const [showAddVideo, setShowAddVideo] = useState(false);
+  const [addVideoForm, setAddVideoForm] = useState({ title: "", youtube_url: "", description: "", category: "tutorial", is_public: true });
+  const [addingVideo, setAddingVideo] = useState(false);
+  const [videoPreview, setVideoPreview] = useState(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    const q = cat ? `?category=${cat}` : "";
-    api.videos.list(q).then(d => setVideos(d.results || d)).finally(() => setLoading(false));
-  }, [cat]);
+  // ── Blog posts state ──
+  const [posts, setPosts] = useState([]);
+  const [postLoading, setPostLoading] = useState(false);
+  const [postCat, setPostCat] = useState("");
+  const [showAddPost, setShowAddPost] = useState(false);
+  const [addPostForm, setAddPostForm] = useState({ title: "", excerpt: "", content: "", url: "", category: "general", cover_image_url: "", is_published: true });
+  const [addingPost, setAddingPost] = useState(false);
 
-  useEffect(() => { load(); }, [load]);
+  const loadVideos = useCallback(() => {
+    setVideoLoading(true);
+    const q = videoCat ? `?category=${videoCat}` : "";
+    api.videos.list(q).then(d => setVideos(d.results || d)).finally(() => setVideoLoading(false));
+  }, [videoCat]);
 
-  // Live preview when URL entered
+  const loadPosts = useCallback(() => {
+    setPostLoading(true);
+    const q = postCat ? `?category=${postCat}` : "";
+    api.blogs.list(q).then(d => setPosts(d.results || d)).finally(() => setPostLoading(false));
+  }, [postCat]);
+
+  useEffect(() => { loadVideos(); }, [loadVideos]);
+  useEffect(() => { if (tab === "blogs") loadPosts(); }, [tab, loadPosts]);
+
+  // Live preview for video URL
   useEffect(() => {
-    const vid = extractVideoId(addForm.youtube_url);
-    setPreview(vid ? `https://img.youtube.com/vi/${vid}/hqdefault.jpg` : null);
-  }, [addForm.youtube_url]);
+    const vid = extractVideoId(addVideoForm.youtube_url);
+    setVideoPreview(vid ? `https://img.youtube.com/vi/${vid}/hqdefault.jpg` : null);
+  }, [addVideoForm.youtube_url]);
 
-  const handleAdd = async (e) => {
+  const handleAddVideo = async (e) => {
     e.preventDefault();
-    if (!addForm.title.trim()) { toast("Title is required.", "warning"); return; }
-    const vid = extractVideoId(addForm.youtube_url);
-    if (!vid) { toast("Enter a valid YouTube URL.", "warning"); return; }
-    setAdding(true);
+    if (!addVideoForm.title.trim()) { toast("Title is required.", "warning"); return; }
+    const vid = extractVideoId(addVideoForm.youtube_url);
+    if (!vid) { toast("Enter a valid YouTube URL (e.g. https://youtube.com/watch?v=XXXX).", "warning"); return; }
+    setAddingVideo(true);
     try {
-      await api.videos.create(addForm);
-      toast("Video added!", "success");
-      setShowAdd(false);
-      setAddForm({ title: "", youtube_url: "", description: "", category: "tutorial" });
-      load();
-    } catch { toast("Failed to add video.", "error"); }
-    setAdding(false);
+      await api.videos.create(addVideoForm);
+      toast("Video added successfully!", "success");
+      setShowAddVideo(false);
+      setAddVideoForm({ title: "", youtube_url: "", description: "", category: "tutorial", is_public: true });
+      loadVideos();
+    } catch (err) {
+      toast(err?.message || "Failed to add video. Please try again.", "error");
+    }
+    setAddingVideo(false);
   };
 
-  const handleDelete = async (id) => {
+  const handleDeleteVideo = async (id) => {
     if (!confirm("Delete this video?")) return;
     await api.videos.delete(id);
     setVideos(v => v.filter(x => x.id !== id));
     toast("Video deleted.", "success");
+  };
+
+  const handleAddPost = async (e) => {
+    e.preventDefault();
+    if (!addPostForm.title.trim()) { toast("Title is required.", "warning"); return; }
+    if (!addPostForm.excerpt.trim() && !addPostForm.content.trim() && !addPostForm.url.trim()) {
+      toast("Add an excerpt, content, or URL for the post.", "warning"); return;
+    }
+    setAddingPost(true);
+    try {
+      await api.blogs.create(addPostForm);
+      toast("Blog post added!", "success");
+      setShowAddPost(false);
+      setAddPostForm({ title: "", excerpt: "", content: "", url: "", category: "general", cover_image_url: "", is_published: true });
+      loadPosts();
+    } catch (err) {
+      toast(err?.message || "Failed to add post.", "error");
+    }
+    setAddingPost(false);
+  };
+
+  const handleDeletePost = async (id) => {
+    if (!confirm("Delete this post?")) return;
+    await api.blogs.delete(id);
+    setPosts(p => p.filter(x => x.id !== id));
+    toast("Post deleted.", "success");
   };
 
   return (
@@ -2655,42 +3157,98 @@ function LearnPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>🎓 Learning Hub</div>
-          <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>Tutorials, maintenance tips, earning guides & expert reviews</div>
+          <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>Tutorials, maintenance tips, earning guides, expert reviews & blog posts</div>
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
-          + Add YouTube Video
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {tab === "videos" && (
+            <button onClick={() => setShowAddVideo(true)} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              + Add Video
+            </button>
+          )}
+          {tab === "blogs" && (
+            <button onClick={() => setShowAddPost(true)} style={{ background: C.info, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              + Write Post
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Category filter tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
-        {VIDEO_CATS.map(c => (
-          <button key={c.id} onClick={() => setCat(c.id)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${cat === c.id ? C.primary : C.border}`, background: cat === c.id ? C.primary : C.surface, color: cat === c.id ? "#fff" : C.textMid, fontWeight: cat === c.id ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
-            {c.label}
-          </button>
+      {/* Main tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.bg, borderRadius: 10, padding: 4, width: "fit-content" }}>
+        {[{id:"videos",label:"🎬 Videos"},{id:"blogs",label:"📝 Blog Posts"}].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit",
+            fontWeight: 700, fontSize: 13, transition: "all 0.15s",
+            background: tab === t.id ? C.surface : "transparent",
+            color: tab === t.id ? C.primary : C.textMid,
+            boxShadow: tab === t.id ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+          }}>{t.label}</button>
         ))}
       </div>
 
-      {/* Video grid */}
-      {loading ? <Spinner /> : videos.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, color: C.textDim }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
-          <div style={{ fontWeight: 600 }}>No videos yet</div>
-          <div style={{ fontSize: 13, marginTop: 4 }}>Be the first to add a helpful eRickshaw video!</div>
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
-          {videos.map(v => <VideoCard key={v.id} v={v} onDelete={handleDelete} />)}
-        </div>
+      {tab === "videos" && (
+        <>
+          {/* Category filter */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
+            {VIDEO_CATS.map(c => (
+              <button key={c.id} onClick={() => setVideoCat(c.id)} style={{
+                padding: "6px 14px", borderRadius: 20,
+                border: `1.5px solid ${videoCat === c.id ? C.primary : C.border}`,
+                background: videoCat === c.id ? C.primary : C.surface,
+                color: videoCat === c.id ? "#fff" : C.textMid,
+                fontWeight: videoCat === c.id ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+              }}>{c.label}</button>
+            ))}
+          </div>
+          {videoLoading ? <Spinner /> : videos.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: C.textDim }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
+              <div style={{ fontWeight: 600 }}>No videos in this category</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>Add a helpful eRickshaw video!</div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+              {videos.map(v => <VideoCard key={v.id} v={v} onDelete={handleDeleteVideo} />)}
+            </div>
+          )}
+        </>
       )}
 
-      {/* About eRickshaw info cards */}
-      <div style={{ marginTop: 32, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+      {tab === "blogs" && (
+        <>
+          {/* Blog category filter */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
+            {BLOG_CATS.map(c => (
+              <button key={c.id} onClick={() => setPostCat(c.id)} style={{
+                padding: "6px 14px", borderRadius: 20,
+                border: `1.5px solid ${postCat === c.id ? C.info : C.border}`,
+                background: postCat === c.id ? C.info : C.surface,
+                color: postCat === c.id ? "#fff" : C.textMid,
+                fontWeight: postCat === c.id ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+              }}>{c.label}</button>
+            ))}
+          </div>
+          {postLoading ? <Spinner /> : posts.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: C.textDim }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📝</div>
+              <div style={{ fontWeight: 600 }}>No blog posts yet</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>Share your knowledge with the eRickshaw community!</div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+              {posts.map(p => <BlogPostCard key={p.id} post={p} onDelete={handleDeletePost} />)}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Info cards (shown on both tabs) */}
+      <div style={{ marginTop: 32, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
         {[
           { icon: "⚡", title: "Zero Fuel Cost", body: "Electric power costs ₹1–2 per km vs ₹5–6 for petrol. Save ₹3000–5000 per month on fuel alone.", color: C.success },
           { icon: "💰", title: "Earn ₹800–1500/Day", body: "With proper route planning in high-demand areas — schools, markets, hospitals — drivers can earn significantly more.", color: C.primary },
           { icon: "🔋", title: "Battery Life Tips", body: "Charge to 90%, avoid full discharge. Park in shade. Clean terminals monthly. Battery lasts 3–5 years with good care.", color: C.warning },
-          { icon: "📋", title: "Registration & License", body: "eRickshaw needs: Driving License (LMV/Transport), RC Book, Insurance, Permit. Yellow plate required for commercial use.", color: C.info },
+          { icon: "📋", title: "Registration & License", body: "eRickshaw needs: Driving License (LMV), RC Book, Insurance, Permit. Yellow plate required for commercial use.", color: C.info },
         ].map(({ icon, title, body, color }) => (
           <div key={title} style={{ background: C.surface, border: `1.5px solid ${color}25`, borderRadius: 12, padding: 18 }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>{icon}</div>
@@ -2700,30 +3258,64 @@ function LearnPage() {
         ))}
       </div>
 
-      {/* Add video modal */}
-      {showAdd && (
-        <Modal title="Add YouTube Video" onClose={() => setShowAdd(false)}>
-          <form onSubmit={handleAdd}>
-            <Field label="YouTube URL *" required>
-              <Input value={addForm.youtube_url} onChange={v => setAddForm(p => ({ ...p, youtube_url: v }))} placeholder="https://www.youtube.com/watch?v=..." />
+      {/* Add Video modal */}
+      {showAddVideo && (
+        <Modal title="Add YouTube Video" onClose={() => setShowAddVideo(false)}>
+          <form onSubmit={handleAddVideo}>
+            <Field label="YouTube URL *">
+              <Input value={addVideoForm.youtube_url} onChange={v => setAddVideoForm(p => ({ ...p, youtube_url: v }))} placeholder="https://www.youtube.com/watch?v=..." />
             </Field>
-            {preview && (
+            {videoPreview && (
               <div style={{ marginBottom: 14, borderRadius: 8, overflow: "hidden", maxHeight: 160 }}>
-                <img src={preview} alt="preview" style={{ width: "100%", objectFit: "cover" }} onError={e => e.target.style.display = "none"} />
+                <img src={videoPreview} alt="preview" style={{ width: "100%", objectFit: "cover" }} onError={e => e.target.style.display = "none"} />
               </div>
             )}
-            <Field label="Title *" required>
-              <Input value={addForm.title} onChange={v => setAddForm(p => ({ ...p, title: v }))} placeholder="e.g. Battery maintenance tips" />
+            <Field label="Title *">
+              <Input value={addVideoForm.title} onChange={v => setAddVideoForm(p => ({ ...p, title: v }))} placeholder="e.g. Battery maintenance tips" />
             </Field>
             <Field label="Category">
-              <Select value={addForm.category} onChange={v => setAddForm(p => ({ ...p, category: v }))} options={VIDEO_CATS.filter(c => c.id).map(c => ({ value: c.id, label: c.label }))} />
+              <Select value={addVideoForm.category} onChange={v => setAddVideoForm(p => ({ ...p, category: v }))} options={VIDEO_CATS.filter(c => c.id).map(c => ({ value: c.id, label: c.label }))} />
             </Field>
             <Field label="Description">
-              <Input value={addForm.description} onChange={v => setAddForm(p => ({ ...p, description: v }))} placeholder="Brief description of the video..." />
+              <Input value={addVideoForm.description} onChange={v => setAddVideoForm(p => ({ ...p, description: v }))} placeholder="Brief description..." />
             </Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAdd(false)} />
-              <Btn label={adding ? "Adding..." : "Add Video"} color={C.primary} type="submit" disabled={adding} />
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAddVideo(false)} />
+              <Btn label={addingVideo ? "Adding..." : "Add Video"} color={C.primary} type="submit" disabled={addingVideo} />
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Add Blog Post modal */}
+      {showAddPost && (
+        <Modal title="Write a Blog Post" onClose={() => setShowAddPost(false)}>
+          <form onSubmit={handleAddPost}>
+            <Field label="Title *">
+              <Input value={addPostForm.title} onChange={v => setAddPostForm(p => ({ ...p, title: v }))} placeholder="e.g. Battery maintenance tips for 5-year life" />
+            </Field>
+            <Field label="Category">
+              <Select value={addPostForm.category} onChange={v => setAddPostForm(p => ({ ...p, category: v }))} options={BLOG_CATS.filter(c => c.id).map(c => ({ value: c.id, label: c.label }))} />
+            </Field>
+            <Field label="Short Excerpt (shown in card)">
+              <textarea value={addPostForm.excerpt} onChange={e => setAddPostForm(p => ({ ...p, excerpt: e.target.value }))}
+                rows={2} placeholder="Brief description of this post..."
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, resize: "vertical", boxSizing: "border-box" }} />
+            </Field>
+            <Field label="External URL (optional — link to article)">
+              <Input value={addPostForm.url} onChange={v => setAddPostForm(p => ({ ...p, url: v }))} placeholder="https://example.com/article" />
+            </Field>
+            <Field label="Full Content (optional — write your article here)">
+              <textarea value={addPostForm.content} onChange={e => setAddPostForm(p => ({ ...p, content: e.target.value }))}
+                rows={4} placeholder="Write your full article content here..."
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, resize: "vertical", boxSizing: "border-box" }} />
+            </Field>
+            <Field label="Cover Image URL (optional)">
+              <Input value={addPostForm.cover_image_url} onChange={v => setAddPostForm(p => ({ ...p, cover_image_url: v }))} placeholder="https://images.unsplash.com/..." />
+            </Field>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAddPost(false)} />
+              <Btn label={addingPost ? "Publishing..." : "Publish Post"} color={C.info} type="submit" disabled={addingPost} />
             </div>
           </form>
         </Modal>
@@ -2819,8 +3411,8 @@ function Marketplace() {
           {vehicles.map(v => (
             <Card key={v.id} style={{ transition: "all 0.2s", border: `1.5px solid ${C.border}`, cursor: "pointer" }}
               onClick={() => setDetailVehicle(v)}>
-              {v.thumbnail
-                ? <img src={v.thumbnail} alt={v.model_name} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 12 }} />
+              {(v.thumbnail || v.thumbnail_url)
+                ? <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 12 }} />
                 : <div style={{ height: 120, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>🛺</div>}
               <div style={{ fontWeight: 700, fontSize: 14 }}>{v.model_name}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 6, flexWrap: "wrap" }}>
@@ -2843,19 +3435,18 @@ function Marketplace() {
 // PLANS PAGE
 // ═══════════════════════════════════════════════════════
 const PLAN_FEATURES = [
-  { label: "Vehicle Listings",          free: "Up to 5 vehicles",     pro: "Unlimited vehicles" },
-  { label: "Lead Management",           free: "Up to 50 leads/month",  pro: "Unlimited leads" },
-  { label: "Sales & Invoicing (GST)",   free: "10 invoices/month",     pro: "Unlimited invoices" },
-  { label: "Customer Database",         free: true,                    pro: true },
-  { label: "Finance & EMI Calculator",  free: true,                    pro: true },
-  { label: "Reports & Analytics",       free: "Basic",                 pro: "Advanced + Export" },
-  { label: "Marketplace Listing",       free: false,                   pro: true },
-  { label: "Email Notifications",       free: true,                    pro: true },
-  { label: "WhatsApp Notifications",    free: false,                   pro: true },
-  { label: "Push Notifications",        free: false,                   pro: true },
-  { label: "Follow-up Reminders",       free: false,                   pro: true },
-  { label: "Priority Support",          free: false,                   pro: true },
-  { label: "Dedicated Account Manager", free: false,                   pro: true },
+  { label: "Vehicle Listings",              free: "3 vehicles only",      pro: "Unlimited" },
+  { label: "Lead Management",               free: true,                   pro: true },
+  { label: "Sales & Invoicing (GST)",       free: true,                   pro: true },
+  { label: "Customer Database",             free: true,                   pro: true },
+  { label: "Finance & EMI Calculator",      free: true,                   pro: true },
+  { label: "Reports & Analytics",           free: "Basic",                pro: "Advanced + Export" },
+  { label: "Priority Marketplace Ranking",  free: false,                  pro: true },
+  { label: "Featured Dealer Badge",         free: false,                  pro: true },
+  { label: "Email Notifications",           free: true,                   pro: true },
+  { label: "WhatsApp Lead Alerts",          free: false,                  pro: true },
+  { label: "Future Marketing Tools",        free: false,                  pro: true },
+  { label: "Priority Support",              free: false,                  pro: true },
 ];
 
 function PlanFeatureRow({ label, free, pro }) {
@@ -2921,20 +3512,20 @@ function PlansPage({ onUpgrade }) {
                 </div>
               )}
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, letterSpacing: "1px", marginBottom: 6 }}>FREE TRIAL</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, letterSpacing: "1px", marginBottom: 6 }}>FREE PLAN</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: C.text }}>₹0</div>
-                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>14-day trial period</div>
+                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>Forever free</div>
               </div>
               <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20, lineHeight: 1.7 }}>
                 Get started and explore the platform. Perfect for new dealerships.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                {["5 vehicle listings", "50 leads / month", "10 invoices / month", "Basic analytics", "Email notifications"].map(f => (
+                {["3 vehicle listings", "Leads visible in dashboard", "Invoice generation", "EMI calculator", "Basic dashboard"].map(f => (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.textMid }}>
                     <span style={{ color: C.success }}>✓</span> {f}
                   </div>
                 ))}
-                {["Marketplace listing", "WhatsApp alerts", "Follow-up reminders", "Priority support"].map(f => (
+                {["Priority marketplace ranking", "Featured dealer badge", "WhatsApp lead alerts", "Advanced analytics"].map(f => (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.textDim }}>
                     <span style={{ color: C.textDim }}>—</span> {f}
                   </div>
@@ -2943,24 +3534,24 @@ function PlansPage({ onUpgrade }) {
               <Btn label={isFreeActive ? "Current Plan" : "Get Started Free"} color={C.primary} outline fullWidth disabled={isFreeActive} />
             </Card>
 
-            {/* Pro Plan */}
-            <Card style={{ border: `2px solid ${C.primary}`, background: `linear-gradient(180deg,${C.primary}08 0%,#fff 100%)`, position: "relative" }}>
+            {/* Early Dealer Plan */}
+            <Card style={{ border: `2px solid ${C.primary}`, background: `linear-gradient(180deg,${C.primary}08 0%,transparent 100%)`, position: "relative" }}>
               <div style={{ position: "absolute", top: -12, right: 20, background: `linear-gradient(90deg,${C.accent},${C.primary})`, color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 11, fontWeight: 700 }}>
-                {isPro ? "CURRENT PLAN" : "MOST POPULAR"}
+                {isPro ? "CURRENT PLAN" : "ONLY 100 DEALERS"}
               </div>
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: "1px", marginBottom: 6 }}>PRO PLAN</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: "1px", marginBottom: 6 }}>EARLY DEALER PLAN</div>
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: C.primary }}>₹999</div>
-                  <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>/month</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: C.primary }}>₹5,000</div>
+                  <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>/year</div>
                 </div>
-                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>or ₹9,999/year (save 17%)</div>
+                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>Limited to first 100 dealers • Lock in forever</div>
               </div>
               <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20, lineHeight: 1.7 }}>
-                Everything you need to grow your dealership. Unlimited access, all features.
+                Everything unlimited. Priority ranking in search. Featured badge. All future tools included.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                {["Unlimited vehicle listings", "Unlimited leads", "Unlimited invoices", "Advanced analytics + Export", "Email + WhatsApp + Push notifications", "Marketplace listing & visibility", "Follow-up & expiry reminders", "Priority support 24/7"].map(f => (
+                {["Unlimited vehicle listings", "Priority marketplace ranking", "Featured dealer badge", "WhatsApp lead alerts", "Advanced analytics", "All future marketing tools", "Priority support"].map(f => (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text }}>
                     <span style={{ color: C.success }}>✓</span> {f}
                   </div>
@@ -2970,8 +3561,8 @@ function PlansPage({ onUpgrade }) {
                 <Btn label="Current Plan ✓" color={C.success} fullWidth disabled />
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <Btn label="⭐ Upgrade to Pro — ₹999/mo" color={C.primary} fullWidth onClick={onUpgrade} />
-                  <div style={{ textAlign: "center", fontSize: 11, color: C.textDim }}>Contact our team to activate instantly</div>
+                  <Btn label="⭐ Get Early Dealer Plan — ₹5000/yr" color={C.primary} fullWidth onClick={onUpgrade} />
+                  <div style={{ textAlign: "center", fontSize: 11, color: C.textDim }}>Contact our team to activate instantly • Limited spots</div>
                 </div>
               )}
             </Card>
@@ -2986,7 +3577,7 @@ function PlansPage({ onUpgrade }) {
                   <tr style={{ background: C.bg }}>
                     <th style={{ padding: "10px 16px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}` }}>FEATURE</th>
                     <th style={{ padding: "10px 16px", textAlign: "center", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, width: 160 }}>FREE TRIAL</th>
-                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.primary, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, background: `${C.primary}08`, width: 160 }}>PRO ⭐</th>
+                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.primary, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, background: `${C.primary}08`, width: 160 }}>EARLY DEALER ⭐</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3563,6 +4154,63 @@ function LandingPage({ onDealer, onMarketplace }) {
 }
 
 // ═══════════════════════════════════════════════════════
+// PUBLIC LEARN SECTION (for buyers on the marketplace)
+// ═══════════════════════════════════════════════════════
+function PublicLearnSection() {
+  const C = useC();
+  const [videos, setVideos] = useState([]);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("videos");
+
+  useEffect(() => {
+    Promise.all([
+      api.videos.list("?category=&is_public=true").then(d => setVideos((d.results || d).slice(0, 6))),
+      api.blogs.list("?is_published=true").then(d => setPosts((d.results || d).slice(0, 4))),
+    ]).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div style={{ background: C.bg, padding: "40px 24px", maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ fontSize: 28, fontWeight: 800, color: C.text, marginBottom: 8 }}>🎓 eRickshaw Learning Hub</div>
+        <div style={{ fontSize: 14, color: C.textMid }}>Tips, guides and videos to help you earn more and maintain your eRickshaw</div>
+      </div>
+
+      {/* Tab switcher */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 28, background: C.surface, padding: 4, borderRadius: 12, width: "fit-content", margin: "0 auto 28px" }}>
+        {[{id:"videos",label:"🎬 Videos"},{id:"blogs",label:"📝 Articles"}].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding: "8px 24px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit",
+            fontWeight: 700, fontSize: 13, transition: "all 0.15s",
+            background: tab === t.id ? C.primary : "transparent",
+            color: tab === t.id ? "#fff" : C.textMid,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {loading ? <Spinner /> : tab === "videos" ? (
+        videos.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 40, color: C.textDim }}>No videos available yet.</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+            {videos.map(v => <VideoCard key={v.id} v={v} />)}
+          </div>
+        )
+      ) : (
+        posts.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 40, color: C.textDim }}>No articles available yet.</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+            {posts.map(p => <BlogPostCard key={p.id} post={p} />)}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // PUBLIC MARKETPLACE PAGE (no dealer auth required)
 // ═══════════════════════════════════════════════════════
 function PublicMarketplacePage({ onDealerPortal, onBack }) {
@@ -3584,6 +4232,7 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
         </div>
       </div>
       <Marketplace />
+      <PublicLearnSection />
       <PWAInstallPrompt />
     </div>
   );
@@ -3607,7 +4256,7 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   // Swipe nav order (matches BOTTOM_NAV for mobile)
-  const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "account"];
+  const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "support", "account"];
   const [plan, setPlan] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -3728,6 +4377,7 @@ export default function App() {
       case "finance":     return <PlanGate plan={plan} feature="Finance" onUpgrade={goUpgrade}><Finance /></PlanGate>;
       case "reports":     return <PlanGate plan={plan} feature="Reports" onUpgrade={goUpgrade}><Reports /></PlanGate>;
       case "learn":       return <LearnPage />;
+      case "support":     return <SupportPage />;
       case "marketplace": return <Marketplace />;
       case "plans":       return <PlansPage onUpgrade={goUpgrade} />;
       case "account":     return <AccountPage dealer={dealer} onLogout={handleLogout} />;
@@ -3795,6 +4445,12 @@ export default function App() {
 
             <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }} {...swipeHandlers}>
               <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onBell={() => setPage("leads")} />
+              {dealer && !dealer.is_verified && (
+                <div style={{ background: `${C_LIVE.warning}15`, borderBottom: `1px solid ${C_LIVE.warning}33`, padding: "10px 24px", fontSize: 13, color: C_LIVE.warning, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <span>⏳ <b>Your showroom is under verification</b> by platform admin. Your profile will become visible to buyers after approval.</span>
+                  <span style={{ fontSize: 11, color: C_LIVE.textMid }}>Contact: support@erikshawdekho.com</span>
+                </div>
+              )}
               <main style={{ flex: 1 }} key={page}>
                 {renderPage()}
               </main>

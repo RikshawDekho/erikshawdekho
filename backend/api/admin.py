@@ -6,7 +6,7 @@ from .models import (
     UserProfile, DealerProfile, Brand, Vehicle,
     Lead, Sale, Customer, Task, FinanceLoan,
     DealerApplication, DealerReview, PublicEnquiry,
-    NotificationLog,
+    NotificationLog, Plan,
 )
 
 
@@ -190,3 +190,10 @@ class NotificationLogAdmin(admin.ModelAdmin):
     search_fields   = ['recipient', 'subject', 'dealer__dealer_name']
     readonly_fields = ['dealer', 'channel', 'notif_type', 'recipient', 'subject',
                        'success', 'error_msg', 'sent_at']
+
+
+@admin.register(Plan)
+class PlanAdmin(admin.ModelAdmin):
+    list_display  = ['name', 'slug', 'price', 'listing_limit', 'max_dealers', 'signups_count', 'is_active']
+    list_editable = ['is_active']
+    readonly_fields = ['signups_count', 'is_available']
