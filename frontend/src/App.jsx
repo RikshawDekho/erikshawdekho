@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
 import { SalesPage } from './SalesPage';
+import { LIGHT_C, DARK_C, ThemeCtx, useC } from './theme';
 
 // ═══════════════════════════════════════════════════════
 // API LAYER
@@ -89,8 +90,19 @@ const api = {
   },
   enquiry: (d) => apiFetch("/public/enquiry/", { method: "POST", body: JSON.stringify(d) }),
   enquiries: {
-    list:          ()     => apiFetch("/dealer/enquiries/"),
+    list:          (p="") => apiFetch(`/dealer/enquiries/${p}`),
     markProcessed: (id)   => apiFetch("/dealer/enquiries/", { method: "PATCH", body: JSON.stringify({ id, is_processed: true }) }),
+    unreadCount:   ()     => apiFetch("/dealer/enquiries/unread/"),
+  },
+  admin: {
+    stats:          ()         => apiFetch("/admin-portal/stats/"),
+    users:          (p="")     => apiFetch(`/admin-portal/users/${p}`),
+    deleteUser:     (id)       => apiFetch(`/admin-portal/users/${id}/`, { method: "DELETE" }),
+    dealers:        (p="")     => apiFetch(`/admin-portal/dealers/${p}`),
+    verifyDealer:   (id,d)     => apiFetch(`/admin-portal/dealers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    applications:   (p="")     => apiFetch(`/admin-portal/applications/${p}`),
+    updateApp:      (id,d)     => apiFetch(`/admin-portal/applications/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    enquiries:      (p="")     => apiFetch(`/admin-portal/enquiries/${p}`),
   },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),
@@ -111,6 +123,7 @@ const ToastCtx = createContext(() => {});
 function useToast() { return useContext(ToastCtx); }
 
 function ToastProvider({ children }) {
+  const C = useC();
   const [toasts, setToasts] = useState([]);
   const add = useCallback((msg, type = "info") => {
     const id = Date.now() + Math.random();
@@ -146,6 +159,7 @@ const PlanCtx = createContext(null);
 function usePlan() { return useContext(PlanCtx); }
 
 function PlanGate({ children, feature = "This feature", onUpgrade, plan: planProp }) {
+  const C = useC();
   const ctxPlan = usePlan();
   const plan = planProp ?? ctxPlan;
   if (!plan || plan.is_active) return children;
@@ -167,25 +181,9 @@ function PlanGate({ children, feature = "This feature", onUpgrade, plan: planPro
 }
 
 // ═══════════════════════════════════════════════════════
-// DESIGN TOKENS
+// DESIGN TOKENS (module-level fallback = light theme)
 // ═══════════════════════════════════════════════════════
-const C = {
-  primary: "#1a7c4f",   // deep green
-  primaryL: "#22a866",
-  primaryD: "#115c38",
-  accent: "#f59e0b",    // amber - rickshaw yellow
-  accentL: "#fbbf24",
-  bg: "#f0f4f8",
-  surface: "#ffffff",
-  border: "#e2e8f0",
-  text: "#1e293b",
-  textMid: "#475569",
-  textDim: "#94a3b8",
-  danger: "#ef4444",
-  warning: "#f59e0b",
-  success: "#10b981",
-  info: "#3b82f6",
-};
+const C = LIGHT_C;  // fallback for module-level constants; components call useC() for live value
 
 const STOCK_COLOR = { in_stock: C.success, low_stock: C.warning, out_of_stock: C.danger };
 const LEAD_COLOR  = { new:"#6366f1", interested:C.info, follow_up:C.warning, converted:C.success, lost:C.danger };
@@ -197,22 +195,26 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day:"numeri
 // ═══════════════════════════════════════════════════════
 // SHARED COMPONENTS
 // ═══════════════════════════════════════════════════════
-function Badge({ label, color = C.primary }) {
+function Badge({ label, color }) {
+  const C = useC();
+  const col = color ?? C.primary;
   return (
-    <span style={{ background: `${color}18`, color, border: `1px solid ${color}44`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+    <span style={{ background: `${col}18`, color: col, border: `1px solid ${col}44`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
       {label}
     </span>
   );
 }
 
-function Btn({ label, onClick, color = C.primary, outline, size = "md", icon, disabled, fullWidth, type = "button" }) {
+function Btn({ label, onClick, color, outline, size = "md", icon, disabled, fullWidth, type = "button" }) {
+  const C = useC();
+  const col = color ?? C.primary;
   const pad = size === "sm" ? "5px 12px" : size === "lg" ? "12px 28px" : "8px 18px";
   const fs  = size === "sm" ? 12 : size === "lg" ? 15 : 13;
   return (
     <button type={type} onClick={onClick} disabled={disabled} style={{
-      background: outline ? "transparent" : disabled ? "#e2e8f0" : color,
-      border: `2px solid ${disabled ? "#e2e8f0" : color}`,
-      color: outline ? color : disabled ? C.textDim : "#fff",
+      background: outline ? "transparent" : disabled ? C.border : col,
+      border: `2px solid ${disabled ? C.border : col}`,
+      color: outline ? col : disabled ? C.textDim : "#fff",
       padding: pad, borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
       fontSize: fs, fontWeight: 600, fontFamily: "inherit",
       display: "inline-flex", alignItems: "center", gap: 6,
@@ -225,6 +227,7 @@ function Btn({ label, onClick, color = C.primary, outline, size = "md", icon, di
 }
 
 function Card({ children, style = {}, padding = 20 }) {
+  const C = useC();
   return (
     <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, padding, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", ...style }}>
       {children}
@@ -232,22 +235,25 @@ function Card({ children, style = {}, padding = 20 }) {
   );
 }
 
-function StatCard({ icon, label, value, color = C.primary, sub }) {
+function StatCard({ icon, label, value, color, sub }) {
+  const C = useC();
+  const col = color ?? C.primary;
   return (
     <Card style={{ flex: 1, minWidth: 140 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div>
           <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{label}</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color, fontFamily: "Georgia, serif" }}>{value}</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: col, fontFamily: "Georgia, serif" }}>{value}</div>
           {sub && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>{sub}</div>}
         </div>
-        <div style={{ width: 44, height: 44, borderRadius: 10, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{icon}</div>
+        <div style={{ width: 44, height: 44, borderRadius: 10, background: `${col}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{icon}</div>
       </div>
     </Card>
   );
 }
 
 function Table({ cols, rows, onRow }) {
+  const C = useC();
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
