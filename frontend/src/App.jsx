@@ -258,7 +258,7 @@ function Table({ cols, rows, onRow }) {
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ background: "#f8fafc" }}>
+          <tr style={{ background: C.bg }}>
             {cols.map(c => (
               <th key={c.key || c.label} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>
                 {c.label.toUpperCase()}
@@ -272,8 +272,8 @@ function Table({ cols, rows, onRow }) {
           )}
           {rows.map((row, i) => (
             <tr key={i} onClick={() => onRow?.(row)} style={{ borderBottom: `1px solid ${C.border}`, cursor: onRow ? "pointer" : "default", transition: "background 0.1s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-              onMouseLeave={e => e.currentTarget.style.background = ""}>
+              onMouseEnter={e => e.currentTarget.style.background = C.bg}
+              onMouseLeave={e => e.currentTarget.style.background = "inherit"}>
               {cols.map(c => (
                 <td key={c.key || c.label} style={{ padding: "12px 14px", color: C.text, verticalAlign: "middle" }}>
                   {c.render ? c.render(row) : row[c.key] ?? "—"}
@@ -395,11 +395,11 @@ function Pagination({ page, totalPages, onPage }) {
   if (totalPages <= 1) return null;
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "14px 0" }}>
-      <button onClick={() => onPage(page - 1)} disabled={page <= 1} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: "#fff", cursor: page <= 1 ? "not-allowed" : "pointer", color: page <= 1 ? C.textDim : C.text }}>‹</button>
+      <button onClick={() => onPage(page - 1)} disabled={page <= 1} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface, cursor: page <= 1 ? "not-allowed" : "pointer", color: page <= 1 ? C.textDim : C.text }}>‹</button>
       {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map(p => (
-        <button key={p} onClick={() => onPage(p)} style={{ width: 34, height: 34, border: `1px solid ${p === page ? C.primary : C.border}`, borderRadius: 6, background: p === page ? C.primary : "#fff", color: p === page ? "#fff" : C.text, cursor: "pointer", fontWeight: p === page ? 700 : 400 }}>{p}</button>
+        <button key={p} onClick={() => onPage(p)} style={{ width: 34, height: 34, border: `1px solid ${p === page ? C.primary : C.border}`, borderRadius: 6, background: p === page ? C.primary : C.surface, color: p === page ? "#fff" : C.text, cursor: "pointer", fontWeight: p === page ? 700 : 400 }}>{p}</button>
       ))}
-      <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: "#fff", cursor: page >= totalPages ? "not-allowed" : "pointer", color: page >= totalPages ? C.textDim : C.text }}>›</button>
+      <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface, cursor: page >= totalPages ? "not-allowed" : "pointer", color: page >= totalPages ? C.textDim : C.text }}>›</button>
     </div>
   );
 }
@@ -544,12 +544,12 @@ function AuthPage({ onAuth }) {
               <Field label="City"><Input value={form.city} onChange={set("city")} placeholder="Delhi" /></Field>
             </>}
             {fieldErrors.non_field_errors && (
-              <div style={{ background: "#fef2f2", border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
+              <div style={{ background: `${C.danger}12`, border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
                 ✕ {fieldErrors.non_field_errors}
               </div>
             )}
             {fieldErrors.detail && (
-              <div style={{ background: "#fef2f2", border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
+              <div style={{ background: `${C.danger}12`, border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
                 ✕ {fieldErrors.detail}
               </div>
             )}
@@ -650,7 +650,7 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
   );
 }
 
-function Topbar({ dealer, page, onAddNew, onProfile, onAdmin }) {
+function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
   const C = useC();
   const { isDark, toggle } = useContext(ThemeCtx);
   const [unread, setUnread] = useState(0);
@@ -669,8 +669,8 @@ function Topbar({ dealer, page, onAddNew, onProfile, onAdmin }) {
       <div style={{ fontWeight: 700, fontSize: 18, color: C.text }}>{pageLabel}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {page === "inventory" && <Btn label="+ Add Vehicle" size="sm" onClick={onAddNew} />}
-        {/* Bell icon */}
-        <button onClick={() => onAdmin ? null : null} style={{ position: "relative", background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+        {/* Bell icon — navigates to Leads → Enquiries tab */}
+        <button onClick={onBell} title="Buyer Enquiries" style={{ position: "relative", background: unread > 0 ? `${C.danger}12` : "none", border: `1.5px solid ${unread > 0 ? C.danger : C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
           🔔
           {unread > 0 && (
             <span style={{ position: "absolute", top: -5, right: -5, background: C.danger, color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1049,7 +1049,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                 )}
               </div>
             </Field>
-            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description, key specs..." /></Field>
+            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} placeholder="Vehicle description, key specs..." /></Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={onAddClose} />
               <Btn label={saving ? "Saving..." : "Add Vehicle"} color={C.primary} type="submit" disabled={saving} />
@@ -1100,7 +1100,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
             </Field>
             <Field label="Description">
               <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3}
-                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} placeholder="Vehicle description..." />
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} placeholder="Vehicle description..." />
             </Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={() => setEditVehicle(null)} />
@@ -1366,7 +1366,7 @@ function Leads({ onNavigate }) {
                 <Select value={form.vehicle} onChange={setF("vehicle")} placeholder="Select vehicle" options={vehicles.map(v => ({ value: v.id, label: `${v.brand_name} ${v.model_name}` }))} />
               </Field>
             </div>
-            <Field label="Notes"><textarea value={form.notes} onChange={e => setF("notes")(e.target.value)} rows={2} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} /></Field>
+            <Field label="Notes"><textarea value={form.notes} onChange={e => setF("notes")(e.target.value)} rows={2} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} /></Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAdd(false)} />
               <Btn label="Add Lead" color={C.primary} type="submit" />
@@ -1755,7 +1755,7 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
               <div style={{ gridColumn: "span 2" }}>
                 <Field label="Showroom Description">
                   <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3}
-                    style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                    style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }}
                     placeholder="Tell buyers about your showroom — specialties, brands, experience, service..." />
                 </Field>
               </div>
@@ -1947,7 +1947,7 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
   const [reviews, setReviews] = useState([]);
   const [reviewForm, setReviewForm] = useState({ reviewer_name: "", reviewer_phone: "", rating: 0, comment: "" });
   const [reviewSaving, setReviewSaving] = useState(false);
-  const [enquiryForm, setEnquiryForm] = useState({ customer_name: "", phone: "", city: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
+  const [enquiryForm, setEnquiryForm] = useState({ customer_name: "", phone: "", email: "", pincode: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
   const [enquirySending, setEnquirySending] = useState(false);
 
   useEffect(() => {
@@ -1985,19 +1985,26 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 
   const submitEnquiry = async (e) => {
     e.preventDefault();
-    if (!enquiryForm.customer_name.trim()) { toast("Please enter your name.", "warning"); return; }
-    if (!enquiryForm.phone.trim()) { toast("Please enter your mobile number.", "warning"); return; }
+    if (!enquiryForm.customer_name.trim()) { toast("नाम डालना ज़रूरी है। (Name is required.)", "warning"); return; }
+    if (!enquiryForm.phone.trim()) { toast("मोबाइल नंबर डालना ज़रूरी है। (Mobile number is required.)", "warning"); return; }
     if (!/^[6-9]\d{9}$/.test(enquiryForm.phone.replace(/\D/g, "").slice(-10))) {
-      toast("Enter a valid 10-digit Indian mobile number.", "warning"); return;
+      toast("10 अंकों का सही मोबाइल नंबर डालें। (Enter valid 10-digit mobile.)", "warning"); return;
+    }
+    if (enquiryForm.pincode && !/^\d{6}$/.test(enquiryForm.pincode.trim())) {
+      toast("Pin code 6 digits होना चाहिए। (Pin code must be 6 digits.)", "warning"); return;
+    }
+    if (enquiryForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(enquiryForm.email)) {
+      toast("Valid email address डालें।", "warning"); return;
     }
     setEnquirySending(true);
     try {
-      await api.enquiry({ ...enquiryForm, vehicle: v.id });
-      toast("Enquiry sent! The dealer will call you within 24 hours.", "success");
+      const city = enquiryForm.pincode ? `PIN: ${enquiryForm.pincode}` : "";
+      await api.enquiry({ ...enquiryForm, city, vehicle: v.id });
+      toast("Enquiry भेज दी गई! Dealer 24 घंटों में call करेगा।", "success");
       setTab("overview");
-      setEnquiryForm({ customer_name: "", phone: "", city: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
+      setEnquiryForm({ customer_name: "", phone: "", email: "", pincode: "", notes: `Interested in ${v.brand_name} ${v.model_name}` });
     } catch (err) {
-      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to send enquiry. Try again.";
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Enquiry नहीं भेजी जा सकी। फिर कोशिश करें।";
       toast(msg, "error");
     }
     setEnquirySending(false);
@@ -2106,7 +2113,7 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
               </Field>
               <Field label="Your Review">
                 <textarea value={reviewForm.comment} onChange={e => setReviewForm(p => ({ ...p, comment: e.target.value }))} rows={3}
-                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }}
                   placeholder="How was your experience with this dealer?" />
               </Field>
               <Btn label={reviewSaving ? "Submitting..." : "Submit Review"} color={C.primary} type="submit" disabled={reviewSaving} />
@@ -2140,23 +2147,40 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
             {v.dealer_city && <span style={{ color: C.textMid }}> · {v.dealer_city}</span>}
             {v.dealer_verified && <span style={{ marginLeft: 6, color: C.success, fontWeight: 600 }}>✓ Verified</span>}
           </div>
+          {/* On-road price info banner */}
+          <div style={{ background: `${C.accent}12`, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: C.text, marginBottom: 4 }}>🛣️ On-Road Price में शामिल है:</div>
+            <div style={{ color: C.textMid, lineHeight: 1.7 }}>
+              Ex-Showroom: <b>{fmtINR(v.price)}</b> + Registration + Insurance + State Tax
+              <br/>Dealer आपको exact on-road price बताएगा।
+            </div>
+          </div>
           <form onSubmit={submitEnquiry}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Field label="Your Name" required><Input value={enquiryForm.customer_name} onChange={v2 => setEnquiryForm(p => ({ ...p, customer_name: v2 }))} placeholder="Ramesh Kumar" /></Field>
-              <Field label="Mobile Number" required><Input value={enquiryForm.phone} onChange={v2 => setEnquiryForm(p => ({ ...p, phone: v2 }))} placeholder="9876543210" /></Field>
-              <Field label="Your City"><Input value={enquiryForm.city} onChange={v2 => setEnquiryForm(p => ({ ...p, city: v2 }))} placeholder="Delhi" /></Field>
+              <Field label="आपका नाम / Your Name" required>
+                <Input value={enquiryForm.customer_name} onChange={v2 => setEnquiryForm(p => ({ ...p, customer_name: v2 }))} placeholder="Ramesh Kumar" required />
+              </Field>
+              <Field label="Mobile Number *" required>
+                <Input value={enquiryForm.phone} onChange={v2 => setEnquiryForm(p => ({ ...p, phone: v2 }))} placeholder="9876543210" type="tel" required />
+              </Field>
+              <Field label="Pin Code / पिन कोड">
+                <Input value={enquiryForm.pincode} onChange={v2 => setEnquiryForm(p => ({ ...p, pincode: v2 }))} placeholder="110001" type="number" style={{ appearance: "none" }} />
+              </Field>
+              <Field label="Email (Optional)">
+                <Input value={enquiryForm.email} onChange={v2 => setEnquiryForm(p => ({ ...p, email: v2 }))} placeholder="you@email.com" type="email" />
+              </Field>
             </div>
-            <Field label="Message">
+            <Field label="Message / संदेश">
               <textarea value={enquiryForm.notes} onChange={e => setEnquiryForm(p => ({ ...p, notes: e.target.value }))} rows={2}
-                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
-                placeholder="Any specific requirements..." />
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }}
+                placeholder="Koi vishesh requirement... (Any specific requirements...)" />
             </Field>
-            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
-              ✓ Dealer will contact you within 24 hours. Your number is never shared with third parties.
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14, lineHeight: 1.7 }}>
+              ✓ Dealer 24 घंटों में संपर्क करेगा। &nbsp;✓ आपका नंबर किसी third party को नहीं दिया जाएगा।
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <Btn label="Back" outline color={C.textMid} onClick={() => setTab("overview")} />
-              <Btn label={enquirySending ? "Sending..." : "Get Best Price →"} color={C.primary} type="submit" disabled={enquirySending} />
+              <Btn label="वापस / Back" outline color={C.textMid} onClick={() => setTab("overview")} />
+              <Btn label={enquirySending ? "भेज रहे हैं..." : "🛣️ Best Price / On-Road Price पाएं →"} color={C.primary} type="submit" disabled={enquirySending} fullWidth />
             </div>
           </form>
         </div>
@@ -3130,7 +3154,7 @@ export default function App() {
             <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
 
             <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
-              <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onToggleTheme={toggleTheme} isDark={isDark} />
+              <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onBell={() => setPage("leads")} />
               <main style={{ flex: 1 }}>
                 {renderPage()}
               </main>
