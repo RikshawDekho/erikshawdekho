@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { LIGHT_C, useC } from './theme';
 
 // ═══════════════════════════════════════════════════════════════
 // This file replaces the Sales section in App.jsx
@@ -26,12 +27,8 @@ const api = {
   },
 };
 
-const C = {
-  primary:"#1a7c4f", primaryL:"#22a866", primaryD:"#115c38",
-  accent:"#f59e0b", bg:"#f0f4f8", surface:"#ffffff",
-  border:"#e2e8f0", text:"#1e293b", textMid:"#475569", textDim:"#94a3b8",
-  danger:"#ef4444", warning:"#f59e0b", success:"#10b981", info:"#3b82f6",
-};
+// Module-level fallback for internal UI sub-components (non-hook context)
+const C = LIGHT_C;
 
 const fmtINR  = (n) => `₹${Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"}) : "—";
@@ -347,6 +344,7 @@ function InvoicePrint({ inv, onClose }) {
 // SALES PAGE — full list + stats + new sale form
 // ═══════════════════════════════════════════════════════════════
 export function SalesPage() {
+  const C = useC();
   const [sales,    setSales]    = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [showAdd,  setShowAdd]  = useState(false);
