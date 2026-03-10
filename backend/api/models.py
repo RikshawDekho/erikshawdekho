@@ -47,6 +47,13 @@ class DealerProfile(models.Model):
     notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
     notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')
     notify_push     = models.BooleanField(default=True,  help_text='Receive push notifications')
+    # ── Invoice Branding & Customisation ──────────────────
+    sales_manager_name   = models.CharField(max_length=200, blank=True, default='Authorised Signatory')
+    bank_name            = models.CharField(max_length=200, blank=True, default='HDFC Bank Ltd.')
+    bank_account_number  = models.CharField(max_length=50,  blank=True, default='50200012345678')
+    bank_ifsc            = models.CharField(max_length=20,  blank=True, default='HDFC000123')
+    bank_upi             = models.CharField(max_length=100, blank=True, default='erikshawdekho@hdfc')
+    invoice_footer_note  = models.TextField(blank=True, default='')
 
     @property
     def plan_is_active(self):
@@ -187,18 +194,25 @@ class Sale(models.Model):
     invoice_number = models.CharField(max_length=50, unique=True)
     sale_price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.IntegerField(default=1)
-    cgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=9.0)
-    sgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=9.0)
+    cgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=2.5)
+    sgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=2.5)
     payment_method = models.CharField(max_length=20, choices=PAYMENT_CHOICES, default='cash')
     delivery_date = models.DateField(null=True, blank=True)
     is_delivered = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
     sale_date = models.DateTimeField(auto_now_add=True)
     # Vehicle identification (required for RTO registration & insurance)
-    chassis_number = models.CharField(max_length=50, blank=True)
-    engine_number  = models.CharField(max_length=50, blank=True)
-    vehicle_color  = models.CharField(max_length=50, blank=True)
+    chassis_number      = models.CharField(max_length=50, blank=True)
+    engine_number       = models.CharField(max_length=50, blank=True)
+    vehicle_color       = models.CharField(max_length=50, blank=True)
     year_of_manufacture = models.IntegerField(null=True, blank=True)
+    # Battery & warranty details
+    battery_serial_number  = models.CharField(max_length=100, blank=True)
+    battery_capacity_ah    = models.CharField(max_length=50, blank=True, help_text='e.g. 100Ah 48V')
+    battery_make           = models.CharField(max_length=100, blank=True, help_text='e.g. Amara Raja, Exide')
+    battery_warranty_months= models.IntegerField(null=True, blank=True, help_text='Battery warranty in months')
+    motor_serial_number    = models.CharField(max_length=100, blank=True)
+    vehicle_warranty_months= models.IntegerField(null=True, blank=True, help_text='Vehicle/chassis warranty in months')
     # GST compliance fields
     place_of_supply = models.CharField(max_length=100, blank=True)  # state name
 

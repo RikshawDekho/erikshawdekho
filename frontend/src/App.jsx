@@ -1730,6 +1730,9 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({ dealer_name: "", phone: "", city: "", email: "", address: "", description: "" });
   const [editSaving, setEditSaving] = useState(false);
+  const [brandingMode, setBrandingMode] = useState(false);
+  const [brandingForm, setBrandingForm] = useState({ sales_manager_name: "", bank_name: "", bank_account_number: "", bank_ifsc: "", bank_upi: "", invoice_footer_note: "" });
+  const [brandingSaving, setBrandingSaving] = useState(false);
   const [prefs, setPrefs] = useState({ notify_email: true, notify_whatsapp: true, notify_push: true });
   const [prefsLoading, setPrefsLoading] = useState(true);
   const [prefsSaving, setPrefsSaving] = useState(false);
@@ -1739,12 +1742,20 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
     Promise.all([api.me(), api.dashboard()]).then(([me, dash]) => {
       setData({ ...me, plan: dash.plan });
       setEditForm({
-        dealer_name: me.dealer?.name || "",
+        dealer_name: me.dealer?.name || me.dealer?.dealer_name || "",
         phone: me.dealer?.phone || "",
         city: me.dealer?.city || "",
         email: me.user?.email || "",
         address: me.dealer?.address || "",
         description: me.dealer?.description || "",
+      });
+      setBrandingForm({
+        sales_manager_name:  me.dealer?.sales_manager_name  || "",
+        bank_name:           me.dealer?.bank_name           || "",
+        bank_account_number: me.dealer?.bank_account_number || "",
+        bank_ifsc:           me.dealer?.bank_ifsc           || "",
+        bank_upi:            me.dealer?.bank_upi            || "",
+        invoice_footer_note: me.dealer?.invoice_footer_note || "",
       });
     }).catch(() => {}).finally(() => setLoading(false));
   };
@@ -1831,6 +1842,66 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
               <div key={label} style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
                 <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>{label}</div>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{val || "—"}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Invoice Branding card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>🧾 Invoice Branding</div>
+            <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>Customise how your invoices appear — payment details, signatory, footer</div>
+          </div>
+          <Btn label={brandingMode ? "Cancel" : "✏ Edit"} color={C.primary} outline size="sm" onClick={() => setBrandingMode(m => !m)} />
+        </div>
+        {brandingMode ? (
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <Field label="Sales Manager / Signatory Name">
+                <Input value={brandingForm.sales_manager_name} onChange={v => setBrandingForm(p => ({ ...p, sales_manager_name: v }))} placeholder="e.g. Rajesh Kumar" />
+              </Field>
+              <Field label="Bank Name">
+                <Input value={brandingForm.bank_name} onChange={v => setBrandingForm(p => ({ ...p, bank_name: v }))} placeholder="e.g. HDFC Bank Ltd." />
+              </Field>
+              <Field label="Bank Account Number">
+                <Input value={brandingForm.bank_account_number} onChange={v => setBrandingForm(p => ({ ...p, bank_account_number: v }))} placeholder="e.g. 50200012345678" />
+              </Field>
+              <Field label="Bank IFSC Code">
+                <Input value={brandingForm.bank_ifsc} onChange={v => setBrandingForm(p => ({ ...p, bank_ifsc: v }))} placeholder="e.g. HDFC0001234" />
+              </Field>
+              <Field label="UPI ID">
+                <Input value={brandingForm.bank_upi} onChange={v => setBrandingForm(p => ({ ...p, bank_upi: v }))} placeholder="e.g. yourname@hdfc" />
+              </Field>
+              <div style={{ gridColumn: "span 2" }}>
+                <Field label="Invoice Footer Note (optional)">
+                  <textarea value={brandingForm.invoice_footer_note} onChange={e => setBrandingForm(p => ({ ...p, invoice_footer_note: e.target.value }))} rows={2}
+                    style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }}
+                    placeholder="e.g. Subject to Delhi jurisdiction. All disputes to be settled amicably." />
+                </Field>
+              </div>
+            </div>
+            <Btn label={brandingSaving ? "Saving..." : "Save Branding"} color={C.primary} onClick={async () => {
+              setBrandingSaving(true);
+              try { await api.profile.update(brandingForm); toast("Invoice branding saved!", "success"); setBrandingMode(false); loadData(); }
+              catch { toast("Failed to save branding.", "error"); }
+              setBrandingSaving(false);
+            }} disabled={brandingSaving} />
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              ["Signatory", brandingForm.sales_manager_name || "Authorised Signatory"],
+              ["Bank",      brandingForm.bank_name          || "—"],
+              ["A/C No",    brandingForm.bank_account_number|| "—"],
+              ["IFSC",      brandingForm.bank_ifsc          || "—"],
+              ["UPI",       brandingForm.bank_upi           || "—"],
+            ].map(([label, val]) => (
+              <div key={label} style={{ background: C.bg, borderRadius: 8, padding: "10px 14px" }}>
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>{label}</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{val}</div>
               </div>
             ))}
           </div>

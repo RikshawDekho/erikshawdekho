@@ -296,13 +296,28 @@ function InvoicePrint({ inv, onClose }) {
               <div style={{ color: "#374151", lineHeight: 1.85, fontSize: 10 }}>
                 <div>Model: <strong style={{ color: "#1e293b" }}>{inv.vehicle_name}</strong></div>
                 <div>Fuel: <strong style={{ color: "#1e293b" }}>{inv.vehicle_fuel_type || "Electric"}</strong> &nbsp;|&nbsp; Seats: <strong>{inv.vehicle_seating || "3"}</strong></div>
-                {inv.chassis_number && <div>Chassis No.: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.chassis_number}</strong></div>}
-                {inv.engine_number  && <div>Engine No.: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.engine_number}</strong></div>}
-                {inv.vehicle_color  && <div>Color: <strong style={{ color: "#1e293b" }}>{inv.vehicle_color}</strong></div>}
                 {inv.year_of_manufacture && <div>Year of Mfg.: <strong style={{ color: "#1e293b" }}>{inv.year_of_manufacture}</strong></div>}
+                {inv.vehicle_color  && <div>Color: <strong style={{ color: "#1e293b" }}>{inv.vehicle_color}</strong></div>}
+                {inv.chassis_number && <div>Chassis No.: <strong style={{ color: "#1e293b", fontFamily: "monospace", fontSize: 9 }}>{inv.chassis_number}</strong></div>}
+                {inv.engine_number  && <div>Engine No.: <strong style={{ color: "#1e293b", fontFamily: "monospace", fontSize: 9 }}>{inv.engine_number}</strong></div>}
               </div>
             </div>
           </div>
+
+          {/* ── Battery & Warranty ── */}
+          {(inv.battery_serial_number || inv.battery_make || inv.motor_serial_number || inv.battery_warranty_months || inv.vehicle_warranty_months) && (
+            <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 7, padding: "10px 14px", marginBottom: 14, fontSize: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 9, color: "#92400e", letterSpacing: 1, marginBottom: 6 }}>🔋 BATTERY & WARRANTY DETAILS</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, color: "#374151", lineHeight: 1.8 }}>
+                {inv.battery_make && <div>Battery Make: <strong style={{ color: "#1e293b" }}>{inv.battery_make}</strong></div>}
+                {inv.battery_capacity_ah && <div>Capacity: <strong style={{ color: "#1e293b" }}>{inv.battery_capacity_ah}</strong></div>}
+                {inv.battery_serial_number && <div>Battery Serial: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.battery_serial_number}</strong></div>}
+                {inv.motor_serial_number && <div>Motor Serial: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.motor_serial_number}</strong></div>}
+                {inv.battery_warranty_months && <div>Battery Warranty: <strong style={{ color: "#1e293b" }}>{inv.battery_warranty_months} months</strong></div>}
+                {inv.vehicle_warranty_months && <div>Vehicle Warranty: <strong style={{ color: "#1e293b" }}>{inv.vehicle_warranty_months} months</strong></div>}
+              </div>
+            </div>
+          )}
 
           {/* ── Items table ── */}
           <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12, fontSize: 10 }}>
@@ -378,25 +393,27 @@ function InvoicePrint({ inv, onClose }) {
               <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 5 }}>PAYMENT DETAILS</div>
               <div style={{ color: "#475569", lineHeight: 1.85, fontSize: 10 }}>
                 <div>Mode: <strong style={{ color: "#1e293b" }}>{PAYMENT_LABEL[inv.payment_method] || inv.payment_method}</strong></div>
-                <div>Bank: <strong style={{ color: "#1e293b" }}>HDFC Bank Ltd.</strong></div>
-                <div>A/C No: <strong style={{ color: "#1e293b" }}>50200012345678</strong></div>
-                <div>IFSC: <strong style={{ color: "#1e293b" }}>HDFC000123</strong> &nbsp;| UPI: <strong style={{ color: "#1e293b" }}>erikshawdekho@hdfc</strong></div>
+                {inv.dealer?.bank_name && <div>Bank: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_name}</strong></div>}
+                {inv.dealer?.bank_account_number && <div>A/C No: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_account_number}</strong></div>}
+                {inv.dealer?.bank_ifsc && <div>IFSC: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_ifsc}</strong></div>}
+                {inv.dealer?.bank_upi && <div>UPI: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_upi}</strong></div>}
               </div>
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 3 }}>TERMS & CONDITIONS</div>
                 <div style={{ fontSize: 9, color: "#94a3b8", lineHeight: 1.65 }}>
                   <div>1. Goods once sold will not be taken back or exchanged.</div>
                   <div>2. This invoice is valid for RTO registration and insurance purposes.</div>
-                  <div>3. Warranty as per manufacturer terms. Disputes subject to Delhi jurisdiction.</div>
+                  <div>3. Warranty as per manufacturer terms. Disputes subject to dealer's city jurisdiction.</div>
+                  {inv.dealer?.invoice_footer_note && <div style={{ marginTop: 3, color: "#475569" }}>4. {inv.dealer.invoice_footer_note}</div>}
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", minWidth: 140, textAlign: "center" }}>
-              <div style={{ width: 110, height: 44, border: "1px solid #e2e8f0", borderRadius: 6, marginBottom: 4, background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 9 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", minWidth: 150, textAlign: "center" }}>
+              <div style={{ width: 120, height: 50, border: "1px solid #e2e8f0", borderRadius: 6, marginBottom: 6, background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 9 }}>
                 [Seal & Signature]
               </div>
               <div style={{ fontWeight: 700, fontSize: 10, color: "#1e293b" }}>For {inv.dealer?.dealer_name}</div>
-              <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>Authorised Signatory</div>
+              <div style={{ fontSize: 9, color: "#475569", marginTop: 2 }}>{inv.dealer?.sales_manager_name || "Authorised Signatory"}</div>
             </div>
           </div>
 
@@ -446,6 +463,11 @@ export function SalesPage() {
     // Vehicle identification (RTO registration + insurance)
     chassis_number: "", engine_number: "", vehicle_color: "",
     year_of_manufacture: "", place_of_supply: "",
+    // Battery & warranty
+    battery_serial_number: "", battery_capacity_ah: "", battery_make: "",
+    battery_warranty_months: "", motor_serial_number: "", vehicle_warranty_months: "",
+    // GST rates (default 2.5% each for eRickshaw EVs)
+    cgst_rate: "2.5", sgst_rate: "2.5",
   });
   const [saving,   setSaving]   = useState(false);
   const [formErr,  setFormErr]  = useState("");
@@ -498,7 +520,10 @@ export function SalesPage() {
                 customer_address: "", customer_gstin: "", sale_price: "", quantity: 1,
                 payment_method: "cash", delivery_date: "",
                 chassis_number: "", engine_number: "", vehicle_color: "",
-                year_of_manufacture: "", place_of_supply: "" });
+                year_of_manufacture: "", place_of_supply: "",
+                battery_serial_number: "", battery_capacity_ah: "", battery_make: "",
+                battery_warranty_months: "", motor_serial_number: "", vehicle_warranty_months: "",
+                cgst_rate: "2.5", sgst_rate: "2.5" });
       load();
     } catch (err) {
       setFormErr(typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to record sale.");
@@ -515,12 +540,14 @@ export function SalesPage() {
     setInvLoading(null);
   };
 
-  const salePrice = parseFloat(form.sale_price) || 0;
-  const qty       = parseInt(form.quantity)      || 1;
-  const subtotal_ = salePrice * qty;
-  const cgst_     = subtotal_ * 0.09;
-  const sgst_     = subtotal_ * 0.09;
-  const total_    = subtotal_ + cgst_ + sgst_;
+  const salePrice  = parseFloat(form.sale_price)  || 0;
+  const qty        = parseInt(form.quantity)       || 1;
+  const cgstRate   = parseFloat(form.cgst_rate)    || 2.5;
+  const sgstRate   = parseFloat(form.sgst_rate)    || 2.5;
+  const subtotal_  = salePrice * qty;
+  const cgst_      = subtotal_ * cgstRate / 100;
+  const sgst_      = subtotal_ * sgstRate / 100;
+  const total_     = subtotal_ + cgst_ + sgst_;
 
   const today = new Date();
   const fmt   = d => d.toISOString().split('T')[0];
@@ -728,16 +755,30 @@ export function SalesPage() {
                   <Input value={form.quantity} onChange={setF("quantity")} type="number" placeholder="1" />
                 </Field>
               </div>
+              {/* GST Rate inputs */}
+              <div style={{ gridColumn: "span 2", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginTop: 4 }}>
+                <Field label="CGST Rate (%)">
+                  <Input value={form.cgst_rate} onChange={setF("cgst_rate")} type="number" placeholder="2.5" style={{ textAlign: "right" }} />
+                </Field>
+                <Field label="SGST Rate (%)">
+                  <Input value={form.sgst_rate} onChange={setF("sgst_rate")} type="number" placeholder="2.5" style={{ textAlign: "right" }} />
+                </Field>
+                <div style={{ gridColumn: "span 2", display: "flex", alignItems: "flex-end", paddingBottom: 14 }}>
+                  <div style={{ background: `${C.info}10`, border: `1px solid ${C.info}30`, borderRadius: 7, padding: "6px 10px", fontSize: 11, color: C.info, width: "100%" }}>
+                    ℹ Electric vehicles (eRickshaw): 2.5% CGST + 2.5% SGST = 5% total GST (GST notification 12/2017)
+                  </div>
+                </div>
+              </div>
               {salePrice > 0 && (
-                <div style={{ marginTop: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, fontSize: 12 }}>
+                <div style={{ gridColumn: "span 2", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, fontSize: 12 }}>
                   {[
-                    ["Subtotal", fmtINR(subtotal_), C.text],
-                    ["CGST 9%",  fmtINR(cgst_),     C.textMid],
-                    ["SGST 9%",  fmtINR(sgst_),     C.textMid],
-                    ["Total",    fmtINR(total_),     C.primary],
+                    ["Subtotal",             fmtINR(subtotal_), C.text],
+                    [`CGST ${cgstRate}%`,    fmtINR(cgst_),     C.textMid],
+                    [`SGST ${sgstRate}%`,    fmtINR(sgst_),     C.textMid],
+                    ["Grand Total",          fmtINR(total_),    C.primary],
                   ].map(([l, v, col]) => (
                     <div key={l} style={{ textAlign: "center", padding: "6px 0", borderRight: `1px solid ${C.border}` }}>
-                      <div style={{ color: C.textDim, marginBottom: 2 }}>{l}</div>
+                      <div style={{ color: C.textDim, marginBottom: 2, fontSize: 11 }}>{l}</div>
                       <div style={{ fontWeight: 700, color: col }}>{v}</div>
                     </div>
                   ))}
@@ -760,6 +801,31 @@ export function SalesPage() {
                 </Field>
                 <Field label="Year of Manufacture">
                   <Input value={form.year_of_manufacture} onChange={setF("year_of_manufacture")} type="number" placeholder={new Date().getFullYear()} />
+                </Field>
+              </div>
+            </div>
+
+            {/* Battery & Warranty */}
+            <div style={{ background: `${C.warning}08`, border: `1.5px solid ${C.warning}25`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: C.warning, marginBottom: 4 }}>🔋 Battery & Warranty Details</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 12 }}>
+                <Field label="Battery Serial No.">
+                  <Input value={form.battery_serial_number} onChange={setF("battery_serial_number")} placeholder="e.g. AR2024001234" />
+                </Field>
+                <Field label="Battery Make / Brand">
+                  <Input value={form.battery_make} onChange={setF("battery_make")} placeholder="e.g. Amara Raja, Exide" />
+                </Field>
+                <Field label="Battery Capacity">
+                  <Input value={form.battery_capacity_ah} onChange={setF("battery_capacity_ah")} placeholder="e.g. 100Ah 48V" />
+                </Field>
+                <Field label="Battery Warranty (months)">
+                  <Input value={form.battery_warranty_months} onChange={setF("battery_warranty_months")} type="number" placeholder="e.g. 12" />
+                </Field>
+                <Field label="Motor Serial No.">
+                  <Input value={form.motor_serial_number} onChange={setF("motor_serial_number")} placeholder="e.g. MT2024005678" />
+                </Field>
+                <Field label="Vehicle Warranty (months)">
+                  <Input value={form.vehicle_warranty_months} onChange={setF("vehicle_warranty_months")} type="number" placeholder="e.g. 12" />
                 </Field>
               </div>
             </div>

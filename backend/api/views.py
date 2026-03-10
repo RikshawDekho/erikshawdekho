@@ -137,29 +137,39 @@ def me(request):
             user.email = data['email'].strip()
             user.save(update_fields=['email'])
         if dealer:
-            if 'dealer_name' in data and data['dealer_name'].strip():
-                dealer.dealer_name = data['dealer_name'].strip()
-            if 'phone' in data and data['phone'].strip():
-                dealer.phone = data['phone'].strip()
-            if 'city' in data:
-                dealer.city = data['city'].strip()
-            if 'address' in data:
-                dealer.address = data['address'].strip()
-            if 'description' in data:
-                dealer.description = data['description'].strip()
+            simple_fields = ['dealer_name', 'phone', 'city', 'address', 'description', 'gstin',
+                             'sales_manager_name', 'bank_name', 'bank_account_number',
+                             'bank_ifsc', 'bank_upi', 'invoice_footer_note']
+            for f in simple_fields:
+                if f in data:
+                    val = data[f]
+                    if f == 'dealer_name' and not str(val).strip():
+                        continue
+                    setattr(dealer, f, str(val).strip() if isinstance(val, str) else val)
             dealer.save()
+
+    def _d(field, default=''):
+        return getattr(dealer, field, default) if dealer else default
 
     return Response({
         'user': {'id': user.id, 'username': user.username, 'email': user.email},
         'dealer': {
-            'id': dealer.id if dealer else None,
-            'name': dealer.dealer_name if dealer else '',
-            'city': dealer.city if dealer else '',
-            'phone': dealer.phone if dealer else '',
-            'gstin': dealer.gstin if dealer else '',
-            'address': dealer.address if dealer else '',
-            'description': dealer.description if dealer else '',
-            'is_verified': dealer.is_verified if dealer else False,
+            'id':                   _d('id', None),
+            'name':                 _d('dealer_name'),
+            'dealer_name':          _d('dealer_name'),
+            'city':                 _d('city'),
+            'state':                _d('state'),
+            'phone':                _d('phone'),
+            'gstin':                _d('gstin'),
+            'address':              _d('address'),
+            'description':          _d('description'),
+            'is_verified':          _d('is_verified', False),
+            'sales_manager_name':   _d('sales_manager_name', 'Authorised Signatory'),
+            'bank_name':            _d('bank_name', 'HDFC Bank Ltd.'),
+            'bank_account_number':  _d('bank_account_number', ''),
+            'bank_ifsc':            _d('bank_ifsc', ''),
+            'bank_upi':             _d('bank_upi', ''),
+            'invoice_footer_note':  _d('invoice_footer_note', ''),
         }
     })
 
@@ -352,14 +362,20 @@ class SaleViewSet(viewsets.ModelViewSet):
         return Response({
             'invoice_number': sale.invoice_number,
             'sale_date':      sale.sale_date,
-            # Dealer info
+            # Dealer info + invoice branding
             'dealer': {
-                'dealer_name': dealer.dealer_name,
-                'address':     dealer.address,
-                'city':        dealer.city,
-                'phone':       dealer.phone,
-                'gstin':       dealer.gstin,
-                'state':       dealer.city,   # fallback; update when state field exists
+                'dealer_name':        dealer.dealer_name,
+                'address':            dealer.address,
+                'city':               dealer.city,
+                'state':              getattr(dealer, 'state', dealer.city),
+                'phone':              dealer.phone,
+                'gstin':              dealer.gstin,
+                'sales_manager_name': getattr(dealer, 'sales_manager_name', 'Authorised Signatory') or 'Authorised Signatory',
+                'bank_name':          getattr(dealer, 'bank_name', 'HDFC Bank Ltd.') or 'HDFC Bank Ltd.',
+                'bank_account_number':getattr(dealer, 'bank_account_number', '') or '',
+                'bank_ifsc':          getattr(dealer, 'bank_ifsc', '') or '',
+                'bank_upi':           getattr(dealer, 'bank_upi', '') or '',
+                'invoice_footer_note':getattr(dealer, 'invoice_footer_note', '') or '',
             },
             # Customer info
             'customer_name':    sale.customer_name,
@@ -372,10 +388,17 @@ class SaleViewSet(viewsets.ModelViewSet):
             'vehicle_hsn':          sale.vehicle.hsn_code or '8703',
             'vehicle_fuel_type':    sale.vehicle.get_fuel_type_display() if hasattr(sale.vehicle, 'get_fuel_type_display') else sale.vehicle.fuel_type,
             'vehicle_seating':      sale.vehicle.seating_capacity,
-            'chassis_number':       sale.chassis_number,
-            'engine_number':        sale.engine_number,
-            'vehicle_color':        sale.vehicle_color,
-            'year_of_manufacture':  sale.year_of_manufacture,
+            'chassis_number':          sale.chassis_number,
+            'engine_number':           sale.engine_number,
+            'vehicle_color':           sale.vehicle_color,
+            'year_of_manufacture':     sale.year_of_manufacture,
+            # Battery & warranty
+            'battery_serial_number':   sale.battery_serial_number,
+            'battery_capacity_ah':     sale.battery_capacity_ah,
+            'battery_make':            sale.battery_make,
+            'battery_warranty_months': sale.battery_warranty_months,
+            'motor_serial_number':     sale.motor_serial_number,
+            'vehicle_warranty_months': sale.vehicle_warranty_months,
             # GST fields
             'place_of_supply': sale.place_of_supply or dealer.city,
             'unit_price':    float(sale.sale_price),
