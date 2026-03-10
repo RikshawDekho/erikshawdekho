@@ -31,6 +31,24 @@ const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString("en-IN",{day:"nume
 
 const PAYMENT_LABEL = { cash:"Cash", upi:"UPI", loan:"Loan / Finance", bank_transfer:"Bank Transfer", cheque:"Cheque" };
 
+// Convert number to Indian words (for invoice amount in words)
+function numberToWords(amount) {
+  const ones = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine",
+    "Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+  const tens = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+  function words(n) {
+    if (n < 20) return ones[n];
+    if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? " " + ones[n%10] : "");
+    if (n < 1000) return ones[Math.floor(n/100)] + " Hundred" + (n%100 ? " " + words(n%100) : "");
+    if (n < 100000) return words(Math.floor(n/1000)) + " Thousand" + (n%1000 ? " " + words(n%1000) : "");
+    if (n < 10000000) return words(Math.floor(n/100000)) + " Lakh" + (n%100000 ? " " + words(n%100000) : "");
+    return words(Math.floor(n/10000000)) + " Crore" + (n%10000000 ? " " + words(n%10000000) : "");
+  }
+  const n = Math.round(amount);
+  const paise = Math.round((amount - n) * 100);
+  return "Rupees " + (words(n) || "Zero") + (paise ? ` and ${words(paise)} Paise` : "") + " Only";
+}
+
 // ─── Shared UI ─────────────────────────────────────────────────
 function Btn({ label, onClick, color, outline, size="md", icon, disabled, fullWidth, type="button" }) {
   const C = useC();
@@ -204,48 +222,55 @@ function InvoicePrint({ inv, onClose }) {
 
       {/* Invoice body — always light (paper document) */}
       <div ref={printRef} style={{
-        background: "#fff", width: "100%", maxWidth: 680,
+        background: "#fff", width: "100%", maxWidth: 720,
         margin: "0 auto", fontFamily: "'Nunito',sans-serif",
         fontSize: 11, color: "#1e293b",
         border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden",
       }}>
-        <div style={{ height: 4, background: "linear-gradient(90deg,#1a7c4f,#22a866,#f59e0b)" }} />
+        {/* Top accent */}
+        <div style={{ height: 5, background: "linear-gradient(90deg,#1a7c4f,#22a866,#f59e0b)" }} />
 
-        <div style={{ padding: "16px 20px" }}>
-          {/* Header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, paddingBottom: 10, borderBottom: "1.5px solid #e2e8f0" }}>
+        <div style={{ padding: "18px 22px" }}>
+
+          {/* ── Header row ── */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, paddingBottom: 12, borderBottom: "2px solid #e2e8f0" }}>
+            {/* Left: dealer branding */}
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
-                <div style={{ width: 30, height: 30, background: "linear-gradient(135deg,#1a7c4f,#22a866)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>🛺</div>
-                <div style={{ fontSize: 15, fontWeight: 900, letterSpacing: -0.5 }}>
-                  erikshaw<span style={{ color: "#f59e0b" }}>Dekho</span><span style={{ color: "#1a7c4f" }}>.com</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <div style={{ width: 34, height: 34, background: "linear-gradient(135deg,#1a7c4f,#22a866)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🛺</div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: -0.5 }}>
+                    erikshaw<span style={{ color: "#f59e0b" }}>Dekho</span><span style={{ color: "#1a7c4f" }}>.com</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: "#94a3b8", letterSpacing: 0.5 }}>AUTHORISED eRICKSHAW DEALER</div>
                 </div>
               </div>
-              <div style={{ color: "#475569", fontSize: 10, lineHeight: 1.65 }}>
-                {inv.dealer?.address}{inv.dealer?.address ? ", " : ""}{inv.dealer?.city}, India
+              <div style={{ color: "#475569", fontSize: 10, lineHeight: 1.7 }}>
+                <div style={{ fontWeight: 700, color: "#1e293b" }}>{inv.dealer?.dealer_name}</div>
+                <div>{inv.dealer?.address}{inv.dealer?.address ? ", " : ""}{inv.dealer?.city}, India</div>
+                <div>📞 {inv.dealer?.phone} &nbsp;✉ info@erikshawdekho.com</div>
+                {inv.dealer?.gstin && <div style={{ marginTop: 2 }}>GSTIN: <strong style={{ color: "#1e293b" }}>{inv.dealer.gstin}</strong></div>}
               </div>
-              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
-                📞 <span style={{ fontWeight: 600 }}>{inv.dealer?.phone}</span>
-                &nbsp;&nbsp;✉ info@erikshawdekho.com
-              </div>
-              {inv.dealer?.gstin && (
-                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
-                  GSTIN: <span style={{ fontWeight: 700, color: "#475569" }}>{inv.dealer.gstin}</span>
-                </div>
-              )}
             </div>
+            {/* Right: invoice title + meta */}
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: 3, color: "#1e293b", marginBottom: 6 }}>INVOICE</div>
+              <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 3, color: "#1a7c4f", marginBottom: 2 }}>
+                {inv.dealer?.gstin ? "TAX INVOICE" : "INVOICE"}
+              </div>
+              <div style={{ fontSize: 9, color: "#94a3b8", marginBottom: 8 }}>
+                {inv.dealer?.gstin ? "As per GST Act 2017, Sec. 31" : "Sale Receipt"}
+              </div>
               <table style={{ fontSize: 10, marginLeft: "auto", borderCollapse: "collapse" }}>
                 <tbody>
                   {[
-                    ["Invoice No.",  inv.invoice_number],
-                    ["Invoice Date", fmtDateLong(inv.sale_date)],
-                    ["Due Date",     fmtDateLong(inv.sale_date)],
+                    ["Invoice No.",    inv.invoice_number],
+                    ["Invoice Date",   fmtDateLong(inv.sale_date)],
+                    ["Place of Supply", inv.place_of_supply || inv.dealer?.city || "—"],
+                    ["Reverse Charge", "No"],
                   ].map(([l, v]) => (
                     <tr key={l}>
-                      <td style={{ padding: "1px 6px 1px 0", color: "#475569", whiteSpace: "nowrap" }}>{l}</td>
-                      <td style={{ padding: "1px 0", fontWeight: 700, color: "#1e293b" }}>{v}</td>
+                      <td style={{ padding: "2px 8px 2px 0", color: "#64748b", whiteSpace: "nowrap" }}>{l}:</td>
+                      <td style={{ padding: "2px 0", fontWeight: 700, color: "#1e293b" }}>{v}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -253,114 +278,134 @@ function InvoicePrint({ inv, onClose }) {
             </div>
           </div>
 
-          {/* Bill to */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-            <div style={{ background: "#f8fafc", borderRadius: 7, padding: "8px 12px" }}>
-              <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 5 }}>BILL TO</div>
-              <div style={{ fontWeight: 700, fontSize: 12, color: "#1e293b", marginBottom: 2 }}>{inv.customer_name}</div>
-              <div style={{ color: "#475569", lineHeight: 1.65 }}>
-                <div>{inv.customer_phone}</div>
-                {inv.customer_email && <div>{inv.customer_email}</div>}
+          {/* ── Bill To / Dealer Info ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+            <div style={{ background: "#f8fafc", borderRadius: 7, padding: "10px 12px", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 6 }}>BILL TO (BUYER)</div>
+              <div style={{ fontWeight: 700, fontSize: 12, color: "#1e293b", marginBottom: 3 }}>{inv.customer_name}</div>
+              <div style={{ color: "#475569", lineHeight: 1.7, fontSize: 10 }}>
+                <div>📞 {inv.customer_phone}</div>
+                {inv.customer_email && <div>✉ {inv.customer_email}</div>}
                 {inv.customer_address && <div>{inv.customer_address}</div>}
-                {inv.customer_gstin && <div>GSTIN: <strong>{inv.customer_gstin}</strong></div>}
+                {inv.customer_gstin && <div style={{ marginTop: 2 }}>GSTIN: <strong style={{ color: "#1e293b" }}>{inv.customer_gstin}</strong></div>}
               </div>
             </div>
-            <div style={{ background: "#f8fafc", borderRadius: 7, padding: "8px 12px" }}>
-              <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 5 }}>DEALER INFO</div>
-              <div style={{ fontWeight: 700, fontSize: 12, color: "#1e293b", marginBottom: 2 }}>{inv.dealer?.dealer_name}</div>
-              <div style={{ color: "#475569", lineHeight: 1.65 }}>
-                <div>{inv.dealer?.address}</div>
-                <div>{inv.dealer?.city}, India</div>
-                {inv.dealer?.gstin && <div>GSTIN: <strong>{inv.dealer.gstin}</strong></div>}
+            {/* Vehicle identification block */}
+            <div style={{ background: "#f0fdf4", borderRadius: 7, padding: "10px 12px", border: "1px solid #bbf7d0" }}>
+              <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 6 }}>VEHICLE IDENTIFICATION</div>
+              <div style={{ color: "#374151", lineHeight: 1.85, fontSize: 10 }}>
+                <div>Model: <strong style={{ color: "#1e293b" }}>{inv.vehicle_name}</strong></div>
+                <div>Fuel: <strong style={{ color: "#1e293b" }}>{inv.vehicle_fuel_type || "Electric"}</strong> &nbsp;|&nbsp; Seats: <strong>{inv.vehicle_seating || "3"}</strong></div>
+                {inv.chassis_number && <div>Chassis No.: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.chassis_number}</strong></div>}
+                {inv.engine_number  && <div>Engine No.: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.engine_number}</strong></div>}
+                {inv.vehicle_color  && <div>Color: <strong style={{ color: "#1e293b" }}>{inv.vehicle_color}</strong></div>}
+                {inv.year_of_manufacture && <div>Year of Mfg.: <strong style={{ color: "#1e293b" }}>{inv.year_of_manufacture}</strong></div>}
               </div>
             </div>
           </div>
 
-          {/* Items table */}
-          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 10, fontSize: 10 }}>
+          {/* ── Items table ── */}
+          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12, fontSize: 10 }}>
             <thead>
               <tr style={{ background: "#1a7c4f" }}>
-                {["#", "Description", "HSN", "Qty", "Unit Price", "Amount"].map(h => (
-                  <th key={h} style={{ padding: "6px 8px", color: "#fff", fontWeight: 700, textAlign: h === "#" || h === "Qty" ? "center" : h === "Unit Price" || h === "Amount" ? "right" : "left", fontSize: 9, letterSpacing: 0.5 }}>{h}</th>
+                {[
+                  { h: "#",         align: "center" },
+                  { h: "Description & HSN",    align: "left"   },
+                  { h: "Fuel Type", align: "left"   },
+                  { h: "Qty",       align: "center" },
+                  { h: "Unit Price",align: "right"  },
+                  { h: "Amount",    align: "right"  },
+                ].map(({ h, align }) => (
+                  <th key={h} style={{ padding: "7px 8px", color: "#fff", fontWeight: 700, textAlign: align, fontSize: 9.5, letterSpacing: 0.5 }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-                <td style={{ padding: "8px", textAlign: "center", color: "#475569" }}>1</td>
-                <td style={{ padding: "8px" }}>
-                  <div style={{ fontWeight: 700, color: "#1e293b" }}>{inv.vehicle_name}</div>
-                  <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 2 }}>eRickshaw / Electric Vehicle</div>
+              <tr style={{ borderBottom: "1px solid #e2e8f0", background: "#fafafa" }}>
+                <td style={{ padding: "10px 8px", textAlign: "center", color: "#64748b" }}>1</td>
+                <td style={{ padding: "10px 8px" }}>
+                  <div style={{ fontWeight: 700, color: "#1e293b", fontSize: 11 }}>{inv.vehicle_name}</div>
+                  <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 2 }}>
+                    HSN: <strong>{inv.vehicle_hsn || "8703"}</strong> &nbsp;| Three-Wheeler EV / eRickshaw
+                  </div>
                 </td>
-                <td style={{ padding: "8px", color: "#475569" }}>8703</td>
-                <td style={{ padding: "8px", textAlign: "center", fontWeight: 600 }}>{inv.quantity}</td>
-                <td style={{ padding: "8px", textAlign: "right" }}>{fmtINR(inv.unit_price)}</td>
-                <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{fmtINR(subtotal)}</td>
+                <td style={{ padding: "10px 8px", color: "#475569" }}>{inv.vehicle_fuel_type || "Electric"}</td>
+                <td style={{ padding: "10px 8px", textAlign: "center", fontWeight: 700 }}>{inv.quantity}</td>
+                <td style={{ padding: "10px 8px", textAlign: "right" }}>{fmtINR(inv.unit_price)}</td>
+                <td style={{ padding: "10px 8px", textAlign: "right", fontWeight: 700 }}>{fmtINR(subtotal)}</td>
               </tr>
             </tbody>
           </table>
 
-          {/* Totals */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-            <table style={{ fontSize: 10, borderCollapse: "collapse", minWidth: 220 }}>
+          {/* ── Totals + declaration ── */}
+          <div style={{ display: "flex", gap: 16, justifyContent: "space-between", marginBottom: 14 }}>
+            {/* GST note */}
+            <div style={{ fontSize: 9.5, color: "#64748b", flex: 1, paddingTop: 4 }}>
+              <div style={{ fontWeight: 700, color: "#1a7c4f", marginBottom: 3 }}>GST DECLARATION</div>
+              <div>• Certified that the particulars given above are true and correct.</div>
+              <div>• Tax is payable on forward charge basis.</div>
+              <div>• Reverse Charge applicable: <strong>No</strong></div>
+            </div>
+            {/* Tax breakdown */}
+            <table style={{ fontSize: 10, borderCollapse: "collapse", minWidth: 240 }}>
               <tbody>
                 {[
-                  ["Subtotal",       fmtINR(subtotal),    "#1e293b", false],
-                  [`CGST @ ${inv.cgst_rate}%`, fmtINR(cgstAmt), "#475569", false],
-                  [`SGST @ ${inv.sgst_rate}%`, fmtINR(sgstAmt), "#475569", false],
+                  ["Taxable Value (Subtotal)", fmtINR(subtotal), "#1e293b"],
+                  [`CGST @ ${inv.cgst_rate}%`, fmtINR(cgstAmt), "#475569"],
+                  [`SGST @ ${inv.sgst_rate}%`, fmtINR(sgstAmt), "#475569"],
                 ].map(([l, v, c]) => (
-                  <tr key={l}>
-                    <td style={{ padding: "3px 10px 3px 0", color: "#475569", textAlign: "right" }}>{l}</td>
+                  <tr key={l} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "3px 10px 3px 0", color: "#64748b", whiteSpace: "nowrap" }}>{l}</td>
                     <td style={{ padding: "3px 0", fontWeight: 600, color: c, textAlign: "right" }}>{v}</td>
                   </tr>
                 ))}
-                <tr style={{ borderTop: "2px solid #1a7c4f" }}>
-                  <td style={{ padding: "6px 10px 6px 0", fontWeight: 800, fontSize: 12, color: "#1e293b", textAlign: "right" }}>TOTAL</td>
-                  <td style={{ padding: "6px 0", fontWeight: 900, fontSize: 14, color: "#1a7c4f", textAlign: "right" }}>{fmtINR(totalAmount)}</td>
+                <tr style={{ borderTop: "2.5px solid #1a7c4f", background: "#f0fdf4" }}>
+                  <td style={{ padding: "7px 10px 7px 6px", fontWeight: 800, fontSize: 12, color: "#1e293b" }}>GRAND TOTAL</td>
+                  <td style={{ padding: "7px 0", fontWeight: 900, fontSize: 14, color: "#1a7c4f", textAlign: "right" }}>{fmtINR(totalAmount)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Payment info + signature */}
-          <div style={{ display: "flex", gap: 16, justifyContent: "space-between", paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
+          {/* Amount in words */}
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 12px", marginBottom: 14, fontSize: 10, color: "#475569" }}>
+            <strong style={{ color: "#1e293b" }}>Amount in Words:</strong> {numberToWords(totalAmount)} Only
+          </div>
+
+          {/* ── Payment + Signature ── */}
+          <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: "1px solid #e2e8f0" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 4 }}>PAYMENT INFORMATION</div>
-              <div style={{ color: "#475569", lineHeight: 1.8, fontSize: 10 }}>
-                <div>Mode: <span style={{ fontWeight: 600, color: "#1e293b" }}>{PAYMENT_LABEL[inv.payment_method] || inv.payment_method}</span></div>
-                <div>Bank: <span style={{ fontWeight: 600, color: "#1e293b" }}>HDFC Bank Ltd.</span></div>
-                <div>A/C No: <span style={{ fontWeight: 600, color: "#1e293b" }}>50200012345678</span></div>
-                <div>IFSC Code: <span style={{ fontWeight: 600, color: "#1e293b" }}>HDFC000123</span></div>
-                <div>UPI ID: <span style={{ fontWeight: 600, color: "#1e293b" }}>erikshawdekho@hdfc</span></div>
+              <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 5 }}>PAYMENT DETAILS</div>
+              <div style={{ color: "#475569", lineHeight: 1.85, fontSize: 10 }}>
+                <div>Mode: <strong style={{ color: "#1e293b" }}>{PAYMENT_LABEL[inv.payment_method] || inv.payment_method}</strong></div>
+                <div>Bank: <strong style={{ color: "#1e293b" }}>HDFC Bank Ltd.</strong></div>
+                <div>A/C No: <strong style={{ color: "#1e293b" }}>50200012345678</strong></div>
+                <div>IFSC: <strong style={{ color: "#1e293b" }}>HDFC000123</strong> &nbsp;| UPI: <strong style={{ color: "#1e293b" }}>erikshawdekho@hdfc</strong></div>
               </div>
-              <div style={{ marginTop: 7 }}>
+              <div style={{ marginTop: 8 }}>
                 <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 3 }}>TERMS & CONDITIONS</div>
-                <div style={{ fontSize: 9, color: "#94a3b8", lineHeight: 1.6 }}>
-                  <div>1) Goods once sold will not be taken back or exchanged.</div>
-                  <div>2) Interest @ 10% p.a. will be charged on overdue bills.</div>
-                  <div>3) Please make the payment to the above bank account.</div>
+                <div style={{ fontSize: 9, color: "#94a3b8", lineHeight: 1.65 }}>
+                  <div>1. Goods once sold will not be taken back or exchanged.</div>
+                  <div>2. This invoice is valid for RTO registration and insurance purposes.</div>
+                  <div>3. Warranty as per manufacturer terms. Disputes subject to Delhi jurisdiction.</div>
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", textAlign: "center" }}>
-              <div style={{ width: 68, height: 68, borderRadius: "50%", border: "2.5px solid #1a7c4f", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                <div style={{ position: "absolute", inset: 3, borderRadius: "50%", border: "1.5px dashed #1a7c4f", opacity: 0.4 }} />
-                <div style={{ fontSize: 7, fontWeight: 800, color: "#1a7c4f", letterSpacing: 1, zIndex: 1 }}>THANK YOU</div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#1a7c4f", letterSpacing: 2, zIndex: 1 }}>PAID</div>
-                <div style={{ fontSize: 7, fontWeight: 800, color: "#1a7c4f", letterSpacing: 1, zIndex: 1 }}>THANK YOU</div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", minWidth: 140, textAlign: "center" }}>
+              <div style={{ width: 110, height: 44, border: "1px solid #e2e8f0", borderRadius: 6, marginBottom: 4, background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 9 }}>
+                [Seal & Signature]
               </div>
-              <div style={{ marginTop: 6, fontSize: 10 }}>
-                <div style={{ fontStyle: "italic", color: "#475569", marginBottom: 1 }}>Authorised Signatory</div>
-                <div style={{ fontSize: 9, color: "#94a3b8" }}>Sales Manager</div>
-              </div>
+              <div style={{ fontWeight: 700, fontSize: 10, color: "#1e293b" }}>For {inv.dealer?.dealer_name}</div>
+              <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>Authorised Signatory</div>
             </div>
           </div>
+
         </div>
 
         {/* Footer */}
-        <div style={{ padding: "8px 20px", borderTop: "2px solid #1a7c4f", background: "#f8fafc", textAlign: "center", fontSize: 9.5, color: "#475569", lineHeight: 1.6 }}>
-          <div style={{ marginBottom: 3 }}>Thank you for your business! Contact us at <strong>{inv.dealer?.phone}</strong> or <strong>info@erikshawdekho.com</strong></div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 20 }}>
+        <div style={{ padding: "8px 22px", borderTop: "2px solid #1a7c4f", background: "#f0fdf4", textAlign: "center", fontSize: 9.5, color: "#475569", lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 700, color: "#1a7c4f", marginBottom: 2 }}>This is a computer-generated Tax Invoice. No signature required if digitally signed.</div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 24 }}>
             <span>🌐 www.erikshawdekho.com</span>
             <span>📞 {inv.dealer?.phone}</span>
             <span>✉ info@erikshawdekho.com</span>
@@ -398,6 +443,9 @@ export function SalesPage() {
     vehicle: "", customer_name: "", customer_phone: "",
     customer_email: "", customer_address: "", customer_gstin: "",
     sale_price: "", quantity: 1, payment_method: "cash", delivery_date: "",
+    // Vehicle identification (RTO registration + insurance)
+    chassis_number: "", engine_number: "", vehicle_color: "",
+    year_of_manufacture: "", place_of_supply: "",
   });
   const [saving,   setSaving]   = useState(false);
   const [formErr,  setFormErr]  = useState("");
@@ -448,7 +496,9 @@ export function SalesPage() {
       setShowAdd(false);
       setForm({ vehicle: "", customer_name: "", customer_phone: "", customer_email: "",
                 customer_address: "", customer_gstin: "", sale_price: "", quantity: 1,
-                payment_method: "cash", delivery_date: "" });
+                payment_method: "cash", delivery_date: "",
+                chassis_number: "", engine_number: "", vehicle_color: "",
+                year_of_manufacture: "", place_of_supply: "" });
       load();
     } catch (err) {
       setFormErr(typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to record sale.");
@@ -695,6 +745,25 @@ export function SalesPage() {
               )}
             </div>
 
+            {/* Vehicle Identification — for RTO & Insurance */}
+            <div style={{ background: `${C.info}08`, border: `1.5px solid ${C.info}25`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: C.info, marginBottom: 4 }}>🏷️ Vehicle Identification <span style={{ fontSize: 11, fontWeight: 400, color: C.textMid }}>(required for RTO registration & insurance)</span></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
+                <Field label="Chassis No. / Frame No." required>
+                  <Input value={form.chassis_number} onChange={setF("chassis_number")} placeholder="e.g. ME4JF502DB8001234" />
+                </Field>
+                <Field label="Engine Number" required>
+                  <Input value={form.engine_number} onChange={setF("engine_number")} placeholder="e.g. JF50E8001234" />
+                </Field>
+                <Field label="Vehicle Color">
+                  <Input value={form.vehicle_color} onChange={setF("vehicle_color")} placeholder="e.g. Pearl White" />
+                </Field>
+                <Field label="Year of Manufacture">
+                  <Input value={form.year_of_manufacture} onChange={setF("year_of_manufacture")} type="number" placeholder={new Date().getFullYear()} />
+                </Field>
+              </div>
+            </div>
+
             {/* Customer section */}
             <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 12 }}>👤 Customer Details</div>
@@ -719,7 +788,7 @@ export function SalesPage() {
               </div>
             </div>
 
-            {/* Payment + delivery */}
+            {/* Payment + delivery + place of supply */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
               <Field label="Payment Method">
                 <Select value={form.payment_method} onChange={setF("payment_method")} options={[
@@ -732,6 +801,9 @@ export function SalesPage() {
               </Field>
               <Field label="Expected Delivery Date">
                 <Input value={form.delivery_date} onChange={setF("delivery_date")} type="date" />
+              </Field>
+              <Field label="Place of Supply (State)" required>
+                <Input value={form.place_of_supply} onChange={setF("place_of_supply")} placeholder="e.g. Delhi, Uttar Pradesh" />
               </Field>
             </div>
 

@@ -194,6 +194,13 @@ class Sale(models.Model):
     is_delivered = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
     sale_date = models.DateTimeField(auto_now_add=True)
+    # Vehicle identification (required for RTO registration & insurance)
+    chassis_number = models.CharField(max_length=50, blank=True)
+    engine_number  = models.CharField(max_length=50, blank=True)
+    vehicle_color  = models.CharField(max_length=50, blank=True)
+    year_of_manufacture = models.IntegerField(null=True, blank=True)
+    # GST compliance fields
+    place_of_supply = models.CharField(max_length=100, blank=True)  # state name
 
     @property
     def subtotal(self):

@@ -351,34 +351,41 @@ class SaleViewSet(viewsets.ModelViewSet):
         dealer = sale.dealer
         return Response({
             'invoice_number': sale.invoice_number,
-            'sale_date': sale.sale_date,
+            'sale_date':      sale.sale_date,
+            # Dealer info
             'dealer': {
-                'name': dealer.dealer_name,
-                'address': dealer.address,
-                'city': dealer.city,
-                'phone': dealer.phone,
-                'gstin': dealer.gstin,
+                'dealer_name': dealer.dealer_name,
+                'address':     dealer.address,
+                'city':        dealer.city,
+                'phone':       dealer.phone,
+                'gstin':       dealer.gstin,
+                'state':       dealer.city,   # fallback; update when state field exists
             },
-            'customer': {
-                'name': sale.customer_name,
-                'phone': sale.customer_phone,
-                'email': sale.customer_email,
-                'address': sale.customer_address,
-                'gstin': sale.customer_gstin,
-            },
-            'vehicle': {
-                'name': f"{sale.vehicle.brand} {sale.vehicle.model_name}",
-                'hsn': sale.vehicle.hsn_code,
-                'fuel_type': sale.vehicle.fuel_type,
-            },
-            'unit_price': float(sale.sale_price),
-            'quantity': sale.quantity,
-            'subtotal': float(sale.subtotal),
-            'cgst_rate': float(sale.cgst_rate),
-            'cgst_amount': float(sale.cgst_amount),
-            'sgst_rate': float(sale.sgst_rate),
-            'sgst_amount': float(sale.sgst_amount),
-            'total_amount': float(sale.total_amount),
+            # Customer info
+            'customer_name':    sale.customer_name,
+            'customer_phone':   sale.customer_phone,
+            'customer_email':   sale.customer_email,
+            'customer_address': sale.customer_address,
+            'customer_gstin':   sale.customer_gstin,
+            # Vehicle identification (RTO & insurance)
+            'vehicle_name':         f"{sale.vehicle.brand} {sale.vehicle.model_name}",
+            'vehicle_hsn':          sale.vehicle.hsn_code or '8703',
+            'vehicle_fuel_type':    sale.vehicle.get_fuel_type_display() if hasattr(sale.vehicle, 'get_fuel_type_display') else sale.vehicle.fuel_type,
+            'vehicle_seating':      sale.vehicle.seating_capacity,
+            'chassis_number':       sale.chassis_number,
+            'engine_number':        sale.engine_number,
+            'vehicle_color':        sale.vehicle_color,
+            'year_of_manufacture':  sale.year_of_manufacture,
+            # GST fields
+            'place_of_supply': sale.place_of_supply or dealer.city,
+            'unit_price':    float(sale.sale_price),
+            'quantity':      sale.quantity,
+            'subtotal':      float(sale.subtotal),
+            'cgst_rate':     float(sale.cgst_rate),
+            'cgst_amount':   float(sale.cgst_amount),
+            'sgst_rate':     float(sale.sgst_rate),
+            'sgst_amount':   float(sale.sgst_amount),
+            'total_amount':  float(sale.total_amount),
             'payment_method': sale.payment_method,
         })
 
