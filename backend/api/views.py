@@ -561,7 +561,18 @@ def submit_dealer_review(request, dealer_id):
         return Response({'error': 'Dealer not found'}, status=status.HTTP_404_NOT_FOUND)
     ser = DealerReviewSerializer(data=request.data)
     if ser.is_valid():
-        ser.save(dealer=dealer)
+        review = ser.save(dealer=dealer)
+        # Auto-create a Lead so the dealer sees this activity in their CRM
+        Lead.objects.get_or_create(
+            dealer=dealer,
+            customer_name=review.reviewer_name or 'Anonymous',
+            phone=review.reviewer_phone or '',
+            defaults={
+                'source': 'review',
+                'notes': f"Left a {review.rating}\u2605 review: {(review.comment or '')[:200]}",
+                'status': 'new',
+            }
+        )
         return Response(ser.data, status=status.HTTP_201_CREATED)
     return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -629,6 +640,23 @@ def public_enquiry(request):
         dealer=dealer,
         notes=notes,
     )
+
+    # Auto-create a Lead in dealer CRM so buyer activity is always tracked
+    if dealer:
+        vehicle_label = str(vehicle) if vehicle else ''
+        lead_notes = notes or ''
+        if vehicle_label:
+            lead_notes = f"Enquired about {vehicle_label}. {lead_notes}".strip()
+        Lead.objects.get_or_create(
+            dealer=dealer,
+            customer_name=customer_name,
+            phone=phone,
+            defaults={
+                'source': 'marketplace',
+                'notes': lead_notes,
+                'status': 'new',
+            }
+        )
 
     # Notify the assigned dealer — fire-and-forget, never block the response
     if dealer:
