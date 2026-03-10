@@ -392,8 +392,12 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         dealer = self.request.user.dealer_profile
         qs = Customer.objects.filter(dealer=dealer)
-        search = self.request.query_params.get('search')
-        if search: qs = qs.filter(Q(name__icontains=search)|Q(phone__icontains=search))
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(name__icontains=search)|Q(phone__icontains=search))
+        if date_from: qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:   qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -425,7 +429,15 @@ class FinanceLoanViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return FinanceLoan.objects.filter(dealer=self.request.user.dealer_profile).order_by('-applied_date')
+        dealer = self.request.user.dealer_profile
+        qs = FinanceLoan.objects.filter(dealer=dealer)
+        search    = self.request.query_params.get('search')
+        date_from = self.request.query_params.get('date_from')
+        date_to   = self.request.query_params.get('date_to')
+        if search:    qs = qs.filter(Q(customer_name__icontains=search))
+        if date_from: qs = qs.filter(applied_date__date__gte=date_from)
+        if date_to:   qs = qs.filter(applied_date__date__lte=date_to)
+        return qs.order_by('-applied_date')
 
     def perform_create(self, serializer):
         serializer.save(dealer=self.request.user.dealer_profile)

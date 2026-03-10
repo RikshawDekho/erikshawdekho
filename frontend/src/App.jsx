@@ -288,6 +288,7 @@ function Table({ cols, rows, onRow }) {
 }
 
 function Modal({ title, children, onClose, width = 560 }) {
+  const C = useC();
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => e.target === e.currentTarget && onClose?.()}>
@@ -303,6 +304,7 @@ function Modal({ title, children, onClose, width = 560 }) {
 }
 
 function Field({ label, children, required }) {
+  const C = useC();
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.textMid, marginBottom: 5 }}>{label}{required && <span style={{ color: C.danger }}> *</span>}</label>
@@ -312,9 +314,10 @@ function Field({ label, children, required }) {
 }
 
 function Input({ value, onChange, placeholder, type = "text", required, style = {} }) {
+  const C = useC();
   return (
     <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required}
-      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: "#fff", outline: "none", boxSizing: "border-box", ...style }}
+      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", ...style }}
       onFocus={e => e.target.style.borderColor = C.primary}
       onBlur={e => e.target.style.borderColor = C.border}
     />
@@ -322,9 +325,10 @@ function Input({ value, onChange, placeholder, type = "text", required, style = 
 }
 
 function Select({ value, onChange, options, placeholder, style = {} }) {
+  const C = useC();
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
-      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: "#fff", outline: "none", boxSizing: "border-box", cursor: "pointer", ...style }}>
+      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer", ...style }}>
       {placeholder && <option value="">{placeholder}</option>}
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -332,12 +336,26 @@ function Select({ value, onChange, options, placeholder, style = {} }) {
 }
 
 function Spinner() {
+  const C = useC();
   return <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
     <div style={{ width: 36, height: 36, borderRadius: "50%", border: `4px solid ${C.border}`, borderTop: `4px solid ${C.primary}`, animation: "spin 0.8s linear infinite" }}/>
   </div>;
 }
 
+function ScreenSaver({ onWake }) {
+  return (
+    <div onClick={onWake} onKeyDown={onWake} tabIndex={0}
+      style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer" }}>
+      <div style={{ fontSize: 64, marginBottom: 16, animation: "pulse 2s ease-in-out infinite" }}>🛺</div>
+      <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, opacity: 0.8 }}>eRickshawDekho</div>
+      <div style={{ color: "#fff", fontSize: 13, opacity: 0.5, marginTop: 8 }}>Click anywhere to wake</div>
+      <style>{`@keyframes pulse { 0%,100%{transform:scale(1);opacity:0.8} 50%{transform:scale(1.1);opacity:1} }`}</style>
+    </div>
+  );
+}
+
 function DateFilter({ from, to, onChange }) {
+  const C = useC();
   const today = new Date();
   const fmt = d => d.toISOString().split('T')[0];
   const presets = [
@@ -373,6 +391,7 @@ function DateFilter({ from, to, onChange }) {
 }
 
 function Pagination({ page, totalPages, onPage }) {
+  const C = useC();
   if (totalPages <= 1) return null;
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "14px 0" }}>
@@ -389,6 +408,7 @@ function Pagination({ page, totalPages, onPage }) {
 // MINI CHART
 // ═══════════════════════════════════════════════════════
 function BarChart({ data, height = 120 }) {
+  const C = useC();
   if (!data || !data.length) return null;
   const max = Math.max(...data.map(d => d.revenue || 0)) || 1;
   return (
@@ -404,6 +424,7 @@ function BarChart({ data, height = 120 }) {
 }
 
 function DonutChart({ data, size = 100 }) {
+  const C = useC();
   const total = Object.values(data || {}).reduce((a, b) => a + b, 0) || 1;
   const colors = { electric: C.success, petrol: "#f97316", cng: "#06b6d4", lpg: "#8b5cf6", diesel: "#64748b" };
   const entries = Object.entries(data || {});
@@ -435,6 +456,7 @@ function DonutChart({ data, size = 100 }) {
 // AUTH PAGES
 // ═══════════════════════════════════════════════════════
 function AuthPage({ onAuth }) {
+  const C = useC();
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "Delhi" });
   const [fieldErrors, setFieldErrors] = useState({});
@@ -564,6 +586,7 @@ const BOTTOM_NAV = [
 ];
 
 function Sidebar({ page, setPage, dealer, onLogout }) {
+  const C = useC();
   return (
     <>
       {/* Desktop sidebar */}
@@ -627,13 +650,38 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
   );
 }
 
-function Topbar({ dealer, page, onAddNew, onProfile }) {
+function Topbar({ dealer, page, onAddNew, onProfile, onAdmin }) {
+  const C = useC();
+  const { isDark, toggle } = useContext(ThemeCtx);
+  const [unread, setUnread] = useState(0);
   const pageLabel = [...NAV, { id: "account", label: "My Account" }, { id: "plans", label: "Plans & Pricing" }].find(n => n.id === page)?.label || page;
+
+  useEffect(() => {
+    if (!dealer) return;
+    const fetchUnread = () => api.enquiries.unreadCount().then(d => setUnread(d.unread || 0)).catch(() => {});
+    fetchUnread();
+    const id = setInterval(fetchUnread, 60000);
+    return () => clearInterval(id);
+  }, [dealer]);
+
   return (
     <div style={{ height: 60, background: C.surface, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", position: "sticky", top: 0, zIndex: 10 }}>
       <div style={{ fontWeight: 700, fontSize: 18, color: C.text }}>{pageLabel}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {page === "inventory" && <Btn label="+ Add Vehicle" color={C.primary} size="sm" onClick={onAddNew} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {page === "inventory" && <Btn label="+ Add Vehicle" size="sm" onClick={onAddNew} />}
+        {/* Bell icon */}
+        <button onClick={() => onAdmin ? null : null} style={{ position: "relative", background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+          🔔
+          {unread > 0 && (
+            <span style={{ position: "absolute", top: -5, right: -5, background: C.danger, color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {unread > 9 ? "9+" : unread}
+            </span>
+          )}
+        </button>
+        {/* Dark mode toggle */}
+        <button onClick={toggle} title={isDark ? "Light Mode" : "Dark Mode"} style={{ background: isDark ? C.surface : C.bg, border: `1.5px solid ${C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+          {isDark ? "☀️" : "🌙"}
+        </button>
         <button onClick={onProfile} style={{
           display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
           background: C.bg, borderRadius: 20, border: `1.5px solid ${C.border}`,
@@ -658,6 +706,7 @@ function Topbar({ dealer, page, onAddNew, onProfile }) {
 // DASHBOARD PAGE
 // ═══════════════════════════════════════════════════════
 function Dashboard({ onNavigate }) {
+  const C = useC();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -796,6 +845,7 @@ function Dashboard({ onNavigate }) {
 // INVENTORY PAGE
 // ═══════════════════════════════════════════════════════
 function Inventory({ showAdd, onAddClose, onNavigate }) {
+  const C = useC();
   const toast = useToast();
   const plan = usePlan();
   const [vehicles, setVehicles] = useState([]);
@@ -1113,6 +1163,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════
 function Leads({ onNavigate }) {
+  const C = useC();
   const toast = useToast();
   const plan = usePlan();
   const [tab, setTab] = useState("leads"); // "leads" | "enquiries"
@@ -1125,6 +1176,11 @@ function Leads({ onNavigate }) {
   const [enquiriesLoading, setEnquiriesLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [enquiryPage, setEnquiryPage] = useState(1);
+  const [enquiryTotal, setEnquiryTotal] = useState(0);
+  const [enquirySearch, setEnquirySearch] = useState("");
+  const [enquiryDateFrom, setEnquiryDateFrom] = useState("");
+  const [enquiryDateTo, setEnquiryDateTo] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1137,8 +1193,13 @@ function Leads({ onNavigate }) {
 
   const loadEnquiries = useCallback(() => {
     setEnquiriesLoading(true);
-    api.enquiries.list().then(d => setEnquiries(d.results || [])).catch(() => {}).finally(() => setEnquiriesLoading(false));
-  }, []);
+    const p = new URLSearchParams();
+    if (enquirySearch)   p.set("search", enquirySearch);
+    if (enquiryDateFrom) p.set("date_from", enquiryDateFrom);
+    if (enquiryDateTo)   p.set("date_to", enquiryDateTo);
+    p.set("page", enquiryPage);
+    api.enquiries.list(`?${p}`).then(d => { setEnquiries(d.results || []); setEnquiryTotal(d.count || 0); }).catch(() => {}).finally(() => setEnquiriesLoading(false));
+  }, [enquirySearch, enquiryDateFrom, enquiryDateTo, enquiryPage]);
 
   useEffect(() => { load(); api.vehicles.list().then(d => setVehicles(d.results || d)); }, [load]);
 
@@ -1238,10 +1299,12 @@ function Leads({ onNavigate }) {
         <Card padding={0}>
           <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Buyer Enquiries from Marketplace</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 11, color: C.textDim }}>Auto-refreshes every 30s</span>
-              <Btn label="Refresh" size="sm" outline color={C.primary} onClick={loadEnquiries} />
-            </div>
+          </div>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <input value={enquirySearch} onChange={e => { setEnquirySearch(e.target.value); setEnquiryPage(1); }}
+              placeholder="Search buyer name / phone..." style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+            <DateFilter from={enquiryDateFrom} to={enquiryDateTo} onChange={(f,t) => { setEnquiryDateFrom(f); setEnquiryDateTo(t); setEnquiryPage(1); }} />
+            <Btn label="Refresh" size="sm" outline onClick={loadEnquiries} />
           </div>
           {enquiriesLoading && enquiries.length === 0 ? <Spinner /> : (
             <div style={{ overflowX: "auto" }}>
@@ -1286,6 +1349,7 @@ function Leads({ onNavigate }) {
               )}
             </div>
           )}
+          <Pagination page={enquiryPage} totalPages={Math.ceil(enquiryTotal/20)} onPage={setEnquiryPage} />
         </Card>
       )}
 
@@ -1318,6 +1382,7 @@ function Leads({ onNavigate }) {
 // INVOICE VIEW (matching reference image)
 // ═══════════════════════════════════════════════════════
 function InvoiceView({ inv }) {
+  const C = useC();
   if (!inv) return null;
   return (
     <div style={{ fontFamily: "inherit", fontSize: 13, color: C.text }}>
@@ -1403,14 +1468,26 @@ function InvoiceView({ inv }) {
 // CUSTOMERS PAGE
 // ═══════════════════════════════════════════════════════
 function Customers() {
+  const C = useC();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", address: "", gstin: "" });
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const toast = useToast();
-  const load = () => { setLoading(true); api.customers.list().then(d => setCustomers(d.results || d)).finally(() => setLoading(false)); };
-  useEffect(() => { load(); }, []);
+  const load = useCallback(() => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (search)   p.set("search", search);
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo)   p.set("date_to", dateTo);
+    const qs = p.toString() ? `?${p}` : "";
+    api.customers.list(qs).then(d => setCustomers(d.results || d)).finally(() => setLoading(false));
+  }, [search, dateFrom, dateTo]);
+  useEffect(() => { load(); }, [load]);
   const setF = k => v => setForm(p => ({ ...p, [k]: v }));
   const submit = async (e) => {
     e.preventDefault();
@@ -1437,9 +1514,15 @@ function Customers() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <Btn label="+ Add Customer" color={C.primary} onClick={() => setShowAdd(true)} />
-      </div>
+      <Card style={{ marginBottom: 14, padding: 14 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name / phone..."
+            style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+          <DateFilter from={dateFrom} to={dateTo} onChange={(f,t) => { setDateFrom(f); setDateTo(t); }} />
+          <Btn label="↺ Refresh" size="sm" outline onClick={load} />
+          <Btn label="+ Add Customer" onClick={() => setShowAdd(true)} />
+        </div>
+      </Card>
       <Card padding={0}>
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>All Customers</div>
         {loading ? <Spinner /> : <Table cols={cols} rows={customers} />}
@@ -1470,12 +1553,25 @@ function Customers() {
 // FINANCE PAGE
 // ═══════════════════════════════════════════════════════
 function Finance() {
+  const C = useC();
   const [emiForm, setEmiForm] = useState({ principal: 150000, rate: 12, tenure: 36 });
   const [emiResult, setEmiResult] = useState(null);
   const [loans, setLoans] = useState([]);
+  const [loanSearch, setLoanSearch] = useState("");
+  const [loanDateFrom, setLoanDateFrom] = useState("");
+  const [loanDateTo, setLoanDateTo] = useState("");
   const setF = k => v => setEmiForm(p => ({ ...p, [k]: v }));
 
-  useEffect(() => { api.finance.loans().then(d => setLoans(d.results || d)); }, []);
+  const loadLoans = useCallback(() => {
+    const p = new URLSearchParams();
+    if (loanSearch)   p.set("search", loanSearch);
+    if (loanDateFrom) p.set("date_from", loanDateFrom);
+    if (loanDateTo)   p.set("date_to", loanDateTo);
+    const qs = p.toString() ? `?${p}` : "";
+    api.finance.loans(qs).then(d => setLoans(d.results || d));
+  }, [loanSearch, loanDateFrom, loanDateTo]);
+
+  useEffect(() => { loadLoans(); }, [loadLoans]);
 
   const calcEMI = async () => {
     const r = await api.finance.emi({ ...emiForm });
@@ -1521,10 +1617,20 @@ function Finance() {
       </div>
 
       {/* Loans table */}
-      <Card padding={0}>
-        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>Loan Applications</div>
-        <Table cols={cols} rows={loans} />
-      </Card>
+      <div>
+        <Card style={{ marginBottom: 14, padding: 14 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <input value={loanSearch} onChange={e => setLoanSearch(e.target.value)} placeholder="Search customer / bank..."
+              style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+            <DateFilter from={loanDateFrom} to={loanDateTo} onChange={(f,t) => { setLoanDateFrom(f); setLoanDateTo(t); }} />
+            <Btn label="↺ Refresh" size="sm" outline onClick={loadLoans} />
+          </div>
+        </Card>
+        <Card padding={0}>
+          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>Loan Applications</div>
+          <Table cols={cols} rows={loans} />
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1554,6 +1660,7 @@ function ToggleSwitch({ checked, onChange, label, sub }) {
 }
 
 function AccountPage({ dealer: dealerProp, onLogout }) {
+  const C = useC();
   const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1755,6 +1862,7 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
 // REPORTS PAGE
 // ═══════════════════════════════════════════════════════
 function Reports() {
+  const C = useC();
   const [data, setData] = useState(null);
   const [period, setPeriod] = useState("month");
 
@@ -2061,19 +2169,41 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 // MARKETPLACE PAGE (public-facing)
 // ═══════════════════════════════════════════════════════
 function Marketplace() {
+  const C = useC();
   const toast = useToast();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ fuel_type: "", search: "", city: "" });
   const [detailVehicle, setDetailVehicle] = useState(null);
+  const [cityFilter, setCityFilter] = useState("");
+  const [sortBy, setSortBy] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    const p = new URLSearchParams(Object.fromEntries(Object.entries(filter).filter(([, v]) => v)));
+    const p = new URLSearchParams(Object.fromEntries(Object.entries({ ...filter, city: cityFilter || filter.city }).filter(([, v]) => v)));
+    if (sortBy) p.set("ordering", sortBy);
     api.marketplace(`?${p}`).then(d => setVehicles(d.results || [])).finally(() => setLoading(false));
-  }, [filter]);
+  }, [filter, cityFilter, sortBy]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleNearMe = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          const city = prompt("Enter your city to find nearby dealers:");
+          if (city) { setCityFilter(city.trim()); }
+        },
+        () => {
+          const city = prompt("Enter your city to find nearby dealers:");
+          if (city) { setCityFilter(city.trim()); }
+        }
+      );
+    } else {
+      const city = prompt("Enter your city to find nearby dealers:");
+      if (city) { setCityFilter(city.trim()); }
+    }
+  };
 
   return (
     <div style={{ padding: 24 }}>
@@ -2088,14 +2218,31 @@ function Marketplace() {
         </div>
       </div>
 
-      {/* Fuel filter tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+      {/* Fuel filter tabs + city + sort */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
         {["", "electric", "petrol", "cng", "lpg"].map(f => (
           <button key={f} onClick={() => setFilter(p => ({ ...p, fuel_type: f }))}
             style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${filter.fuel_type === f ? C.primary : C.border}`, background: filter.fuel_type === f ? C.primary : "#fff", color: filter.fuel_type === f ? "#fff" : C.textMid, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s" }}>
             {f ? f.charAt(0).toUpperCase() + f.slice(1) : "All eRickshaws"}
           </button>
         ))}
+        <button onClick={handleNearMe}
+          style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${cityFilter ? C.success : C.border}`, background: cityFilter ? C.success : "#fff", color: cityFilter ? "#fff" : C.textMid, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s" }}>
+          📍 {cityFilter ? `Near: ${cityFilter}` : "Near Me"}
+        </button>
+        {cityFilter && (
+          <button onClick={() => setCityFilter("")}
+            style={{ padding: "5px 10px", borderRadius: 14, border: `1.5px solid ${C.danger}40`, background: `${C.danger}10`, color: C.danger, cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>
+            ✕ Clear City
+          </button>
+        )}
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+          style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${C.border}`, fontSize: 12, fontFamily: "inherit", color: C.textMid, cursor: "pointer", background: "#fff" }}>
+          <option value="">Sort: Default</option>
+          <option value="price">Price: Low to High</option>
+          <option value="-price">Price: High to Low</option>
+          <option value="best_price">Best Price Near Me</option>
+        </select>
       </div>
 
       <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 16, color: C.text }}>Browse New & Popular Models</div>
@@ -2160,6 +2307,7 @@ function PlanFeatureRow({ label, free, pro }) {
 }
 
 function PlansPage({ onUpgrade }) {
+  const C = useC();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -2305,6 +2453,7 @@ function PlansPage({ onUpgrade }) {
 // PWA INSTALL PROMPT
 // ═══════════════════════════════════════════════════════
 function PWAInstallPrompt() {
+  const C = useC();
   const [prompt, setPrompt] = useState(null);
   const [showIOS, setShowIOS] = useState(false);
   const [dismissed, setDismissed] = useState(() => localStorage.getItem("erd_pwa_dismissed") === "1");
@@ -2359,6 +2508,7 @@ const SUPPORT_WA    = import.meta.env.VITE_SUPPORT_WA    || "";
 const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || "support@erikshawdekho.com";
 
 function ContactSupportModal({ onClose, onNavigate }) {
+  const C = useC();
   return (
     <Modal title="Upgrade to Pro" onClose={onClose} width={440}>
       {/* Header */}
@@ -2406,9 +2556,339 @@ function ContactSupportModal({ onClose, onNavigate }) {
 }
 
 // ═══════════════════════════════════════════════════════
+// ADMIN PORTAL
+// ═══════════════════════════════════════════════════════
+const ADMIN_NAV = [
+  { id: "overview",      label: "Overview",     icon: "📊" },
+  { id: "dealers",       label: "Dealers",      icon: "🏪" },
+  { id: "users",         label: "Users",        icon: "👥" },
+  { id: "applications",  label: "Applications", icon: "📋" },
+  { id: "enquiries",     label: "Enquiries",    icon: "💬" },
+];
+
+function AdminPortal({ user, onLogout }) {
+  const C = useC();
+  const { isDark, toggle } = useContext(ThemeCtx);
+  const toast = useToast();
+  const [page, setPage] = useState("overview");
+  const [stats, setStats] = useState(null);
+  const [dealers, setDealers] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [enquiries, setEnquiries] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pg, setPg] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [appFilter, setAppFilter] = useState("pending");
+
+  useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
+
+  const loadPage = useCallback(() => {
+    setLoading(true);
+    const p = new URLSearchParams({ page: pg });
+    if (search)   p.set("search", search);
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo)   p.set("date_to", dateTo);
+    if (appFilter && page === "applications") p.set("status", appFilter);
+    const qs = `?${p}`;
+    const calls = {
+      dealers:      () => api.admin.dealers(qs).then(d => { setDealers(d.results || []); setTotalPages(d.total_pages || 1); }),
+      users:        () => api.admin.users(qs).then(d => { setUsers(d.results || []); setTotalPages(d.total_pages || 1); }),
+      applications: () => api.admin.applications(qs).then(d => { setApplications(d.results || []); setTotalPages(d.total_pages || 1); }),
+      enquiries:    () => api.admin.enquiries(qs).then(d => { setEnquiries(d.results || []); setTotalPages(d.total_pages || 1); }),
+    };
+    (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
+  }, [page, pg, search, dateFrom, dateTo, appFilter]);
+
+  useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
+
+  const verifyDealer = async (id, verified) => {
+    await api.admin.verifyDealer(id, { is_verified: verified });
+    setDealers(p => p.map(d => d.id === id ? { ...d, is_verified: verified } : d));
+    toast(verified ? "Dealer verified!" : "Verification removed.", "success");
+  };
+
+  const handleApp = async (id, status) => {
+    await api.admin.updateApp(id, { status });
+    setApplications(p => p.map(a => a.id === id ? { ...a, status } : a));
+    toast(`Application ${status}.`, "success");
+  };
+
+  const deleteUser = async (id) => {
+    if (!confirm("Delete this user permanently?")) return;
+    await api.admin.deleteUser(id);
+    setUsers(p => p.filter(u => u.id !== id));
+    toast("User deleted.", "success");
+  };
+
+  const sidebarStyle = { width: 200, minWidth: 200, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 };
+
+  return (
+    <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
+      {/* Admin Sidebar */}
+      <div style={sidebarStyle}>
+        <div style={{ padding: "16px 14px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 34, height: 34, background: `linear-gradient(135deg,${C.danger},#b91c1c)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>⚙️</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Admin Portal</div>
+              <div style={{ fontSize: 10, color: C.textDim }}>Super Admin</div>
+            </div>
+          </div>
+        </div>
+        <nav style={{ flex: 1, padding: "10px 8px" }}>
+          {ADMIN_NAV.map(n => (
+            <button key={n.id} onClick={() => { setPage(n.id); setPg(1); setSearch(""); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: page === n.id ? `${C.danger}15` : "transparent", border: "none", borderRadius: 8, color: page === n.id ? C.danger : C.textMid, fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 2, borderLeft: page === n.id ? `3px solid ${C.danger}` : "3px solid transparent" }}>
+              <span>{n.icon}</span>{n.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
+          <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            {isDark ? "☀️" : "🌙"} {isDark ? "Light Mode" : "Dark Mode"}
+          </button>
+          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            🚪 Logout
+          </button>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
+              {ADMIN_NAV.find(n => n.id === page)?.icon} {ADMIN_NAV.find(n => n.id === page)?.label || "Overview"}
+            </div>
+            <div style={{ fontSize: 12, color: C.textDim }}>Logged in as: <b>{user?.username}</b></div>
+          </div>
+        </div>
+
+        {/* Overview stats */}
+        {page === "overview" && stats && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14, marginBottom: 24 }}>
+              {[
+                ["🏪","Total Dealers",        stats.total_dealers,       C.primary],
+                ["✅","Verified Dealers",      stats.verified_dealers,    C.success],
+                ["🚗","Active Vehicles",       stats.total_vehicles,      C.info],
+                ["👥","Pipeline Leads",        stats.total_leads,         C.warning],
+                ["💰","Total Sales",           stats.total_sales,         C.success],
+                ["💬","Total Enquiries",       stats.total_enquiries,     C.info],
+                ["📋","Pending Applications",  stats.pending_applications,C.danger],
+                ["👤","Total Users",           stats.total_users,         C.primary],
+              ].map(([icon,label,value,color]) => (
+                <StatCard key={label} icon={icon} label={label} value={value ?? "—"} color={color} />
+              ))}
+            </div>
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Platform Revenue</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: C.success }}>₹{Number(stats.total_revenue || 0).toLocaleString("en-IN")}</div>
+              <div style={{ fontSize: 12, color: C.textDim, marginTop: 4 }}>Total recorded sales across all dealers</div>
+            </Card>
+          </div>
+        )}
+
+        {/* Dealers */}
+        {page === "dealers" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search dealer / phone..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Dealer","City","Plan","Vehicles","Verified","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dealers.map(d => (
+                      <tr key={d.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{d.dealer_name}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{d.username} · {d.email}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.city}, {d.state}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={d.plan_type} color={d.plan_type === "pro" ? C.success : C.warning} /></td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.vehicle_count}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {d.is_verified ? <span style={{ color: C.success, fontWeight: 700 }}>✓ Verified</span> : <span style={{ color: C.textDim }}>—</span>}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <Btn label={d.is_verified ? "Revoke" : "Verify"} size="sm" color={d.is_verified ? C.danger : C.success} onClick={() => verifyDealer(d.id, !d.is_verified)} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {dealers.length === 0 && <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No dealers found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
+        {/* Users */}
+        {page === "users" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search username / email..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["User","Type","Dealer / Showroom","Joined","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map(u => (
+                      <tr key={u.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{u.username}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{u.email}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={u.user_type} color={u.user_type === "admin" ? C.danger : u.user_type === "dealer" ? C.primary : C.info} /></td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{u.dealer_name || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{new Date(u.date_joined).toLocaleDateString("en-IN")}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {!u.is_superuser && <Btn label="Delete" size="sm" color={C.danger} onClick={() => deleteUser(u.id)} />}
+                        </td>
+                      </tr>
+                    ))}
+                    {users.length === 0 && <tr><td colSpan={5} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No users found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
+        {/* Applications */}
+        {page === "applications" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search dealer name / email..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                {["","pending","approved","rejected"].map(s => (
+                  <button key={s} onClick={() => { setAppFilter(s); setPg(1); }} style={{ padding: "5px 12px", borderRadius: 14, border: `1.5px solid ${appFilter === s ? C.primary : C.border}`, background: appFilter === s ? C.primary : "transparent", color: appFilter === s ? "#fff" : C.textMid, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>
+                    {s || "All"}
+                  </button>
+                ))}
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Dealer","Contact","City","Status","Applied","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {applications.map(a => (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{a.dealer_name}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{a.email}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{a.contact_name}<br/><span style={{ fontSize: 11 }}>{a.phone}</span></td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{a.city}, {a.state}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={a.status} color={a.status === "approved" ? C.success : a.status === "rejected" ? C.danger : C.warning} /></td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{new Date(a.applied_at).toLocaleDateString("en-IN")}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {a.status !== "approved"  && <Btn label="Approve" size="sm" color={C.success} onClick={() => handleApp(a.id, "approved")} />}
+                            {a.status !== "rejected"  && <Btn label="Reject"  size="sm" color={C.danger}  onClick={() => handleApp(a.id, "rejected")} />}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {applications.length === 0 && <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No applications found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
+        {/* Enquiries */}
+        {page === "enquiries" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search buyer / phone..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <DateFilter from={dateFrom} to={dateTo} onChange={(f,t) => { setDateFrom(f); setDateTo(t); setPg(1); }} />
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Buyer","Phone","City","Vehicle","Dealer","Status","Date"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enquiries.map(e => (
+                      <tr key={e.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{e.customer_name}</td>
+                        <td style={{ padding: "12px 14px", color: C.primary }}>{e.phone}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{e.city || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12 }}>{e.vehicle || "General"}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{e.dealer_name || "—"}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={e.is_processed ? "Done" : "New"} color={e.is_processed ? C.success : C.warning} /></td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{new Date(e.created_at).toLocaleDateString("en-IN")}</td>
+                      </tr>
+                    ))}
+                    {enquiries.length === 0 && <tr><td colSpan={7} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No enquiries found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // LANDING PAGE (shown before any auth choice)
 // ═══════════════════════════════════════════════════════
 function LandingPage({ onDealer, onMarketplace }) {
+  const C = useC();
   return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(160deg,${C.primaryD} 0%,${C.primary} 45%,#1a6b44 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Nunito','Segoe UI',sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
@@ -2475,6 +2955,7 @@ function LandingPage({ onDealer, onMarketplace }) {
 // PUBLIC MARKETPLACE PAGE (no dealer auth required)
 // ═══════════════════════════════════════════════════════
 function PublicMarketplacePage({ onDealerPortal, onBack }) {
+  const C = useC();
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes spin{to{transform:rotate(360deg)}}@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -2501,31 +2982,55 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
 // ROOT APP
 // ═══════════════════════════════════════════════════════
 export default function App() {
+  const [isDark, setIsDark] = useState(() => localStorage.getItem("erd_theme") === "dark");
+  const toggleTheme = () => setIsDark(d => { const next = !d; localStorage.setItem("erd_theme", next ? "dark" : "light"); return next; });
+
   const [auth, setAuth] = useState(() => {
     const token = localStorage.getItem("erd_access");
     const dealer = JSON.parse(localStorage.getItem("erd_dealer") || "null");
-    return token ? { token, dealer } : null;
+    const user   = JSON.parse(localStorage.getItem("erd_user") || "null");
+    return token ? { token, dealer, user } : null;
   });
-  // appMode: null = landing, 'dealer' = dealer auth/portal, 'public' = public marketplace
+  // appMode: null = landing, 'dealer' = dealer auth/portal, 'public' = public marketplace, 'admin' = admin portal
   const [appMode, setAppMode] = useState(null);
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   const [plan, setPlan] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // Screen saver
+  const [sleeping, setSleeping] = useState(false);
+  const sleepTimer = useRef(null);
+  const resetSleep = useCallback(() => {
+    setSleeping(false);
+    clearTimeout(sleepTimer.current);
+    sleepTimer.current = setTimeout(() => setSleeping(true), 5 * 60 * 1000);
+  }, []);
+  useEffect(() => {
+    resetSleep();
+    window.addEventListener("mousemove", resetSleep);
+    window.addEventListener("keydown", resetSleep);
+    return () => {
+      clearTimeout(sleepTimer.current);
+      window.removeEventListener("mousemove", resetSleep);
+      window.removeEventListener("keydown", resetSleep);
+    };
+  }, [resetSleep]);
+
   // Fetch plan once on login
   useEffect(() => {
-    if (auth) {
+    if (auth && appMode !== "admin") {
       api.dashboard().then(d => setPlan(d.plan)).catch(() => {});
     }
-  }, [auth]);
+  }, [auth, appMode]);
 
   const handleAuth = (data) => {
-    localStorage.setItem("erd_access", data.access);
+    localStorage.setItem("erd_access",  data.access);
     if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
     localStorage.setItem("erd_dealer", JSON.stringify(data.dealer));
+    localStorage.setItem("erd_user",   JSON.stringify(data.user));
     setAuth(data);
-    setAppMode("dealer");
+    setAppMode(data.user?.user_type === "admin" || data.user?.is_superuser ? "admin" : "dealer");
   };
 
   const handleLogout = () => {
@@ -2535,35 +3040,54 @@ export default function App() {
     setAppMode(null);
   };
 
+  const C_LIVE = isDark ? DARK_C : LIGHT_C;
+
   // 1. No auth + no mode chosen → landing page
   if (!auth && appMode === null) {
     return (
-      <ToastProvider>
-        <LandingPage onDealer={() => setAppMode("dealer")} onMarketplace={() => setAppMode("public")} />
-      </ToastProvider>
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <LandingPage onDealer={() => setAppMode("dealer")} onMarketplace={() => setAppMode("public")} />
+        </ToastProvider>
+      </ThemeCtx.Provider>
     );
   }
 
   // 2. Public marketplace (driver/buyer, no auth required)
   if (!auth && appMode === "public") {
     return (
-      <ToastProvider>
-        <PublicMarketplacePage onDealerPortal={() => setAppMode("dealer")} onBack={() => setAppMode(null)} />
-      </ToastProvider>
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <PublicMarketplacePage onDealerPortal={() => setAppMode("dealer")} onBack={() => setAppMode(null)} />
+        </ToastProvider>
+      </ThemeCtx.Provider>
     );
   }
 
   // 3. Dealer auth flow
   if (!auth) {
     return (
-      <ToastProvider>
-        <AuthPage onAuth={handleAuth} />
-        <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
-          <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
-            ← Back to home
-          </button>
-        </div>
-      </ToastProvider>
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <AuthPage onAuth={handleAuth} />
+          <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
+            <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
+              ← Back to home
+            </button>
+          </div>
+        </ToastProvider>
+      </ThemeCtx.Provider>
+    );
+  }
+
+  // 4. Admin portal
+  if (auth && (appMode === "admin" || auth.user?.user_type === "admin")) {
+    return (
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <AdminPortal user={auth.user} onLogout={handleLogout} />
+        </ToastProvider>
+      </ThemeCtx.Provider>
     );
   }
 
@@ -2587,34 +3111,37 @@ export default function App() {
   };
 
   return (
-    <ToastProvider>
-      <PlanCtx.Provider value={plan}>
-        <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
-          <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { background: ${C.bg}; }
-            @keyframes spin { to { transform: rotate(360deg); } }
-            @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-            ::-webkit-scrollbar { width: 6px; }
-            ::-webkit-scrollbar-track { background: ${C.bg}; }
-            ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
-            select option { background: #fff; color: ${C.text}; }
-          `}</style>
+    <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+      <ToastProvider>
+        <PlanCtx.Provider value={plan}>
+          <div style={{ display: "flex", background: C_LIVE.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C_LIVE.text }}>
+            <style>{`
+              @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              body { background: ${C_LIVE.bg}; }
+              @keyframes spin { to { transform: rotate(360deg); } }
+              @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+              ::-webkit-scrollbar { width: 6px; }
+              ::-webkit-scrollbar-track { background: ${C_LIVE.bg}; }
+              ::-webkit-scrollbar-thumb { background: ${C_LIVE.border}; border-radius: 4px; }
+              select option { background: ${C_LIVE.surface}; color: ${C_LIVE.text}; }
+            `}</style>
 
-          <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
+            <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
 
-          <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
-            <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} />
-            <main style={{ flex: 1 }}>
-              {renderPage()}
-            </main>
+            <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
+              <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onToggleTheme={toggleTheme} isDark={isDark} />
+              <main style={{ flex: 1 }}>
+                {renderPage()}
+              </main>
+            </div>
+
+            {showUpgradeModal && <ContactSupportModal onClose={() => setShowUpgradeModal(false)} onNavigate={setPage} />}
+            <PWAInstallPrompt />
+            {sleeping && <ScreenSaver onWake={resetSleep} />}
           </div>
-
-          {showUpgradeModal && <ContactSupportModal onClose={() => setShowUpgradeModal(false)} onNavigate={setPage} />}
-          <PWAInstallPrompt />
-        </div>
-      </PlanCtx.Provider>
-    </ToastProvider>
+        </PlanCtx.Provider>
+      </ToastProvider>
+    </ThemeCtx.Provider>
   );
 }
