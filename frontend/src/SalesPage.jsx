@@ -320,7 +320,10 @@ function InvoicePrint({ inv, onClose }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, color: "#374151", lineHeight: 1.8 }}>
                 {inv.battery_make && <div>Battery Make: <strong style={{ color: "#1e293b" }}>{inv.battery_make}</strong></div>}
                 {inv.battery_capacity_ah && <div>Capacity: <strong style={{ color: "#1e293b" }}>{inv.battery_capacity_ah}</strong></div>}
-                {inv.battery_serial_number && <div>Battery Serial: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.battery_serial_number}</strong></div>}
+                {inv.battery_count > 1
+                  ? (inv.battery_serial_numbers || []).map((s, i) => s && <div key={i}>Battery {i+1} Serial: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{s}</strong></div>)
+                  : inv.battery_serial_number && <div>Battery Serial: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.battery_serial_number}</strong></div>
+                }
                 {inv.motor_serial_number && <div>Motor Serial: <strong style={{ color: "#1e293b", fontFamily: "monospace" }}>{inv.motor_serial_number}</strong></div>}
                 {inv.battery_warranty_months && <div>Battery Warranty: <strong style={{ color: "#1e293b" }}>{inv.battery_warranty_months} months</strong></div>}
                 {inv.vehicle_warranty_months && <div>Vehicle Warranty: <strong style={{ color: "#1e293b" }}>{inv.vehicle_warranty_months} months</strong></div>}
@@ -402,6 +405,11 @@ function InvoicePrint({ inv, onClose }) {
               <div style={{ fontWeight: 800, fontSize: 9, color: "#1a7c4f", letterSpacing: 1, marginBottom: 5 }}>PAYMENT DETAILS</div>
               <div style={{ color: "#475569", lineHeight: 1.85, fontSize: 10 }}>
                 <div>Mode: <strong style={{ color: "#1e293b" }}>{PAYMENT_LABEL[inv.payment_method] || inv.payment_method}</strong></div>
+                {inv.financer_details && inv.payment_method === "loan" && (
+                  <div style={{ marginTop: 3, padding: "3px 6px", background: "#eff6ff", borderRadius: 4, color: "#1d4ed8", fontSize: 9 }}>
+                    Financer: <strong>{inv.financer_details}</strong>
+                  </div>
+                )}
                 {inv.dealer?.bank_name && <div>Bank: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_name}</strong></div>}
                 {inv.dealer?.bank_account_number && <div>A/C No: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_account_number}</strong></div>}
                 {inv.dealer?.bank_ifsc && <div>IFSC: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_ifsc}</strong></div>}
@@ -838,7 +846,7 @@ export function SalesPage() {
                       const serials = Array.from({ length: count }, (_, i) => form.battery_serials[i] || "");
                       setForm(p => ({ ...p, battery_count: count, battery_serials: serials }));
                     }}
-                    options={[1, 2, 3, 4].map(n => ({ value: n, label: `${n} Unit${n > 1 ? "s" : ""}` }))}
+                    options={[1, 2, 3, 4, 5, 6].map(n => ({ value: n, label: `${n} Unit${n > 1 ? "s" : ""}` }))}
                   />
                 </Field>
                 <Field label="Battery Make / Brand">
@@ -903,7 +911,7 @@ export function SalesPage() {
             </div>
 
             {/* Payment + delivery + place of supply */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: form.payment_method === "loan" ? 0 : 18 }}>
               <Field label="Payment Method">
                 <Select value={form.payment_method} onChange={setF("payment_method")} options={[
                   { value: "cash",          label: "💵 Cash" },
@@ -920,6 +928,19 @@ export function SalesPage() {
                 <Input value={form.place_of_supply} onChange={setF("place_of_supply")} placeholder="e.g. Delhi, Uttar Pradesh" />
               </Field>
             </div>
+            {form.payment_method === "loan" && (
+              <div style={{ background: `${C.info}08`, border: `1.5px solid ${C.info}25`, borderRadius: 10, padding: 14, marginBottom: 18 }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color: C.info, marginBottom: 8 }}>🏦 Finance / Loan Details <span style={{ color: C.danger }}>*</span></div>
+                <Field label="Financer Details" required>
+                  <Input
+                    value={form.financer_details}
+                    onChange={setF("financer_details")}
+                    placeholder="e.g. HDFC Bank · Loan A/c: 1234567890 · Ref: LN2024XXXXX · Branch: Rohini, Delhi"
+                    required
+                  />
+                </Field>
+              </div>
+            )}
 
             {formErr && (
               <div style={{ background: `${C.danger}12`, border: `1px solid ${C.danger}33`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>

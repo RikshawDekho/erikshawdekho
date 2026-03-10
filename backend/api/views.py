@@ -12,13 +12,13 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource
 from .serializers import (
     VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
     CustomerSerializer, TaskSerializer, FinanceLoanSerializer, BrandSerializer,
     DealerProfileSerializer, RegisterSerializer, DriverRegisterSerializer,
     DealerApplicationSerializer, DealerReviewSerializer,
-    PublicDealerSerializer, PublicVehicleSerializer,
+    PublicDealerSerializer, PublicVehicleSerializer, VideoResourceSerializer,
 )
 
 
@@ -1044,3 +1044,127 @@ def update_fcm_token(request):
         return Response({'message': 'FCM token updated.'})
     except Exception:
         return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# ─── VIDEO RESOURCES ──────────────────────────────────────────────
+
+class VideoResourceViewSet(viewsets.ModelViewSet):
+    serializer_class = VideoResourceSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return VideoResource.objects.filter(is_public=True).order_by('-created_at')
+        if user.is_superuser or user.is_staff:
+            return VideoResource.objects.all().order_by('-created_at')
+        try:
+            dealer = user.dealerprofile
+            return VideoResource.objects.filter(
+                Q(is_public=True) | Q(dealer=dealer)
+            ).order_by('-created_at')
+        except Exception:
+            return VideoResource.objects.filter(is_public=True).order_by('-created_at')
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        try:
+            dealer = self.request.user.dealerprofile
+        except Exception:
+            dealer = None
+        serializer.save(dealer=dealer)
+
+
+# ─── PASSWORD RESET ───────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def admin_reset_dealer_password(request, dealer_id):
+    """Super admin resets a dealer's password. Returns temp password if none provided."""
+    try:
+        dealer = DealerProfile.objects.get(id=dealer_id)
+    except DealerProfile.DoesNotExist:
+        return Response({'error': 'Dealer not found'}, status=404)
+    new_password = request.data.get('new_password', '').strip()
+    if len(new_password) < 6:
+        new_password = ''.join(__import__('random').choices(
+            __import__('string').ascii_letters + __import__('string').digits, k=10))
+    dealer.user.set_password(new_password)
+    dealer.user.save()
+    return Response({'success': True, 'new_password': new_password,
+                     'dealer_name': dealer.dealer_name, 'username': dealer.user.username})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password(request):
+    """Send a 6-digit OTP to the dealer's registered email for password reset."""
+    import random, string as _s
+    from django.core.cache import cache
+    from django.core.mail import send_mail
+
+    email = request.data.get('email', '').strip().lower()
+    if not email:
+        return Response({'error': 'Email is required'}, status=400)
+
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        # Don't reveal whether email exists
+        return Response({'success': True, 'message': 'If this email is registered, an OTP has been sent.'})
+
+    otp = ''.join(random.choices(_s.digits, k=6))
+    cache.set(f'pwd_otp_{email}', {'otp': otp, 'uid': user.id}, timeout=600)
+
+    try:
+        send_mail(
+            subject='eRickshawDekho — Password Reset OTP',
+            message=(
+                f'Hello {user.first_name or user.username},\n\n'
+                f'Your OTP for password reset is:\n\n  {otp}\n\n'
+                f'This OTP is valid for 10 minutes.\n\n'
+                f'If you did not request this, please ignore this email.\n\n'
+                f'— eRickshawDekho Team'
+            ),
+            from_email='noreply@erikshawdekho.com',
+            recipient_list=[user.email],
+            fail_silently=True,
+        )
+    except Exception:
+        pass
+
+    return Response({'success': True, 'message': 'If this email is registered, an OTP has been sent.'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_confirm(request):
+    """Verify OTP and set new password."""
+    from django.core.cache import cache
+
+    email    = request.data.get('email', '').strip().lower()
+    otp      = request.data.get('otp', '').strip()
+    new_pass = request.data.get('new_password', '').strip()
+
+    if not email or not otp or not new_pass:
+        return Response({'error': 'email, otp, and new_password are required'}, status=400)
+    if len(new_pass) < 8:
+        return Response({'error': 'Password must be at least 8 characters'}, status=400)
+    if not any(c.isdigit() for c in new_pass):
+        return Response({'error': 'Password must contain at least one number'}, status=400)
+
+    stored = cache.get(f'pwd_otp_{email}')
+    if not stored or stored['otp'] != otp:
+        return Response({'error': 'Invalid or expired OTP. Please request a new one.'}, status=400)
+
+    try:
+        user = User.objects.get(id=stored['uid'])
+        user.set_password(new_pass)
+        user.save()
+        cache.delete(f'pwd_otp_{email}')
+        return Response({'success': True, 'message': 'Password reset successfully. Please sign in with your new password.'})
+    except User.DoesNotExist:
+        return Response({'error': 'User not found'}, status=404)

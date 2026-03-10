@@ -11,6 +11,7 @@ router.register(r'customers',     views.CustomerViewSet,    basename='customer')
 router.register(r'tasks',         views.TaskViewSet,        basename='task')
 router.register(r'finance/loans', views.FinanceLoanViewSet, basename='loan')
 router.register(r'brands',        views.BrandViewSet,       basename='brand')
+router.register(r'videos',        views.VideoResourceViewSet, basename='video-resource')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -20,6 +21,9 @@ urlpatterns = [
     path('auth/register/driver/',   views.register_driver,   name='register-driver'),
     path('auth/login/',             views.login_view,        name='login'),
     path('auth/me/',                views.me,                name='me'),
+    path('auth/forgot-password/',              views.forgot_password,              name='forgot-password'),
+    path('auth/reset-password/',               views.reset_password_confirm,       name='reset-password'),
+    path('admin-portal/dealers/<int:dealer_id>/reset-password/', views.admin_reset_dealer_password, name='admin-reset-dealer-password'),
     path('auth/token/refresh/',     TokenRefreshView.as_view(), name='token-refresh'),
 
     # ── Dealer SaaS dashboard ─────────────────────────────────────

@@ -12,21 +12,29 @@ import random, uuid
 
 from api.models import (
     DealerProfile, Brand, Vehicle, Lead, Sale, Customer,
-    Task, FinanceLoan, DealerReview, PublicEnquiry
+    Task, FinanceLoan, DealerReview, PublicEnquiry, VideoResource
 )
 
 
 BRANDS = ["Yatri", "Bajaj", "Kinetic", "Saarthi", "Lohia", "OSM", "Mahindra", "Terra Motors"]
 
 VEHICLE_MODELS = [
-    ("Yatri",       "YatriKing Pro",    120000, "electric", "passenger"),
-    ("Bajaj",       "Compact RE",       95000,  "electric", "passenger"),
-    ("Kinetic",     "Safar Smart",      110000, "electric", "passenger"),
-    ("Saarthi",     "City Rider",       89000,  "electric", "passenger"),
-    ("Lohia",       "Humsafar Plus",    105000, "electric", "cargo"),
-    ("OSM",         "Rage+ Flex",       135000, "electric", "passenger"),
-    ("Mahindra",    "Treo Yaari",       115000, "electric", "passenger"),
-    ("Terra Motors","Terra V8",         98000,  "electric", "passenger"),
+    ("Yatri",        "YatriKing Pro",   120000, "electric", "passenger",
+     "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80"),
+    ("Bajaj",        "Compact RE",       95000, "electric", "passenger",
+     "https://images.unsplash.com/photo-1622473590773-f588134b6ce7?w=400&q=80"),
+    ("Kinetic",      "Safar Smart",     110000, "electric", "passenger",
+     "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=400&q=80"),
+    ("Saarthi",      "City Rider",       89000, "electric", "passenger",
+     "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=400&q=80"),
+    ("Lohia",        "Humsafar Plus",   105000, "electric", "cargo",
+     "https://images.unsplash.com/photo-1558618047-3c8c76ca7d13?w=400&q=80"),
+    ("OSM",          "Rage+ Flex",      135000, "electric", "passenger",
+     "https://images.unsplash.com/photo-1619767886558-efdc259cde1a?w=400&q=80"),
+    ("Mahindra",     "Treo Yaari",      115000, "electric", "passenger",
+     "https://images.unsplash.com/photo-1590362891991-f776e747a588?w=400&q=80"),
+    ("Terra Motors", "Terra V8",         98000, "electric", "passenger",
+     "https://images.unsplash.com/photo-1491438590914-bc09fcaaf77a?w=400&q=80"),
 ]
 
 CUSTOMER_NAMES = [
@@ -131,7 +139,7 @@ class Command(BaseCommand):
 
         # ── Vehicles ──────────────────────────────────────────
         if Vehicle.objects.filter(dealer=dealer).count() < 5:
-            for brand_name, model, price, fuel, vtype in VEHICLE_MODELS:
+            for brand_name, model, price, fuel, vtype, thumbnail_url in VEHICLE_MODELS:
                 Vehicle.objects.get_or_create(
                     dealer=dealer,
                     model_name=model,
@@ -141,6 +149,7 @@ class Command(BaseCommand):
                         "vehicle_type":     vtype,
                         "price":            price,
                         "stock_quantity":   random.randint(3, 12),
+                        "thumbnail":        thumbnail_url,
                         "year":             2024,
                         "range_km":         random.choice([80, 100, 120, 150]),
                         "battery_capacity": random.choice(["60Ah 48V", "80Ah 48V", "100Ah 48V", "120Ah 60V"]),
@@ -295,6 +304,71 @@ class Command(BaseCommand):
                     is_processed=random.choice([True, False]),
                 )
             self.stdout.write(f"  ✓ 8 public enquiries created")
+
+        # ── Platform-wide Video Resources ─────────────────────────────
+        if VideoResource.objects.count() < 5:
+            platform_videos = [
+                {
+                    "title": "ई-रिक्शा कैसे चलाएं - Complete Beginner Guide",
+                    "youtube_url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+                    "description": "नया ई-रिक्शा चालक? यह वीडियो आपको सब कुछ सिखाएगा - starting, turning, braking और traffic में safely चलाना।",
+                    "category": "tutorial",
+                },
+                {
+                    "title": "Battery Care Tips - ई-रिक्शा बैटरी लंबे समय तक चलाएं",
+                    "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    "description": "बैटरी को कैसे charge करें, कब charge करें और कैसे देखभाल करें ताकि battery life 2x हो जाए।",
+                    "category": "maintenance",
+                },
+                {
+                    "title": "ई-रिक्शा से ₹1000/दिन कैसे कमाएं - Expert Tips",
+                    "youtube_url": "https://www.youtube.com/watch?v=9bZkp7q19f0",
+                    "description": "सही route planning, passenger handling, और peak hours में maximize करके daily income बढ़ाने के proven tips।",
+                    "category": "earning",
+                },
+                {
+                    "title": "Yatri eRickshaw - Full Expert Review 2024",
+                    "youtube_url": "https://www.youtube.com/watch?v=ScMzIvxBSi4",
+                    "description": "Yatri YatriKing Pro का complete review - range, speed, comfort, और value for money। Expert की राय।",
+                    "category": "review",
+                },
+                {
+                    "title": "Bajaj RE eRickshaw vs Yatri - Which is Better?",
+                    "youtube_url": "https://www.youtube.com/watch?v=M7lc1UVf-VE",
+                    "description": "भारत के दो सबसे popular ई-रिक्शा models का head-to-head comparison। कौन सा खरीदें?",
+                    "category": "review",
+                },
+                {
+                    "title": "ई-रिक्शा Motor और Wiring Maintenance Guide",
+                    "youtube_url": "https://www.youtube.com/watch?v=FTQbiNvZqaY",
+                    "description": "Motor, wiring, और brake का proper maintenance कैसे करें। Mechanic की जरूरत कब पड़ती है।",
+                    "category": "maintenance",
+                },
+                {
+                    "title": "Government Subsidy on eRickshaw - Complete Guide 2024",
+                    "youtube_url": "https://www.youtube.com/watch?v=kJQP7kiw5Fk",
+                    "description": "PM e-Bus Sewa और FAME-II scheme से ई-रिक्शा पर subsidy कैसे पाएं। Registration process step by step।",
+                    "category": "general",
+                },
+                {
+                    "title": "Proper Driving Technique - ई-रिक्शा Long Life Tips",
+                    "youtube_url": "https://www.youtube.com/watch?v=2vjPBrBU-TM",
+                    "description": "Smooth driving, weight distribution, और road conditions में vehicle को protect करने की techniques।",
+                    "category": "tutorial",
+                },
+            ]
+            for v in platform_videos:
+                VideoResource.objects.get_or_create(
+                    youtube_url=v["youtube_url"],
+                    defaults={
+                        "title":       v["title"],
+                        "description": v["description"],
+                        "category":    v["category"],
+                        "is_public":   True,
+                        "dealer":      None,
+                    }
+                )
+            self.stdout.write(f"  ✓ {len(platform_videos)} video resources seeded")
 
         self.stdout.write(self.style.SUCCESS(
             "\n✅ Demo data seeded successfully!\n"

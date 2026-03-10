@@ -331,6 +331,40 @@ class DealerReview(models.Model):
         return f"{self.dealer.dealer_name} — {self.rating}★ by {self.reviewer_name}"
 
 
+class VideoResource(models.Model):
+    CATEGORY_CHOICES = [
+        ('tutorial',    'How to Drive'),
+        ('maintenance', 'Maintenance Tips'),
+        ('earning',     'Earn More'),
+        ('review',      'Expert Review'),
+        ('general',     'General Info'),
+    ]
+    dealer      = models.ForeignKey(DealerProfile, on_delete=models.CASCADE,
+                                     related_name='videos', null=True, blank=True)
+    title       = models.CharField(max_length=300)
+    youtube_url = models.URLField(max_length=500)
+    description = models.TextField(blank=True)
+    category    = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    is_public   = models.BooleanField(default=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def video_id(self):
+        import re
+        for pat in [r'youtube\.com/watch\?v=([^&\s]+)', r'youtu\.be/([^?\s]+)', r'youtube\.com/embed/([^?\s]+)']:
+            m = re.search(pat, self.youtube_url)
+            if m: return m.group(1)
+        return None
+
+    @property
+    def thumbnail_url(self):
+        vid = self.video_id
+        return f'https://img.youtube.com/vi/{vid}/hqdefault.jpg' if vid else ''
+
+    def __str__(self):
+        return self.title
+
+
 # ─── PUBLIC ENQUIRY (no auth needed, no required dealer FK) ───────
 
 class PublicEnquiry(models.Model):

@@ -12,6 +12,29 @@ function useDebounce(value, delay = 350) {
   return debounced;
 }
 
+// ── Swipe navigation hook ──────────────────────────────────────────
+// Returns ref to attach to swipeable element + swipe direction signal
+function useSwipeNav(onSwipeLeft, onSwipeRight, threshold = 60) {
+  const touchStart = useRef(null);
+  const touchStartY = useRef(null);
+  const onTouchStart = useCallback((e) => {
+    touchStart.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+  const onTouchEnd = useCallback((e) => {
+    if (touchStart.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStart.current;
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
+    // Only trigger if horizontal movement is dominant (not a scroll)
+    if (Math.abs(dx) > threshold && Math.abs(dx) > dy * 1.5) {
+      if (dx < 0) onSwipeLeft?.();
+      else onSwipeRight?.();
+    }
+    touchStart.current = null;
+  }, [onSwipeLeft, onSwipeRight, threshold]);
+  return { onTouchStart, onTouchEnd };
+}
+
 // ═══════════════════════════════════════════════════════
 // API LAYER
 // ═══════════════════════════════════════════════════════
@@ -90,6 +113,12 @@ const api = {
   },
   reports:  (p="") => apiFetch(`/reports/${p}`),
   brands:   ()     => apiFetch("/brands/"),
+  videos: {
+    list:   (p="") => apiFetch(`/videos/${p}`),
+    create: (d)    => apiFetch("/videos/", { method: "POST", body: JSON.stringify(d) }),
+    update: (id,d) => apiFetch(`/videos/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    delete: (id)   => apiFetch(`/videos/${id}/`, { method: "DELETE" }),
+  },
   notifications: {
     getPrefs:    ()  => apiFetch("/notifications/preferences/"),
     updatePrefs: (d) => apiFetch("/notifications/preferences/", { method: "PATCH", body: JSON.stringify(d) }),
@@ -105,14 +134,19 @@ const api = {
     unreadCount:   ()     => apiFetch("/dealer/enquiries/unread/"),
   },
   admin: {
-    stats:          ()         => apiFetch("/admin-portal/stats/"),
-    users:          (p="")     => apiFetch(`/admin-portal/users/${p}`),
-    deleteUser:     (id)       => apiFetch(`/admin-portal/users/${id}/`, { method: "DELETE" }),
-    dealers:        (p="")     => apiFetch(`/admin-portal/dealers/${p}`),
-    verifyDealer:   (id,d)     => apiFetch(`/admin-portal/dealers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
-    applications:   (p="")     => apiFetch(`/admin-portal/applications/${p}`),
-    updateApp:      (id,d)     => apiFetch(`/admin-portal/applications/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
-    enquiries:      (p="")     => apiFetch(`/admin-portal/enquiries/${p}`),
+    stats:              ()         => apiFetch("/admin-portal/stats/"),
+    users:              (p="")     => apiFetch(`/admin-portal/users/${p}`),
+    deleteUser:         (id)       => apiFetch(`/admin-portal/users/${id}/`, { method: "DELETE" }),
+    dealers:            (p="")     => apiFetch(`/admin-portal/dealers/${p}`),
+    verifyDealer:       (id,d)     => apiFetch(`/admin-portal/dealers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    resetDealerPassword:(id,d)     => apiFetch(`/admin-portal/dealers/${id}/reset-password/`, { method: "POST", body: JSON.stringify(d) }),
+    applications:       (p="")     => apiFetch(`/admin-portal/applications/${p}`),
+    updateApp:          (id,d)     => apiFetch(`/admin-portal/applications/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    enquiries:          (p="")     => apiFetch(`/admin-portal/enquiries/${p}`),
+  },
+  auth: {
+    forgotPassword:  (d) => apiFetch("/auth/forgot-password/",  { method: "POST", body: JSON.stringify(d) }),
+    resetPassword:   (d) => apiFetch("/auth/reset-password/",   { method: "POST", body: JSON.stringify(d) }),
   },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),
@@ -468,13 +502,20 @@ function DonutChart({ data, size = 100 }) {
 function AuthPage({ onAuth }) {
   const C = useC();
   const toast = useToast();
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState("login"); // "login" | "register" | "forgot" | "otp"
   const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "", pincode: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [authStatus, setAuthStatus] = useState(null);
   const [pincodeData, setPincodeData] = useState(null); // { city, state, suggestions: [] }
   const [pincodeLoading, setPincodeLoading] = useState(false);
+  // Forgot password state
+  const [fpEmail, setFpEmail] = useState("");
+  const [fpOtp, setFpOtp] = useState("");
+  const [fpNewPass, setFpNewPass] = useState("");
+  const [fpConfirmPass, setFpConfirmPass] = useState("");
+  const [fpStatus, setFpStatus] = useState(null); // null | "sent" | "done"
+  const [fpError, setFpError] = useState("");
 
   const MAJOR_CITIES = [
     "Agra","Ahmedabad","Allahabad","Amritsar","Bengaluru","Bhopal","Chandigarh",
@@ -595,6 +636,38 @@ function AuthPage({ onAuth }) {
     ? <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors[k]}</div>
     : null;
 
+  const submitForgotRequest = async (e) => {
+    e.preventDefault();
+    if (!fpEmail.trim()) { setFpError("Email address is required."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fpEmail)) { setFpError("Enter a valid email address."); return; }
+    setFpError(""); setLoading(true);
+    try {
+      await api.auth.forgotPassword({ email: fpEmail });
+      setFpStatus("sent");
+      toast("OTP sent! Check your email.", "success");
+    } catch { setFpError("Something went wrong. Please try again."); }
+    setLoading(false);
+  };
+
+  const submitForgotConfirm = async (e) => {
+    e.preventDefault();
+    if (!fpOtp.trim() || fpOtp.length !== 6) { setFpError("Enter the 6-digit OTP from your email."); return; }
+    if (!fpNewPass.trim() || fpNewPass.length < 8) { setFpError("Password must be at least 8 characters."); return; }
+    if (!/\d/.test(fpNewPass)) { setFpError("Password must contain at least one number."); return; }
+    if (fpNewPass !== fpConfirmPass) { setFpError("Passwords do not match."); return; }
+    setFpError(""); setLoading(true);
+    try {
+      await api.auth.resetPassword({ email: fpEmail, otp: fpOtp, new_password: fpNewPass });
+      setFpStatus("done");
+      toast("Password reset! Please sign in.", "success");
+      setTimeout(() => { setMode("login"); setFpStatus(null); setFpEmail(""); setFpOtp(""); setFpNewPass(""); setFpConfirmPass(""); }, 2000);
+    } catch (err) {
+      const msg = typeof err === "object" ? (err.error || Object.values(err).flat().join(" ")) : "Failed to reset password.";
+      setFpError(msg);
+    }
+    setLoading(false);
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: 440, maxWidth: "100%" }}>
@@ -607,6 +680,51 @@ function AuthPage({ onAuth }) {
           <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, marginTop: 4 }}>SaaS & Marketplace Platform for eRickshaws</div>
         </div>
 
+        {/* ── Forgot Password flow ── */}
+        {(mode === "forgot" || mode === "otp") && (
+          <Card padding={32}>
+            <button onClick={() => { setMode("login"); setFpStatus(null); setFpError(""); }} style={{ background: "none", border: "none", color: C.primary, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 18, display: "flex", alignItems: "center", gap: 5 }}>
+              ← Back to Sign In
+            </button>
+            <div style={{ fontWeight: 800, fontSize: 18, color: C.text, marginBottom: 4 }}>
+              {fpStatus === "done" ? "✓ Password Reset!" : fpStatus === "sent" ? "Enter OTP" : "Forgot Password"}
+            </div>
+            <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>
+              {fpStatus === "done" ? "Your password has been reset. Redirecting to sign in..." :
+               fpStatus === "sent" ? `We sent a 6-digit OTP to ${fpEmail}. Enter it below along with your new password.` :
+               "Enter your registered email address to receive a password reset OTP."}
+            </div>
+            {fpError && <div style={{ background: `${C.danger}12`, border: `1.5px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>⚠ {fpError}</div>}
+            {fpStatus === "done" && <div style={{ background: `${C.success}12`, border: `1.5px solid ${C.success}44`, borderRadius: 10, padding: 16, textAlign: "center", color: C.success, fontWeight: 700 }}>✓ Password changed successfully!</div>}
+            {!fpStatus && (
+              <form onSubmit={submitForgotRequest}>
+                <Field label="Registered Email Address" required>
+                  <Input value={fpEmail} onChange={v => { setFpEmail(v); setFpError(""); }} type="email" placeholder="your@email.com" />
+                </Field>
+                <Btn label={loading ? "Sending OTP..." : "Send OTP"} type="submit" color={C.primary} fullWidth size="lg" disabled={loading} />
+              </form>
+            )}
+            {fpStatus === "sent" && (
+              <form onSubmit={submitForgotConfirm}>
+                <Field label="6-digit OTP" required>
+                  <Input value={fpOtp} onChange={v => { setFpOtp(v.replace(/\D/g, "").slice(0, 6)); setFpError(""); }} placeholder="e.g. 123456" style={{ letterSpacing: 4, fontSize: 18, fontWeight: 700, textAlign: "center" }} />
+                </Field>
+                <Field label="New Password" required>
+                  <Input value={fpNewPass} onChange={v => { setFpNewPass(v); setFpError(""); }} type="password" placeholder="Min 8 chars, include a number" />
+                </Field>
+                <Field label="Confirm New Password" required>
+                  <Input value={fpConfirmPass} onChange={v => { setFpConfirmPass(v); setFpError(""); }} type="password" placeholder="Repeat your new password" />
+                </Field>
+                <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                  <Btn label="Resend OTP" outline color={C.textMid} onClick={async (e) => { e.preventDefault(); await submitForgotRequest({ preventDefault: () => {} }); }} />
+                  <Btn label={loading ? "Resetting..." : "Reset Password"} type="submit" color={C.primary} disabled={loading} style={{ flex: 1 }} />
+                </div>
+              </form>
+            )}
+          </Card>
+        )}
+
+        {(mode === "login" || mode === "register") && (
         <Card padding={32}>
           <div style={{ display: "flex", marginBottom: 24, background: C.bg, borderRadius: 8, padding: 4 }}>
             {["login", "register"].map(m => (
@@ -681,8 +799,16 @@ function AuthPage({ onAuth }) {
               size="lg"
             />
           </form>
-          <div style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: C.textDim }}>Demo: username=<b>demo</b> &nbsp;password=<b>demo1234</b></div>
+          {mode === "login" && (
+            <div style={{ textAlign: "center", marginTop: 12 }}>
+              <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); }} style={{ background: "none", border: "none", color: C.primary, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+                Forgot password?
+              </button>
+            </div>
+          )}
+          <div style={{ textAlign: "center", marginTop: 10, fontSize: 12, color: C.textDim }}>Demo: username=<b>demo</b> &nbsp;password=<b>demo1234</b></div>
         </Card>
+        )}
       </div>
     </div>
   );
@@ -699,6 +825,7 @@ const NAV = [
   { id: "customers",  label: "Customers",  icon: "👤" },
   { id: "finance",    label: "Finance",    icon: "🏦" },
   { id: "reports",    label: "Reports",    icon: "📈" },
+  { id: "learn",      label: "Learn",      icon: "🎓" },
   { id: "marketplace",label: "Marketplace",icon: "🛒" },
   { id: "plans",      label: "Plans",      icon: "⭐" },
 ];
@@ -771,6 +898,9 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
           .erd-bottom-nav { display: flex !important; }
           .erd-main { padding-bottom: 70px !important; }
         }
+        @media (min-width: 769px) {
+          .erd-bottom-nav { display: none !important; }
+        }
       `}</style>
     </>
   );
@@ -791,10 +921,10 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
   }, [dealer]);
 
   return (
-    <div style={{ height: 60, background: C.surface, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", position: "sticky", top: 0, zIndex: 10 }}>
-      <div style={{ fontWeight: 700, fontSize: 18, color: C.text }}>{pageLabel}</div>
+    <div className="erd-topbar" style={{ height: 60, background: C.surface, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", position: "sticky", top: 0, zIndex: 10 }}>
+      <div className="erd-topbar-title" style={{ fontWeight: 700, fontSize: 18, color: C.text }}>{pageLabel}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {page === "inventory" && <Btn label="+ Add Vehicle" size="sm" onClick={onAddNew} />}
+        {page === "inventory" && <span className="erd-topbar-add"><Btn label="+ Add Vehicle" size="sm" onClick={onAddNew} /></span>}
         {/* Bell icon — navigates to Leads → Enquiries tab */}
         <button onClick={onBell} title="Buyer Enquiries" style={{ position: "relative", background: unread > 0 ? `${C.danger}12` : "none", border: `1.5px solid ${unread > 0 ? C.danger : C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
           🔔
@@ -818,7 +948,7 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
           <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#fff", fontWeight: 700 }}>
             {(dealer?.name || "D")[0].toUpperCase()}
           </div>
-          <div>
+          <div className="erd-topbar-name">
             <div style={{ fontSize: 12, fontWeight: 700, color: C.text, lineHeight: 1.2 }}>{dealer?.name || "Dealer"}</div>
             <div style={{ fontSize: 10, color: C.textDim, lineHeight: 1 }}>My Account ›</div>
           </div>
@@ -833,12 +963,25 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
 // ═══════════════════════════════════════════════════════
 function Dashboard({ onNavigate }) {
   const C = useC();
+  const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [doneTaskIds, setDoneTaskIds] = useState(new Set());
 
   useEffect(() => {
     api.dashboard().then(setData).finally(() => setLoading(false));
   }, []);
+
+  const markTaskDone = async (taskId) => {
+    setDoneTaskIds(prev => new Set([...prev, taskId]));
+    try {
+      await api.tasks.update(taskId, { is_completed: true });
+      toast("Task marked as done!", "success");
+    } catch {
+      setDoneTaskIds(prev => { const s = new Set(prev); s.delete(taskId); return s; });
+      toast("Failed to update task.", "error");
+    }
+  };
 
   if (loading) return <Spinner />;
   if (!data) return null;
@@ -847,14 +990,14 @@ function Dashboard({ onNavigate }) {
   const plan = data.plan;
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200 }}>
+    <div className="erd-page-pad" style={{ padding: 24, maxWidth: 1200 }}>
       {/* Welcome banner */}
-      <div style={{ background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, borderRadius: 14, padding: "22px 28px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", color: "#fff" }}>
+      <div className="erd-welcome-banner" style={{ background: `linear-gradient(135deg,${C.primary},${C.primaryL})`, borderRadius: 14, padding: "22px 28px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", color: "#fff" }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 700 }}>Welcome back! 👋</div>
           <div style={{ opacity: 0.85, fontSize: 13, marginTop: 4 }}>Here's an overview of your dealership activity.</div>
         </div>
-        <div style={{ fontSize: 48 }}>🛺</div>
+        <div className="erd-rickshaw-icon" style={{ fontSize: 48 }}>🛺</div>
       </div>
 
       {/* Verification warning */}
@@ -882,7 +1025,7 @@ function Dashboard({ onNavigate }) {
       )}
 
       {/* Stats row */}
-      <div style={{ display: "flex", gap: 14, marginBottom: 24, flexWrap: "wrap" }}>
+      <div className="erd-stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
         <StatCard icon="🚗" label="Total Vehicles" value={data.total_vehicles} color={C.primary} sub={`${data.in_stock} in stock`} />
         <StatCard icon="👥" label="Active Leads"   value={data.active_leads}   color={C.info} />
         <StatCard icon="💰" label="New Sales"      value={data.new_sales}      color={C.success} sub="this month" />
@@ -890,7 +1033,7 @@ function Dashboard({ onNavigate }) {
       </div>
 
       {/* Charts row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
+      <div className="erd-dash-chart-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
         <Card>
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Sales Insights</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: C.primary, fontFamily: "Georgia, serif", marginBottom: 12 }}>{fmtINR(data.monthly_revenue)}</div>
@@ -920,7 +1063,7 @@ function Dashboard({ onNavigate }) {
       </div>
 
       {/* Bottom row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+      <div className="erd-dash-bottom-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Recent Leads</div>
@@ -949,12 +1092,16 @@ function Dashboard({ onNavigate }) {
               <div style={{ fontSize: 11, color: C.textMid }}>{fmtDate(s.delivery_date)}</div>
             </div>
           ))}
-          {data.upcoming_tasks && data.upcoming_tasks.length > 0 && (
+          {data.upcoming_tasks && data.upcoming_tasks.filter(t => !doneTaskIds.has(t.id)).length > 0 && (
             <>
               <div style={{ fontWeight: 700, fontSize: 15, margin: "14px 0 10px" }}>Upcoming Tasks</div>
-              {data.upcoming_tasks.map((t, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 0", borderBottom: i < data.upcoming_tasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.priority === "high" ? C.danger : t.priority === "medium" ? C.warning : C.success, marginTop: 5, flexShrink: 0 }} />
+              {data.upcoming_tasks.filter(t => !doneTaskIds.has(t.id)).map((t, i, arr) => (
+                <div key={t.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                  <button
+                    onClick={() => markTaskDone(t.id)}
+                    title="Mark as done"
+                    style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${C.success}`, background: "transparent", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: C.success, fontSize: 11, padding: 0, lineHeight: 1 }}
+                  >✓</button>
                   <div style={{ flex: 1, fontSize: 13 }}>{t.title}</div>
                   <div style={{ fontSize: 11, color: C.textDim, whiteSpace: "nowrap" }}>{fmtDate(t.due_date)}</div>
                 </div>
@@ -1721,7 +1868,7 @@ function Finance() {
   ];
 
   return (
-    <div style={{ padding: 24, display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
+    <div className="erd-page-pad erd-finance-layout" style={{ padding: 24, display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
       {/* EMI Calculator */}
       <div>
         <Card>
@@ -2393,6 +2540,199 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════
+// LEARN PAGE — Video resources + dealer YouTube uploads
+// ═══════════════════════════════════════════════════════
+const VIDEO_CATS = [
+  { id: "",            label: "All Videos" },
+  { id: "tutorial",   label: "🛺 How to Drive" },
+  { id: "maintenance",label: "🔧 Maintenance" },
+  { id: "earning",    label: "💰 Earn More" },
+  { id: "review",     label: "⭐ Expert Reviews" },
+  { id: "general",    label: "ℹ️ General Info" },
+];
+
+function extractVideoId(url) {
+  for (const pat of [/youtube\.com\/watch\?v=([^&\s]+)/, /youtu\.be\/([^?\s]+)/, /youtube\.com\/embed\/([^?\s]+)/]) {
+    const m = url?.match(pat);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+function VideoCard({ v, onDelete }) {
+  const C = useC();
+  const thumb = v.thumbnail_url || (v.video_id ? `https://img.youtube.com/vi/${v.video_id}/hqdefault.jpg` : null)
+    || (extractVideoId(v.youtube_url) ? `https://img.youtube.com/vi/${extractVideoId(v.youtube_url)}/hqdefault.jpg` : null);
+  const catColors = { tutorial: C.primary, maintenance: C.warning, earning: C.success, review: C.info, general: C.textMid };
+  const catLabels = { tutorial: "How to Drive", maintenance: "Maintenance", earning: "Earn More", review: "Expert Review", general: "General" };
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", cursor: "pointer", transition: "all 0.15s", display: "flex", flexDirection: "column" }}
+      onClick={() => window.open(v.youtube_url, "_blank", "noopener")}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 6px 20px ${C.primary}18`; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
+      {/* Thumbnail */}
+      <div style={{ position: "relative", paddingTop: "56.25%", background: "#0f172a", overflow: "hidden" }}>
+        {thumb
+          ? <img src={thumb} alt={v.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
+          : <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: 40 }}>▶</div>
+        }
+        {/* Play overlay */}
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0, transition: "opacity 0.15s" }}
+          onMouseEnter={e => { e.currentTarget.style.opacity = 1; }} onMouseLeave={e => { e.currentTarget.style.opacity = 0; }}>
+          <div style={{ width: 48, height: 48, background: "#ff0000", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 18 }}>▶</div>
+        </div>
+        {/* Category badge */}
+        <div style={{ position: "absolute", top: 8, left: 8, background: catColors[v.category] || C.textMid, color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>
+          {catLabels[v.category] || v.category}
+        </div>
+        {v.dealer && <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", color: "#fff", borderRadius: 6, padding: "2px 7px", fontSize: 9 }}>Dealer</div>}
+      </div>
+      {/* Info */}
+      <div style={{ padding: "12px 14px", flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: C.text, lineHeight: 1.4 }}>{v.title}</div>
+        {v.description && <div style={{ fontSize: 11, color: C.textDim, lineHeight: 1.5, flex: 1 }}>{v.description.slice(0, 90)}{v.description.length > 90 ? "…" : ""}</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: C.textMid }}>{v.dealer_name || "eRickshawDekho"}</div>
+          {onDelete && <button onClick={e => { e.stopPropagation(); onDelete(v.id); }} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 11, padding: "2px 6px" }}>✕ Delete</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LearnPage() {
+  const C = useC();
+  const toast = useToast();
+  const [videos, setVideos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [cat, setCat] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({ title: "", youtube_url: "", description: "", category: "tutorial" });
+  const [adding, setAdding] = useState(false);
+  const [preview, setPreview] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const q = cat ? `?category=${cat}` : "";
+    api.videos.list(q).then(d => setVideos(d.results || d)).finally(() => setLoading(false));
+  }, [cat]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Live preview when URL entered
+  useEffect(() => {
+    const vid = extractVideoId(addForm.youtube_url);
+    setPreview(vid ? `https://img.youtube.com/vi/${vid}/hqdefault.jpg` : null);
+  }, [addForm.youtube_url]);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!addForm.title.trim()) { toast("Title is required.", "warning"); return; }
+    const vid = extractVideoId(addForm.youtube_url);
+    if (!vid) { toast("Enter a valid YouTube URL.", "warning"); return; }
+    setAdding(true);
+    try {
+      await api.videos.create(addForm);
+      toast("Video added!", "success");
+      setShowAdd(false);
+      setAddForm({ title: "", youtube_url: "", description: "", category: "tutorial" });
+      load();
+    } catch { toast("Failed to add video.", "error"); }
+    setAdding(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Delete this video?")) return;
+    await api.videos.delete(id);
+    setVideos(v => v.filter(x => x.id !== id));
+    toast("Video deleted.", "success");
+  };
+
+  return (
+    <div className="erd-page-pad" style={{ padding: 24, maxWidth: 1200 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>🎓 Learning Hub</div>
+          <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>Tutorials, maintenance tips, earning guides & expert reviews</div>
+        </div>
+        <button onClick={() => setShowAdd(true)} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
+          + Add YouTube Video
+        </button>
+      </div>
+
+      {/* Category filter tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
+        {VIDEO_CATS.map(c => (
+          <button key={c.id} onClick={() => setCat(c.id)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${cat === c.id ? C.primary : C.border}`, background: cat === c.id ? C.primary : C.surface, color: cat === c.id ? "#fff" : C.textMid, fontWeight: cat === c.id ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Video grid */}
+      {loading ? <Spinner /> : videos.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: C.textDim }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
+          <div style={{ fontWeight: 600 }}>No videos yet</div>
+          <div style={{ fontSize: 13, marginTop: 4 }}>Be the first to add a helpful eRickshaw video!</div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+          {videos.map(v => <VideoCard key={v.id} v={v} onDelete={handleDelete} />)}
+        </div>
+      )}
+
+      {/* About eRickshaw info cards */}
+      <div style={{ marginTop: 32, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+        {[
+          { icon: "⚡", title: "Zero Fuel Cost", body: "Electric power costs ₹1–2 per km vs ₹5–6 for petrol. Save ₹3000–5000 per month on fuel alone.", color: C.success },
+          { icon: "💰", title: "Earn ₹800–1500/Day", body: "With proper route planning in high-demand areas — schools, markets, hospitals — drivers can earn significantly more.", color: C.primary },
+          { icon: "🔋", title: "Battery Life Tips", body: "Charge to 90%, avoid full discharge. Park in shade. Clean terminals monthly. Battery lasts 3–5 years with good care.", color: C.warning },
+          { icon: "📋", title: "Registration & License", body: "eRickshaw needs: Driving License (LMV/Transport), RC Book, Insurance, Permit. Yellow plate required for commercial use.", color: C.info },
+        ].map(({ icon, title, body, color }) => (
+          <div key={title} style={{ background: C.surface, border: `1.5px solid ${color}25`, borderRadius: 12, padding: 18 }}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>{icon}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color, marginBottom: 6 }}>{title}</div>
+            <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.7 }}>{body}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Add video modal */}
+      {showAdd && (
+        <Modal title="Add YouTube Video" onClose={() => setShowAdd(false)}>
+          <form onSubmit={handleAdd}>
+            <Field label="YouTube URL *" required>
+              <Input value={addForm.youtube_url} onChange={v => setAddForm(p => ({ ...p, youtube_url: v }))} placeholder="https://www.youtube.com/watch?v=..." />
+            </Field>
+            {preview && (
+              <div style={{ marginBottom: 14, borderRadius: 8, overflow: "hidden", maxHeight: 160 }}>
+                <img src={preview} alt="preview" style={{ width: "100%", objectFit: "cover" }} onError={e => e.target.style.display = "none"} />
+              </div>
+            )}
+            <Field label="Title *" required>
+              <Input value={addForm.title} onChange={v => setAddForm(p => ({ ...p, title: v }))} placeholder="e.g. Battery maintenance tips" />
+            </Field>
+            <Field label="Category">
+              <Select value={addForm.category} onChange={v => setAddForm(p => ({ ...p, category: v }))} options={VIDEO_CATS.filter(c => c.id).map(c => ({ value: c.id, label: c.label }))} />
+            </Field>
+            <Field label="Description">
+              <Input value={addForm.description} onChange={v => setAddForm(p => ({ ...p, description: v }))} placeholder="Brief description of the video..." />
+            </Field>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAdd(false)} />
+              <Btn label={adding ? "Adding..." : "Add Video"} color={C.primary} type="submit" disabled={adding} />
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // MARKETPLACE PAGE (public-facing)
 // ═══════════════════════════════════════════════════════
 function Marketplace() {
@@ -2811,6 +3151,10 @@ function AdminPortal({ user, onLogout }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [appFilter, setAppFilter] = useState("pending");
+  const [resetPwdDealer, setResetPwdDealer] = useState(null);
+  const [resetPwdInput, setResetPwdInput] = useState("");
+  const [resetPwdResult, setResetPwdResult] = useState(null);
+  const [resetPwdLoading, setResetPwdLoading] = useState(false);
 
   useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
 
@@ -2947,7 +3291,10 @@ function AdminPortal({ user, onLogout }) {
                           <div style={{ fontWeight: 600, color: C.text }}>{d.dealer_name}</div>
                           <div style={{ fontSize: 11, color: C.textDim }}>{d.username} · {d.email}</div>
                         </td>
-                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.city}, {d.state}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>
+                          <div>{d.city}</div>
+                          {d.state && d.state !== d.city && <div style={{ fontSize: 11, color: C.textDim }}>{d.state}</div>}
+                        </td>
                         <td style={{ padding: "12px 14px" }}><Badge label={d.plan_type} color={d.plan_type === "pro" ? C.success : C.warning} /></td>
                         <td style={{ padding: "12px 14px", color: C.textMid }}>{d.vehicle_count}</td>
                         <td style={{ padding: "12px 14px" }}>
@@ -2956,6 +3303,7 @@ function AdminPortal({ user, onLogout }) {
                         <td style={{ padding: "12px 14px" }}>
                           <div style={{ display: "flex", gap: 6 }}>
                             <Btn label={d.is_verified ? "Revoke" : "Verify"} size="sm" color={d.is_verified ? C.danger : C.success} onClick={() => verifyDealer(d.id, !d.is_verified)} />
+                            <Btn label="🔑 Reset Pwd" size="sm" outline color={C.warning} onClick={() => setResetPwdDealer(d)} />
                           </div>
                         </td>
                       </tr>
@@ -3108,6 +3456,41 @@ function AdminPortal({ user, onLogout }) {
           </div>
         )}
       </div>
+
+      {/* ── Admin: Reset Dealer Password Modal ── */}
+      {resetPwdDealer && (
+        <Modal title={`🔑 Reset Password — ${resetPwdDealer.dealer_name}`} onClose={() => { setResetPwdDealer(null); setResetPwdInput(""); setResetPwdResult(null); }}>
+          <div style={{ marginBottom: 14, fontSize: 13, color: C.textMid }}>
+            Dealer: <strong>{resetPwdDealer.dealer_name}</strong> &nbsp;|&nbsp; Username: <strong>{resetPwdDealer.username}</strong>
+          </div>
+          {resetPwdResult ? (
+            <div style={{ background: `${C.success}12`, border: `1.5px solid ${C.success}44`, borderRadius: 10, padding: 18, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, color: C.success, marginBottom: 8 }}>✓ Password reset successfully</div>
+              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>New temporary password:</div>
+              <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 800, color: C.text, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 14px", letterSpacing: 2 }}>{resetPwdResult}</div>
+              <div style={{ fontSize: 11, color: C.textDim, marginTop: 8 }}>Please share this securely with the dealer. They should change it after logging in.</div>
+            </div>
+          ) : (
+            <>
+              <Field label="New Password (leave blank to auto-generate)">
+                <Input value={resetPwdInput} onChange={setResetPwdInput} type="password" placeholder="Min 6 characters, or leave blank" />
+              </Field>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+                <Btn label="Cancel" outline color={C.textMid} onClick={() => { setResetPwdDealer(null); setResetPwdInput(""); }} />
+                <Btn label={resetPwdLoading ? "Resetting..." : "🔑 Reset Password"} color={C.warning} disabled={resetPwdLoading} onClick={async () => {
+                  setResetPwdLoading(true);
+                  try {
+                    const r = await api.admin.resetDealerPassword(resetPwdDealer.id, { new_password: resetPwdInput });
+                    setResetPwdResult(r.new_password);
+                    toast(`Password reset for ${r.dealer_name}`, "success");
+                  } catch { toast("Failed to reset password", "error"); }
+                  setResetPwdLoading(false);
+                }} />
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
@@ -3223,6 +3606,8 @@ export default function App() {
   const [appMode, setAppMode] = useState(null);
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
+  // Swipe nav order (matches BOTTOM_NAV for mobile)
+  const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "account"];
   const [plan, setPlan] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -3322,6 +3707,17 @@ export default function App() {
   const dealer = auth.dealer;
   const goUpgrade = () => setShowUpgradeModal(true);
 
+  // Swipe navigation between pages (mobile/PWA)
+  const swipeLeft  = useCallback(() => {
+    const idx = SWIPE_PAGES.indexOf(page);
+    if (idx < SWIPE_PAGES.length - 1) setPage(SWIPE_PAGES[idx + 1]);
+  }, [page, SWIPE_PAGES]);
+  const swipeRight = useCallback(() => {
+    const idx = SWIPE_PAGES.indexOf(page);
+    if (idx > 0) setPage(SWIPE_PAGES[idx - 1]);
+  }, [page, SWIPE_PAGES]);
+  const swipeHandlers = useSwipeNav(swipeLeft, swipeRight);
+
   const renderPage = () => {
     switch (page) {
       case "dashboard":   return <Dashboard onNavigate={setPage} />;
@@ -3331,6 +3727,7 @@ export default function App() {
       case "customers":   return <PlanGate plan={plan} feature="Customers" onUpgrade={goUpgrade}><Customers /></PlanGate>;
       case "finance":     return <PlanGate plan={plan} feature="Finance" onUpgrade={goUpgrade}><Finance /></PlanGate>;
       case "reports":     return <PlanGate plan={plan} feature="Reports" onUpgrade={goUpgrade}><Reports /></PlanGate>;
+      case "learn":       return <LearnPage />;
       case "marketplace": return <Marketplace />;
       case "plans":       return <PlansPage onUpgrade={goUpgrade} />;
       case "account":     return <AccountPage dealer={dealer} onLogout={handleLogout} />;
@@ -3355,13 +3752,50 @@ export default function App() {
               ::-webkit-scrollbar-thumb { background: ${C_LIVE.border}; border-radius: 4px; }
               select option { background: ${C_LIVE.surface}; color: ${C_LIVE.text}; }
               input[type="date"], input[type="datetime-local"] { color-scheme: ${isDark ? 'dark' : 'light'}; }
+              /* ── Global responsive layout ── */
+              @media (max-width: 768px) {
+                .erd-topbar-name { display: none !important; }
+                .erd-topbar-add { display: none !important; }
+                .erd-stat-grid { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+                .erd-two-col { grid-template-columns: 1fr !important; }
+                .erd-three-col { grid-template-columns: 1fr 1fr !important; }
+                .erd-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+                .erd-page-pad { padding: 12px !important; }
+                .erd-card-title { font-size: 14px !important; }
+                .erd-filter-row { flex-wrap: wrap; gap: 8px !important; }
+                .erd-modal-inner { padding: 16px !important; }
+                .erd-form-grid-2 { grid-template-columns: 1fr !important; }
+                .erd-form-grid-3 { grid-template-columns: 1fr !important; }
+                .erd-dash-chart-row { grid-template-columns: 1fr !important; }
+                .erd-dash-bottom-row { grid-template-columns: 1fr !important; }
+                .erd-finance-layout { grid-template-columns: 1fr !important; }
+                .erd-welcome-banner { flex-direction: column; text-align: center; }
+                .erd-welcome-banner .erd-rickshaw-icon { display: none !important; }
+                .erd-topbar { padding: 0 12px !important; }
+                .erd-topbar-title { font-size: 15px !important; }
+              }
+              @media (max-width: 480px) {
+                .erd-stat-grid { grid-template-columns: 1fr 1fr !important; }
+                .erd-three-col { grid-template-columns: 1fr !important; }
+                .erd-bottom-nav button span:last-child { font-size: 9px !important; }
+              }
+              /* ── Smooth page transitions ── */
+              .erd-main main { animation: pageSlide 0.18s ease; }
+              @keyframes pageSlide { from { opacity: 0.7; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+              /* ── Safe area insets for notched phones ── */
+              .erd-bottom-nav { padding-bottom: max(8px, env(safe-area-inset-bottom)) !important; }
+              /* ── Touch target minimum sizes ── */
+              @media (pointer: coarse) {
+                button, [role="button"] { min-height: 36px; }
+                input, select { min-height: 40px; font-size: 16px !important; }
+              }
             `}</style>
 
             <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
 
-            <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
+            <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }} {...swipeHandlers}>
               <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onBell={() => setPage("leads")} />
-              <main style={{ flex: 1 }}>
+              <main style={{ flex: 1 }} key={page}>
                 {renderPage()}
               </main>
             </div>

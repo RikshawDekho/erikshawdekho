@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from django.db.models import Avg
 from django.utils import timezone
 from datetime import timedelta
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, VideoResource
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -237,3 +237,17 @@ class DashboardSerializer(serializers.Serializer):
     upcoming_deliveries = SaleSerializer(many=True)
     upcoming_tasks = TaskSerializer(many=True)
     sales_chart = serializers.ListField()
+
+
+class VideoResourceSerializer(serializers.ModelSerializer):
+    video_id      = serializers.ReadOnlyField()
+    thumbnail_url = serializers.ReadOnlyField()
+    dealer_name   = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = VideoResource
+        fields = '__all__'
+        extra_kwargs = {'dealer': {'read_only': True}}
+
+    def get_dealer_name(self, obj):
+        return obj.dealer.dealer_name if obj.dealer else 'eRickshawDekho'
