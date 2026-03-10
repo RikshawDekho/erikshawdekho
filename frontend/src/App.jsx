@@ -2324,7 +2324,7 @@ function Marketplace() {
           </button>
         )}
         <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-          style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${C.border}`, fontSize: 12, fontFamily: "inherit", color: C.textMid, cursor: "pointer", background: "#fff" }}>
+          style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${C.border}`, fontSize: 12, fontFamily: "inherit", color: C.textMid, cursor: "pointer", background: C.surface }}>
           <option value="">Sort: Default</option>
           <option value="price">Price: Low to High</option>
           <option value="-price">Price: High to Low</option>
