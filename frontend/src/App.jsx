@@ -457,32 +457,54 @@ function DonutChart({ data, size = 100 }) {
 // ═══════════════════════════════════════════════════════
 function AuthPage({ onAuth }) {
   const C = useC();
+  const toast = useToast();
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ username: "", password: "", email: "", dealer_name: "", phone: "", city: "Delhi" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [authStatus, setAuthStatus] = useState(null); // null | "success" | "error"
 
-  const set = (k) => (v) => { setForm(p => ({ ...p, [k]: v })); setFieldErrors(p => ({ ...p, [k]: "" })); };
+  const set = (k) => (v) => {
+    setForm(p => ({ ...p, [k]: v }));
+    setFieldErrors(p => ({ ...p, [k]: "" }));
+    setAuthStatus(null);
+  };
 
   const validate = () => {
     const errs = {};
+    // Username
     if (!form.username.trim()) errs.username = "Username is required";
-    if (form.password.length < 6) errs.password = "Password must be at least 6 characters";
+    else if (form.username.includes(" ")) errs.username = "Username cannot contain spaces";
+    else if (form.username.length < 3) errs.username = "Username must be at least 3 characters";
+    // Password
+    if (!form.password) errs.password = "Password is required";
+    else if (mode === "register" && form.password.length < 8)
+      errs.password = "Password must be at least 8 characters";
+    else if (mode === "register" && !/\d/.test(form.password))
+      errs.password = "Password must contain at least one number";
+    // Register-only fields
     if (mode === "register") {
       if (!form.dealer_name.trim()) errs.dealer_name = "Dealership name is required";
-      if (!form.phone.trim()) errs.phone = "Phone number is required";
+      else if (form.dealer_name.trim().length < 3) errs.dealer_name = "Dealership name is too short";
+      if (!form.phone.trim()) errs.phone = "Mobile number is required";
       else if (!/^[6-9]\d{9}$/.test(form.phone.replace(/\D/g, "").slice(-10)))
-        errs.phone = "Enter a valid 10-digit Indian mobile number";
+        errs.phone = "Enter a valid 10-digit Indian mobile number (starts with 6–9)";
       if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
         errs.email = "Enter a valid email address";
+      if (form.city && form.city.trim().length < 2) errs.city = "Enter a valid city name";
     }
     return errs;
   };
 
   const submit = async (e) => {
     e.preventDefault();
+    setAuthStatus(null);
     const errs = validate();
-    if (Object.keys(errs).length) { setFieldErrors(errs); return; }
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      toast("Please fix the errors below before continuing.", "warning");
+      return;
+    }
     setLoading(true);
     try {
       const data = mode === "login"
@@ -490,13 +512,40 @@ function AuthPage({ onAuth }) {
         : await api.register(form);
       localStorage.setItem("erd_access", data.access);
       if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
-      onAuth(data);
-    } catch (e) {
-      const errs = typeof e === "object" ? e : { non_field_errors: "Something went wrong. Try again." };
-      setFieldErrors(errs);
+      setAuthStatus("success");
+      const name = data.user?.dealer_name || data.user?.username || form.username;
+      toast(mode === "login" ? `Welcome back, ${name}! Signing you in...` : `Account created! Welcome to eRickshawDekho, ${name}!`, "success");
+      setTimeout(() => onAuth(data), 800);
+    } catch (err) {
+      setAuthStatus("error");
+      const errObj = typeof err === "object" ? err : {};
+      const serverMsg = errObj.detail || errObj.non_field_errors?.[0] || errObj.non_field_errors
+        || Object.values(errObj).flat().join(" ")
+        || "Something went wrong. Please try again.";
+      // Show toast for auth failures
+      if (mode === "login") {
+        toast("Login failed. Check your username and password.", "error");
+      } else {
+        toast("Registration failed. " + serverMsg, "error");
+      }
+      // Also set inline errors for field-level server errors
+      const inlineErrs = {};
+      if (errObj.detail || errObj.non_field_errors) {
+        inlineErrs._banner = typeof (errObj.detail || errObj.non_field_errors) === "string"
+          ? (errObj.detail || errObj.non_field_errors)
+          : (errObj.non_field_errors?.[0] || errObj.detail);
+      }
+      Object.keys(errObj).filter(k => !["detail","non_field_errors"].includes(k)).forEach(k => {
+        inlineErrs[k] = Array.isArray(errObj[k]) ? errObj[k][0] : errObj[k];
+      });
+      setFieldErrors(inlineErrs);
     }
     setLoading(false);
   };
+
+  const FieldErr = ({ k }) => fieldErrors[k]
+    ? <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors[k]}</div>
+    : null;
 
   return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -513,49 +562,63 @@ function AuthPage({ onAuth }) {
         <Card padding={32}>
           <div style={{ display: "flex", marginBottom: 24, background: C.bg, borderRadius: 8, padding: 4 }}>
             {["login", "register"].map(m => (
-              <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: "8px 0", border: "none", borderRadius: 6, background: mode === m ? C.primary : "transparent", color: mode === m ? "#fff" : C.textMid, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              <button key={m} onClick={() => { setMode(m); setFieldErrors({}); setAuthStatus(null); }} style={{ flex: 1, padding: "8px 0", border: "none", borderRadius: 6, background: mode === m ? C.primary : "transparent", color: mode === m ? "#fff" : C.textMid, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
                 {m === "login" ? "Sign In" : "Register"}
               </button>
             ))}
           </div>
 
+          {/* Status banner */}
+          {authStatus === "error" && fieldErrors._banner && (
+            <div style={{ background: `${C.danger}15`, border: `1.5px solid ${C.danger}55`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.danger, marginBottom: 16, display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+              <span style={{ fontSize: 18 }}>✕</span>
+              <span>{fieldErrors._banner}</span>
+            </div>
+          )}
+          {authStatus === "success" && (
+            <div style={{ background: `${C.success}15`, border: `1.5px solid ${C.success}55`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.success, marginBottom: 16, display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+              <span style={{ fontSize: 18 }}>✓</span>
+              <span>{mode === "login" ? "Login successful! Redirecting..." : "Account created! Redirecting..."}</span>
+            </div>
+          )}
+
           <form onSubmit={submit}>
             <Field label="Username" required>
-              <Input value={form.username} onChange={set("username")} placeholder="username" />
-              {fieldErrors.username && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.username}</div>}
+              <Input value={form.username} onChange={set("username")} placeholder="Enter your username" autoComplete="username" />
+              <FieldErr k="username" />
             </Field>
             <Field label="Password" required>
-              <Input value={form.password} onChange={set("password")} type="password" placeholder="••••••" />
-              {fieldErrors.password && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.password}</div>}
+              <Input value={form.password} onChange={set("password")} type="password" placeholder={mode === "register" ? "Min 8 chars, include a number" : "Your password"} autoComplete={mode === "login" ? "current-password" : "new-password"} />
+              <FieldErr k="password" />
             </Field>
             {mode === "register" && <>
-              <Field label="Email">
-                <Input value={form.email} onChange={set("email")} type="email" placeholder="you@email.com" />
-                {fieldErrors.email && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.email}</div>}
-              </Field>
               <Field label="Dealership Name" required>
-                <Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="Kumar Electric Vehicles" />
-                {fieldErrors.dealer_name && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.dealer_name}</div>}
+                <Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="e.g. Kumar Electric Vehicles" />
+                <FieldErr k="dealer_name" />
               </Field>
-              <Field label="Phone" required>
-                <Input value={form.phone} onChange={set("phone")} placeholder="9876543210" />
-                {fieldErrors.phone && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>⚠ {fieldErrors.phone}</div>}
+              <Field label="Mobile Number" required>
+                <Input value={form.phone} onChange={set("phone")} placeholder="10-digit number (e.g. 9876543210)" />
+                <FieldErr k="phone" />
               </Field>
-              <Field label="City"><Input value={form.city} onChange={set("city")} placeholder="Delhi" /></Field>
+              <Field label="Email (optional)">
+                <Input value={form.email} onChange={set("email")} type="email" placeholder="you@email.com" autoComplete="email" />
+                <FieldErr k="email" />
+              </Field>
+              <Field label="City">
+                <Input value={form.city} onChange={set("city")} placeholder="Delhi" />
+                <FieldErr k="city" />
+              </Field>
             </>}
-            {fieldErrors.non_field_errors && (
-              <div style={{ background: `${C.danger}12`, border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
-                ✕ {fieldErrors.non_field_errors}
-              </div>
-            )}
-            {fieldErrors.detail && (
-              <div style={{ background: `${C.danger}12`, border: `1px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>
-                ✕ {fieldErrors.detail}
-              </div>
-            )}
-            <Btn label={loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"} type="submit" color={C.primary} fullWidth disabled={loading} size="lg" />
+            <Btn
+              label={loading ? (mode === "login" ? "Signing in..." : "Creating account...") : (mode === "login" ? "Sign In" : "Create Account")}
+              type="submit"
+              color={authStatus === "success" ? C.success : C.primary}
+              fullWidth
+              disabled={loading || authStatus === "success"}
+              size="lg"
+            />
           </form>
-          <div style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: C.textDim }}>Demo: username=<b>demo</b>  password=<b>demo1234</b></div>
+          <div style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: C.textDim }}>Demo: username=<b>demo</b> &nbsp;password=<b>demo1234</b></div>
         </Card>
       </div>
     </div>
