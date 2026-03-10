@@ -309,7 +309,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         date_to   = self.request.query_params.get('date_to')
         if status_f:  qs = qs.filter(status=status_f)
         if source_f:  qs = qs.filter(source=source_f)
-        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search))
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(phone__icontains=search)|Q(email__icontains=search)|Q(notes__icontains=search))
         if date_from: qs = qs.filter(created_at__date__gte=date_from)
         if date_to:   qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
@@ -338,7 +338,7 @@ class SaleViewSet(viewsets.ModelViewSet):
         search    = self.request.query_params.get('search')
         date_from = self.request.query_params.get('date_from')
         date_to   = self.request.query_params.get('date_to')
-        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search))
+        if search:    qs = qs.filter(Q(customer_name__icontains=search)|Q(invoice_number__icontains=search)|Q(customer_phone__icontains=search)|Q(vehicle__model_name__icontains=search))
         if date_from: qs = qs.filter(sale_date__date__gte=date_from)
         if date_to:   qs = qs.filter(sale_date__date__lte=date_to)
         return qs.order_by('-sale_date')
@@ -393,12 +393,16 @@ class SaleViewSet(viewsets.ModelViewSet):
             'vehicle_color':           sale.vehicle_color,
             'year_of_manufacture':     sale.year_of_manufacture,
             # Battery & warranty
+            'battery_count':           sale.battery_count or 1,
+            'battery_serial_numbers':  [s.strip() for s in sale.battery_serial_number.split('\n') if s.strip()] if sale.battery_serial_number else [],
             'battery_serial_number':   sale.battery_serial_number,
             'battery_capacity_ah':     sale.battery_capacity_ah,
             'battery_make':            sale.battery_make,
             'battery_warranty_months': sale.battery_warranty_months,
             'motor_serial_number':     sale.motor_serial_number,
             'vehicle_warranty_months': sale.vehicle_warranty_months,
+            # Finance/Loan details
+            'financer_details':        sale.financer_details,
             # GST fields
             'place_of_supply': sale.place_of_supply or dealer.city,
             'unit_price':    float(sale.sale_price),

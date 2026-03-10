@@ -2,6 +2,16 @@ import { useState, useEffect, useCallback, createContext, useContext, useRef } f
 import { SalesPage } from './SalesPage';
 import { LIGHT_C, DARK_C, ThemeCtx, useC } from './theme';
 
+// ── Debounce hook: delays rapid input (e.g. search) by `delay` ms ──
+function useDebounce(value, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 // ═══════════════════════════════════════════════════════
 // API LAYER
 // ═══════════════════════════════════════════════════════
@@ -979,15 +989,18 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [viewVehicle, setViewVehicle] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
 
+  const debouncedSearch = useDebounce(filters.search, 350);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) });
+    const effectiveFilters = { ...filters, search: debouncedSearch };
+    const params = new URLSearchParams({ page, ...Object.fromEntries(Object.entries(effectiveFilters).filter(([, v]) => v)) });
     try {
       const data = await api.vehicles.list(`?${params}`);
       setVehicles(data.results || data);
       setTotalPages(Math.ceil((data.count || (data.results || data).length) / 10));
     } finally { setLoading(false); }
-  }, [page, filters]);
+  }, [page, debouncedSearch, filters.brand, filters.fuel_type, filters.stock_status]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -1295,6 +1308,7 @@ function Leads({ onNavigate }) {
   const [enquiryPage, setEnquiryPage] = useState(1);
   const [enquiryTotal, setEnquiryTotal] = useState(0);
   const [enquirySearch, setEnquirySearch] = useState("");
+  const debouncedEnquirySearch = useDebounce(enquirySearch, 350);
   const [enquiryDateFrom, setEnquiryDateFrom] = useState("");
   const [enquiryDateTo, setEnquiryDateTo] = useState("");
 
@@ -1310,12 +1324,12 @@ function Leads({ onNavigate }) {
   const loadEnquiries = useCallback(() => {
     setEnquiriesLoading(true);
     const p = new URLSearchParams();
-    if (enquirySearch)   p.set("search", enquirySearch);
-    if (enquiryDateFrom) p.set("date_from", enquiryDateFrom);
-    if (enquiryDateTo)   p.set("date_to", enquiryDateTo);
+    if (debouncedEnquirySearch) p.set("search", debouncedEnquirySearch);
+    if (enquiryDateFrom)        p.set("date_from", enquiryDateFrom);
+    if (enquiryDateTo)          p.set("date_to", enquiryDateTo);
     p.set("page", enquiryPage);
     api.enquiries.list(`?${p}`).then(d => { setEnquiries(d.results || []); setEnquiryTotal(d.count || 0); }).catch(() => {}).finally(() => setEnquiriesLoading(false));
-  }, [enquirySearch, enquiryDateFrom, enquiryDateTo, enquiryPage]);
+  }, [debouncedEnquirySearch, enquiryDateFrom, enquiryDateTo, enquiryPage]);
 
   useEffect(() => { load(); api.vehicles.list().then(d => setVehicles(d.results || d)); }, [load]);
 
@@ -1590,6 +1604,7 @@ function Customers() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", address: "", gstin: "" });
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -1597,12 +1612,12 @@ function Customers() {
   const load = useCallback(() => {
     setLoading(true);
     const p = new URLSearchParams();
-    if (search)   p.set("search", search);
-    if (dateFrom) p.set("date_from", dateFrom);
-    if (dateTo)   p.set("date_to", dateTo);
+    if (debouncedSearch) p.set("search", debouncedSearch);
+    if (dateFrom)        p.set("date_from", dateFrom);
+    if (dateTo)          p.set("date_to", dateTo);
     const qs = p.toString() ? `?${p}` : "";
     api.customers.list(qs).then(d => setCustomers(d.results || d)).finally(() => setLoading(false));
-  }, [search, dateFrom, dateTo]);
+  }, [debouncedSearch, dateFrom, dateTo]);
   useEffect(() => { load(); }, [load]);
   const setF = k => v => setForm(p => ({ ...p, [k]: v }));
   const submit = async (e) => {
@@ -1674,18 +1689,19 @@ function Finance() {
   const [emiResult, setEmiResult] = useState(null);
   const [loans, setLoans] = useState([]);
   const [loanSearch, setLoanSearch] = useState("");
+  const debouncedLoanSearch = useDebounce(loanSearch, 350);
   const [loanDateFrom, setLoanDateFrom] = useState("");
   const [loanDateTo, setLoanDateTo] = useState("");
   const setF = k => v => setEmiForm(p => ({ ...p, [k]: v }));
 
   const loadLoans = useCallback(() => {
     const p = new URLSearchParams();
-    if (loanSearch)   p.set("search", loanSearch);
-    if (loanDateFrom) p.set("date_from", loanDateFrom);
-    if (loanDateTo)   p.set("date_to", loanDateTo);
+    if (debouncedLoanSearch) p.set("search", debouncedLoanSearch);
+    if (loanDateFrom)        p.set("date_from", loanDateFrom);
+    if (loanDateTo)          p.set("date_to", loanDateTo);
     const qs = p.toString() ? `?${p}` : "";
     api.finance.loans(qs).then(d => setLoans(d.results || d));
-  }, [loanSearch, loanDateFrom, loanDateTo]);
+  }, [debouncedLoanSearch, loanDateFrom, loanDateTo]);
 
   useEffect(() => { loadLoans(); }, [loadLoans]);
 
@@ -2789,6 +2805,7 @@ function AdminPortal({ user, onLogout }) {
   const [enquiries, setEnquiries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [pg, setPg] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [dateFrom, setDateFrom] = useState("");
@@ -2800,7 +2817,7 @@ function AdminPortal({ user, onLogout }) {
   const loadPage = useCallback(() => {
     setLoading(true);
     const p = new URLSearchParams({ page: pg });
-    if (search)   p.set("search", search);
+    if (debouncedSearch) p.set("search", debouncedSearch);
     if (dateFrom) p.set("date_from", dateFrom);
     if (dateTo)   p.set("date_to", dateTo);
     if (appFilter && page === "applications") p.set("status", appFilter);
@@ -2812,7 +2829,7 @@ function AdminPortal({ user, onLogout }) {
       enquiries:    () => api.admin.enquiries(qs).then(d => { setEnquiries(d.results || []); setTotalPages(d.total_pages || 1); }),
     };
     (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
-  }, [page, pg, search, dateFrom, dateTo, appFilter]);
+  }, [page, pg, debouncedSearch, dateFrom, dateTo, appFilter]);
 
   useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
 

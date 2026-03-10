@@ -159,8 +159,8 @@ class Lead(models.Model):
     ]
 
     dealer = models.ForeignKey(DealerProfile, on_delete=models.CASCADE, related_name='leads')
-    customer_name = models.CharField(max_length=200)
-    phone = models.CharField(max_length=15)
+    customer_name = models.CharField(max_length=200, db_index=True)
+    phone = models.CharField(max_length=15, db_index=True)
     email = models.EmailField(blank=True)
     vehicle = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True)
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='website')
@@ -186,12 +186,12 @@ class Sale(models.Model):
     dealer = models.ForeignKey(DealerProfile, on_delete=models.CASCADE, related_name='sales')
     lead = models.ForeignKey(Lead, on_delete=models.SET_NULL, null=True, blank=True)
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
-    customer_name = models.CharField(max_length=200)
-    customer_phone = models.CharField(max_length=15)
+    customer_name = models.CharField(max_length=200, db_index=True)
+    customer_phone = models.CharField(max_length=15, db_index=True)
     customer_email = models.EmailField(blank=True)
     customer_address = models.TextField(blank=True)
     customer_gstin = models.CharField(max_length=20, blank=True)
-    invoice_number = models.CharField(max_length=50, unique=True)
+    invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
     sale_price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.IntegerField(default=1)
     cgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=2.5)
@@ -213,6 +213,9 @@ class Sale(models.Model):
     battery_warranty_months= models.IntegerField(null=True, blank=True, help_text='Battery warranty in months')
     motor_serial_number    = models.CharField(max_length=100, blank=True)
     vehicle_warranty_months= models.IntegerField(null=True, blank=True, help_text='Vehicle/chassis warranty in months')
+    # Battery unit count + financer details
+    battery_count    = models.IntegerField(default=1, help_text='Number of battery units installed')
+    financer_details = models.TextField(blank=True, help_text='Financer name, loan a/c, ref number, branch etc.')
     # GST compliance fields
     place_of_supply = models.CharField(max_length=100, blank=True)  # state name
 

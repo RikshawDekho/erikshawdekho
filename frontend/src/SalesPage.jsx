@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useC } from './theme';
 
+function useDebounce(value, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Sales page — fully theme-aware (every sub-component calls useC)
 // ═══════════════════════════════════════════════════════════════
@@ -451,33 +460,38 @@ export function SalesPage() {
   const [invLoading, setInvLoading] = useState(null);
   const [vehicles,   setVehicles]   = useState([]);
   const [search,     setSearch]     = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [dateFrom,   setDateFrom]   = useState("");
   const [dateTo,     setDateTo]     = useState("");
   const [stats,      setStats]      = useState({ total: 0, thisMonth: 0, revenue: 0, pending: 0 });
   const [hoveredRow, setHoveredRow] = useState(null);
 
-  const [form, setForm] = useState({
+  const EMPTY_FORM = {
     vehicle: "", customer_name: "", customer_phone: "",
     customer_email: "", customer_address: "", customer_gstin: "",
     sale_price: "", quantity: 1, payment_method: "cash", delivery_date: "",
     // Vehicle identification (RTO registration + insurance)
     chassis_number: "", engine_number: "", vehicle_color: "",
     year_of_manufacture: "", place_of_supply: "",
-    // Battery & warranty
-    battery_serial_number: "", battery_capacity_ah: "", battery_make: "",
+    // Battery & warranty (battery_count drives dynamic serial inputs)
+    battery_count: 1, battery_serials: [""],
+    battery_capacity_ah: "", battery_make: "",
     battery_warranty_months: "", motor_serial_number: "", vehicle_warranty_months: "",
+    // Finance details (required when payment_method === "loan")
+    financer_details: "",
     // GST rates (default 2.5% each for eRickshaw EVs)
     cgst_rate: "2.5", sgst_rate: "2.5",
-  });
+  };
+  const [form, setForm] = useState(EMPTY_FORM);
   const [saving,   setSaving]   = useState(false);
   const [formErr,  setFormErr]  = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
     const p = new URLSearchParams();
-    if (search)   p.set("search",    search);
-    if (dateFrom) p.set("date_from", dateFrom);
-    if (dateTo)   p.set("date_to",   dateTo);
+    if (debouncedSearch) p.set("search",    debouncedSearch);
+    if (dateFrom)        p.set("date_from", dateFrom);
+    if (dateTo)          p.set("date_to",   dateTo);
     api.sales.list(p.toString() ? `?${p}` : "").then(d => {
       const list = d.results || d;
       setSales(list);
@@ -493,7 +507,7 @@ export function SalesPage() {
         pending:   list.filter(s => !s.is_delivered).length,
       });
     }).finally(() => setLoading(false));
-  }, [search, dateFrom, dateTo]);
+  }, [debouncedSearch, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.vehicles.list().then(d => setVehicles(d.results || d)); }, []);
@@ -512,18 +526,24 @@ export function SalesPage() {
     if (!form.customer_name)  return setFormErr("Customer name is required.");
     if (!form.customer_phone) return setFormErr("Customer phone is required.");
     if (!form.sale_price)     return setFormErr("Sale price is required.");
+    // Validate all battery serial numbers are filled
+    const emptySerial = form.battery_serials.findIndex(s => !s.trim());
+    if (emptySerial !== -1) return setFormErr(`Battery ${emptySerial + 1} serial number is required.`);
+    // Validate financer details when loan payment
+    if (form.payment_method === "loan" && !form.financer_details.trim())
+      return setFormErr("Financer details are required for Loan / Finance payment.");
     setFormErr(""); setSaving(true);
     try {
-      await api.sales.create(form);
+      // Serialize battery serials as newline-separated string
+      const payload = {
+        ...form,
+        battery_serial_number: form.battery_serials.join("\n"),
+        battery_count: form.battery_count,
+        financer_details: form.financer_details,
+      };
+      await api.sales.create(payload);
       setShowAdd(false);
-      setForm({ vehicle: "", customer_name: "", customer_phone: "", customer_email: "",
-                customer_address: "", customer_gstin: "", sale_price: "", quantity: 1,
-                payment_method: "cash", delivery_date: "",
-                chassis_number: "", engine_number: "", vehicle_color: "",
-                year_of_manufacture: "", place_of_supply: "",
-                battery_serial_number: "", battery_capacity_ah: "", battery_make: "",
-                battery_warranty_months: "", motor_serial_number: "", vehicle_warranty_months: "",
-                cgst_rate: "2.5", sgst_rate: "2.5" });
+      setForm(EMPTY_FORM);
       load();
     } catch (err) {
       setFormErr(typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to record sale.");
@@ -809,8 +829,17 @@ export function SalesPage() {
             <div style={{ background: `${C.warning}08`, border: `1.5px solid ${C.warning}25`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: C.warning, marginBottom: 4 }}>🔋 Battery & Warranty Details</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 12 }}>
-                <Field label="Battery Serial No.">
-                  <Input value={form.battery_serial_number} onChange={setF("battery_serial_number")} placeholder="e.g. AR2024001234" />
+                {/* Battery count selector */}
+                <Field label="No. of Battery Units *" required>
+                  <Select
+                    value={form.battery_count}
+                    onChange={v => {
+                      const count = parseInt(v) || 1;
+                      const serials = Array.from({ length: count }, (_, i) => form.battery_serials[i] || "");
+                      setForm(p => ({ ...p, battery_count: count, battery_serials: serials }));
+                    }}
+                    options={[1, 2, 3, 4].map(n => ({ value: n, label: `${n} Unit${n > 1 ? "s" : ""}` }))}
+                  />
                 </Field>
                 <Field label="Battery Make / Brand">
                   <Input value={form.battery_make} onChange={setF("battery_make")} placeholder="e.g. Amara Raja, Exide" />
@@ -818,6 +847,25 @@ export function SalesPage() {
                 <Field label="Battery Capacity">
                   <Input value={form.battery_capacity_ah} onChange={setF("battery_capacity_ah")} placeholder="e.g. 100Ah 48V" />
                 </Field>
+              </div>
+              {/* Dynamic per-battery serial number inputs */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
+                {form.battery_serials.map((serial, i) => (
+                  <Field key={i} label={`Battery ${i + 1} Serial No. *`} required>
+                    <Input
+                      value={serial}
+                      onChange={v => {
+                        const serials = [...form.battery_serials];
+                        serials[i] = v;
+                        setForm(p => ({ ...p, battery_serials: serials }));
+                      }}
+                      placeholder={`e.g. AR2024${String(i + 100001).slice(-6)}`}
+                      required
+                    />
+                  </Field>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 12 }}>
                 <Field label="Battery Warranty (months)">
                   <Input value={form.battery_warranty_months} onChange={setF("battery_warranty_months")} type="number" placeholder="e.g. 12" />
                 </Field>
