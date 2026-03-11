@@ -1,5 +1,6 @@
 // ErikshawDekho Service Worker — PWA offline support
-const CACHE_NAME = 'erikshaw-v1';
+// Increment version to force all clients to get fresh assets on next load
+const CACHE_NAME = 'erikshaw-v3';
 const STATIC_ASSETS = [
   '/',
   '/marketplace',
@@ -47,8 +48,19 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => caches.match(event.request))
     );
+  } else if (event.request.headers.get('accept')?.includes('text/html')) {
+    // Network-first for HTML pages — always serve fresh app shell
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(event.request))
+    );
   } else {
-    // Cache-first for static assets & pages
+    // Cache-first for static assets (JS/CSS/images) — fast load, fall back to network
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached;

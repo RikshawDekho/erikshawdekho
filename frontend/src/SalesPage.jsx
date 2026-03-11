@@ -579,12 +579,21 @@ export function SalesPage() {
     setFormErr(""); setSaving(true);
     try {
       // Serialize battery serials as newline-separated string
+      // Convert empty optional integer/decimal fields to null so backend doesn't reject them
+      const toIntOrNull = v => (v === "" || v === null || v === undefined) ? null : (parseInt(v) || null);
       const payload = {
         ...form,
         battery_serial_number: form.battery_serials.join("\n"),
         battery_count: form.battery_count,
         financer_details: form.financer_details,
+        battery_warranty_months: toIntOrNull(form.battery_warranty_months),
+        vehicle_warranty_months: toIntOrNull(form.vehicle_warranty_months),
+        quantity: parseInt(form.quantity) || 1,
+        cgst_rate: parseFloat(form.cgst_rate) || 2.5,
+        sgst_rate: parseFloat(form.sgst_rate) || 2.5,
       };
+      // Remove frontend-only field not in model
+      delete payload.battery_serials;
       await api.sales.create(payload);
       setShowAdd(false);
       setForm(EMPTY_FORM);

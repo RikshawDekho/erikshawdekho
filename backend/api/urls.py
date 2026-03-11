@@ -70,6 +70,9 @@ urlpatterns = [
     # ── Platform settings ──────────────────────────────────────────
     path('platform/settings/',                     views.platform_settings,        name='platform-settings'),
 
+    # ── Marketing campaigns ─────────────────────────────────────────
+    path('marketing/send/',                        views.marketing_send,           name='marketing-send'),
+
     # ── Admin extended ─────────────────────────────────────────────
     path('admin-portal/settings/',                              views.admin_update_settings,    name='admin-update-settings'),
     path('admin-portal/users/<int:user_id>/toggle-active/',     views.admin_toggle_user_active, name='admin-toggle-user-active'),

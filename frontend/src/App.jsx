@@ -887,6 +887,7 @@ const NAV = [
   { id: "sales",      label: "Sales",      icon: "💰" },
   { id: "customers",  label: "Customers",  icon: "👤" },
   { id: "finance",    label: "Finance",    icon: "🏦" },
+  { id: "marketing",  label: "Marketing",  icon: "📣" },
   { id: "reports",    label: "Reports",    icon: "📈" },
   { id: "learn",      label: "Learn",      icon: "🎓" },
   { id: "marketplace",label: "Marketplace",icon: "🛒" },
@@ -1011,6 +1012,7 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
   const C = useC();
   const { isDark, toggle } = useContext(ThemeCtx);
   const [unread, setUnread] = useState(0);
+  const [lang, setLang] = useState(() => localStorage.getItem("erd_lang") || "en");
   const pageLabel = [...NAV, { id: "account", label: "My Account" }, { id: "plans", label: "Plans & Pricing" }].find(n => n.id === page)?.label || page;
 
   useEffect(() => {
@@ -1037,11 +1039,12 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
         </button>
         {/* Language toggle */}
         <button onClick={() => {
-          const next = i18n.language === "en" ? "hi" : "en";
+          const next = lang === "en" ? "hi" : "en";
           i18n.changeLanguage(next);
           localStorage.setItem("erd_lang", next);
-        }} style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.textMid, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {i18n.language === "en" ? "हि" : "EN"}
+          setLang(next);
+        }} title={lang === "en" ? "Switch to Hindi" : "Switch to English"} style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.textMid, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {lang === "en" ? "हि" : "EN"}
         </button>
         {/* Dark mode toggle */}
         <button onClick={toggle} title={isDark ? "Light Mode" : "Dark Mode"} style={{ background: isDark ? C.surface : C.bg, border: `1.5px solid ${C.border}`, borderRadius: 8, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
@@ -1331,13 +1334,14 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         payload.append("fuel_type", form.fuel_type);
         payload.append("vehicle_type", form.vehicle_type);
         payload.append("price", form.price);
-        if (form.stock_quantity) payload.append("stock_quantity", form.stock_quantity);
+        // Default stock_quantity to 1 so vehicle appears in marketplace
+        payload.append("stock_quantity", form.stock_quantity || 1);
         payload.append("year", form.year);
         if (form.description) payload.append("description", form.description);
         payload.append("thumbnail", form.thumbnail);
       } else {
         const { thumbnail, brand_id, ...rest } = form;
-        payload = { ...rest, brand: brand_id };
+        payload = { ...rest, brand: brand_id, stock_quantity: form.stock_quantity || 1 };
       }
       await api.vehicles.create(payload);
       toast("Vehicle added successfully!", "success");
@@ -1632,12 +1636,15 @@ function Leads({ onNavigate }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ customer_name: "", phone: "", source: "website", status: "new", notes: "", vehicle: "" });
+  const [form, setForm] = useState({ customer_name: "", phone: "", email: "", source: "website", status: "new", notes: "", vehicle: "" });
   const [vehicles, setVehicles] = useState([]);
   const [enquiries, setEnquiries] = useState([]);
   const [enquiriesLoading, setEnquiriesLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [leadSearch, setLeadSearch] = useState("");
+  const debouncedLeadSearch = useDebounce(leadSearch, 300);
   const [enquiryPage, setEnquiryPage] = useState(1);
   const [enquiryTotal, setEnquiryTotal] = useState(0);
   const [enquirySearch, setEnquirySearch] = useState("");
@@ -1704,8 +1711,23 @@ function Leads({ onNavigate }) {
     toast("Marked as processed.", "success");
   };
 
+  const filteredLeads = leads.filter(l => {
+    if (statusFilter && l.status !== statusFilter) return false;
+    if (debouncedLeadSearch) {
+      const q = debouncedLeadSearch.toLowerCase();
+      return l.customer_name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.email?.toLowerCase().includes(q) || l.notes?.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
   const cols = [
-    { label: "Customer", render: r => <div><div style={{ fontWeight: 600 }}>{r.customer_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.phone}</div></div> },
+    { label: "Customer", render: r => (
+      <div>
+        <div style={{ fontWeight: 600 }}>{r.customer_name}</div>
+        <a href={`tel:${r.phone}`} style={{ fontSize: 11, color: C.primary, textDecoration: "none", fontWeight: 600 }}>📞 {r.phone}</a>
+        {r.email && <div style={{ fontSize: 10, color: C.textDim }}>{r.email}</div>}
+      </div>
+    )},
     { label: "Vehicle",  render: r => <span style={{ fontSize: 12 }}>{r.vehicle_name || "—"}</span> },
     { label: "Source",   render: r => <Badge label={r.source.replace("_"," ")} color={C.info} /> },
     { label: "Status",   render: r => (
@@ -1714,8 +1736,15 @@ function Leads({ onNavigate }) {
         {["new","interested","follow_up","converted","lost"].map(s => <option key={s} value={s}>{s.replace("_"," ")}</option>)}
       </select>
     )},
+    { label: "Notes", render: r => <span style={{ fontSize: 11, color: C.textMid, maxWidth: 160, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.notes}>{r.notes || "—"}</span> },
     { label: "Date", render: r => <span style={{ fontSize: 12, color: C.textDim }}>{fmtDate(r.created_at)}</span> },
-    { label: "Actions", render: r => <Btn label="Delete" size="sm" outline color={C.danger} onClick={() => api.leads.delete(r.id).then(load)} /> },
+    { label: "Actions", render: r => (
+      <div style={{ display: "flex", gap: 6 }}>
+        <a href={`tel:${r.phone}`} style={{ padding: "4px 10px", borderRadius: 6, background: `${C.success}15`, border: `1px solid ${C.success}44`, color: C.success, fontSize: 11, fontWeight: 700, textDecoration: "none" }}>📞 Call</a>
+        {r.email && <a href={`mailto:${r.email}`} style={{ padding: "4px 10px", borderRadius: 6, background: `${C.info}15`, border: `1px solid ${C.info}44`, color: C.info, fontSize: 11, fontWeight: 700, textDecoration: "none" }}>✉ Email</a>}
+        <Btn label="Delete" size="sm" outline color={C.danger} onClick={() => { if (confirm(`Delete lead for ${r.customer_name}?`)) api.leads.delete(r.id).then(load); }} />
+      </div>
+    )},
   ];
 
   return (
@@ -1742,7 +1771,16 @@ function Leads({ onNavigate }) {
         <>
           <Card padding={12} style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-              <DateFilter from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); }} />
+              <div style={{ display: "flex", gap: 8, flex: 1, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={leadSearch} onChange={e => setLeadSearch(e.target.value)} placeholder="Search name / phone / notes…"
+                  style={{ padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", minWidth: 180 }} />
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                  style={{ padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, cursor: "pointer" }}>
+                  <option value="">All Statuses</option>
+                  {["new","interested","follow_up","converted","lost"].map(s => <option key={s} value={s}>{s.replace("_"," ")}</option>)}
+                </select>
+                <DateFilter from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); }} />
+              </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <Btn label="↺ Refresh" size="sm" outline color={C.primary} onClick={load} />
                 <Btn label="+ Add Lead" color={C.primary} onClick={() => setShowAdd(true)} />
@@ -1751,9 +1789,9 @@ function Leads({ onNavigate }) {
           </Card>
           <Card padding={0}>
             <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, fontSize: 15 }}>
-              Pipeline Leads ({leads.length}){(dateFrom || dateTo) && <span style={{ fontSize: 12, color: C.primary, fontWeight: 400, marginLeft: 8 }}>filtered by date</span>}
+              Pipeline Leads ({filteredLeads.length}{filteredLeads.length !== leads.length ? ` of ${leads.length}` : ""}){(dateFrom || dateTo || statusFilter || leadSearch) && <span style={{ fontSize: 12, color: C.primary, fontWeight: 400, marginLeft: 8 }}>filtered</span>}
             </div>
-            {loading ? <Spinner /> : <Table cols={cols} rows={leads} />}
+            {loading ? <Spinner /> : <Table cols={cols} rows={filteredLeads} />}
           </Card>
         </>
       )}
@@ -1821,9 +1859,13 @@ function Leads({ onNavigate }) {
           <form onSubmit={submit}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <Field label="Customer Name" required><Input value={form.customer_name} onChange={setF("customer_name")} required /></Field>
-              <Field label="Phone" required><Input value={form.phone} onChange={setF("phone")} required /></Field>
+              <Field label="Phone" required><Input value={form.phone} onChange={setF("phone")} type="tel" required /></Field>
+              <Field label="Email"><Input value={form.email} onChange={setF("email")} type="email" placeholder="optional" /></Field>
               <Field label="Source">
-                <Select value={form.source} onChange={setF("source")} options={[{value:"walk_in",label:"Walk-in"},{value:"phone",label:"Phone"},{value:"website",label:"Website"},{value:"referral",label:"Referral"},{value:"social",label:"Social Media"}]} />
+                <Select value={form.source} onChange={setF("source")} options={[{value:"walk_in",label:"Walk-in"},{value:"phone",label:"Phone"},{value:"website",label:"Website"},{value:"referral",label:"Referral"},{value:"social",label:"Social Media"},{value:"marketplace",label:"Marketplace"}]} />
+              </Field>
+              <Field label="Initial Status">
+                <Select value={form.status} onChange={setF("status")} options={["new","interested","follow_up","converted","lost"].map(s => ({ value: s, label: s.replace("_"," ") }))} />
               </Field>
               <Field label="Vehicle Interest">
                 <Select value={form.vehicle} onChange={setF("vehicle")} placeholder="Select vehicle" options={vehicles.map(v => ({ value: v.id, label: `${v.brand_name} ${v.model_name}` }))} />
@@ -3062,14 +3104,35 @@ function extractVideoId(url) {
 
 function VideoCard({ v, onDelete, onWatch }) {
   const C = useC();
+  const [inlineWatch, setInlineWatch] = useState(null);
   const thumb = v.thumbnail_url || (v.video_id ? `https://img.youtube.com/vi/${v.video_id}/hqdefault.jpg` : null)
     || (extractVideoId(v.youtube_url) ? `https://img.youtube.com/vi/${extractVideoId(v.youtube_url)}/hqdefault.jpg` : null);
   const catColors = { tutorial: C.primary, maintenance: C.warning, earning: C.success, review: C.info, general: C.textMid };
   const catLabels = { tutorial: "How to Drive", maintenance: "Maintenance", earning: "Earn More", review: "Expert Review", general: "General" };
 
+  const handleWatch = () => {
+    if (onWatch) { onWatch(v); return; }
+    // fallback: show inline iframe modal instead of opening new tab
+    const vid = extractVideoId(v.youtube_url);
+    if (vid) setInlineWatch(vid);
+  };
+
   return (
+    <>
+    {inlineWatch && (
+      <div onClick={() => setInlineWatch(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ position: "relative", width: "100%", maxWidth: 760 }} onClick={e => e.stopPropagation()}>
+          <button onClick={() => setInlineWatch(null)} style={{ position: "absolute", top: -40, right: 0, background: "none", border: "none", color: "#fff", fontSize: 28, cursor: "pointer" }}>×</button>
+          <div style={{ position: "relative", paddingTop: "56.25%" }}>
+            <iframe src={`https://www.youtube.com/embed/${inlineWatch}?autoplay=1&rel=0`}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", borderRadius: 10 }}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title={v.title} />
+          </div>
+        </div>
+      </div>
+    )}
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", cursor: "pointer", transition: "all 0.15s", display: "flex", flexDirection: "column" }}
-      onClick={() => onWatch ? onWatch(v) : window.open(v.youtube_url, "_blank", "noopener")}
+      onClick={handleWatch}
       onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 6px 20px ${C.primary}18`; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
       {/* Thumbnail */}
@@ -3099,6 +3162,7 @@ function VideoCard({ v, onDelete, onWatch }) {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -3258,6 +3322,204 @@ function SupportPage() {
           <div style={{ fontSize: 13, color: C.textMid, marginTop: 4 }}>Our team activates your Early Dealer Plan within minutes during business hours.</div>
         </div>
         <Btn label="⭐ Upgrade to Early Dealer — ₹5000/yr" color={C.primary} onClick={() => window.open(`https://wa.me/${SP_WA}?text=Hi+I+want+to+upgrade+to+Early+Dealer+Plan`)} />
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// MARKETING PAGE
+// ═══════════════════════════════════════════════════════
+const MARKETING_TEMPLATES = {
+  whatsapp: [
+    { id: "enquiry_followup", label: "Enquiry Follow-up", text: "नमस्ते {name} जी! 🙏\n\nआपने हमारे eRickshaw के बारे में enquiry की थी। क्या आप इसके बारे में और जानना चाहते हैं?\n\nहमारे पास latest models available हैं। Call करें: {phone}\n\n- {dealer_name}" },
+    { id: "offer", label: "Special Offer", text: "नमस्ते {name} जी! 🎉\n\nआज हमारे पास एक special offer है — eRickshaw पर ₹{amount} की छूट!\n\nसीमित समय के लिए। आज ही संपर्क करें: {phone}\n\n- {dealer_name}" },
+    { id: "new_model", label: "New Model Launch", text: "नमस्ते {name} जी! 🚀\n\nहमारे showroom में नया model आ गया है — {model}!\n\nBest price और EMI options के लिए आज ही आएं।\n\n📍 {address}\n📞 {phone}\n\n- {dealer_name}" },
+  ],
+  sms: [
+    { id: "sms_offer", label: "SMS Offer", text: "Namaste {name}! Special offer on eRickshaw at {dealer_name}. Save Rs.{amount}. Call {phone} today!" },
+    { id: "sms_reminder", label: "SMS Reminder", text: "Hi {name}, this is {dealer_name}. Your eRickshaw enquiry is pending. Call {phone} to know more." },
+  ],
+  email: [
+    { id: "email_welcome", label: "Welcome Email", text: "Subject: Welcome to {dealer_name} — Your eRickshaw Journey Starts Here!\n\nDear {name},\n\nThank you for your interest in our eRickshaw vehicles. We are committed to providing you with the best electric vehicles at competitive prices.\n\nOur showroom is open Monday–Saturday, 9 AM to 7 PM.\n\nFor queries: {phone}\n\nWarm regards,\n{dealer_name}" },
+    { id: "email_invoice", label: "Invoice Ready", text: "Subject: Your eRickshaw Invoice is Ready — {dealer_name}\n\nDear {name},\n\nYour invoice for the eRickshaw purchase is attached. Please review and let us know if you have any questions.\n\nThank you for choosing {dealer_name}!\n\nRegards,\n{dealer_name}" },
+  ],
+};
+
+function MarketingPage() {
+  const C = useC();
+  const toast = useToast();
+  const [tab, setTab] = useState("whatsapp"); // whatsapp | sms | email
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateText, setTemplateText] = useState("");
+  const [contacts, setContacts] = useState(""); // newline-separated numbers/emails
+  const [variables, setVariables] = useState({ name: "", phone: "", dealer_name: "", amount: "", model: "", address: "" });
+  const [sending, setSending] = useState(false);
+  const [apiKeys, setApiKeys] = useState({ twilio: false, whatsapp_business: false, sendgrid: false });
+
+  // Check configured API keys
+  useEffect(() => {
+    api.settings().then(d => {
+      const keys = d.api_keys || [];
+      setApiKeys({
+        twilio: keys.some(k => k.service === "twilio" && k.is_active),
+        whatsapp_business: keys.some(k => k.service === "whatsapp_business" && k.is_active),
+        sendgrid: keys.some(k => k.service === "sendgrid" && k.is_active),
+      });
+    }).catch(() => {});
+  }, []);
+
+  const templates = MARKETING_TEMPLATES[tab] || [];
+
+  const selectTemplate = (t) => {
+    setSelectedTemplate(t.id);
+    setTemplateText(t.text);
+  };
+
+  const resolveText = () => {
+    return templateText
+      .replace(/\{name\}/g, variables.name || "{name}")
+      .replace(/\{phone\}/g, variables.phone || "{phone}")
+      .replace(/\{dealer_name\}/g, variables.dealer_name || "{dealer_name}")
+      .replace(/\{amount\}/g, variables.amount || "{amount}")
+      .replace(/\{model\}/g, variables.model || "{model}")
+      .replace(/\{address\}/g, variables.address || "{address}");
+  };
+
+  const contactList = contacts.split("\n").map(c => c.trim()).filter(Boolean);
+
+  const handleSend = async () => {
+    if (!templateText.trim()) { toast("Please select or write a template.", "warning"); return; }
+    if (contactList.length === 0) { toast("Please add at least one contact.", "warning"); return; }
+    const apiKeyNeeded = tab === "email" ? "sendgrid" : tab === "whatsapp" ? "whatsapp_business" : "twilio";
+    if (!apiKeys[apiKeyNeeded]) {
+      toast(`Connect your ${tab === "email" ? "SendGrid" : tab === "whatsapp" ? "WhatsApp Business" : "Twilio"} API key in Settings → API Keys first.`, "warning");
+      return;
+    }
+    setSending(true);
+    try {
+      await apiFetch("/marketing/send/", {
+        method: "POST",
+        body: JSON.stringify({ channel: tab, message: resolveText(), contacts: contactList }),
+      });
+      toast(`Campaign sent to ${contactList.length} contact${contactList.length !== 1 ? "s" : ""}!`, "success");
+      setContacts("");
+    } catch (err) {
+      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to send. Check API keys in Settings.";
+      toast(msg, "error");
+    }
+    setSending(false);
+  };
+
+  const tabInfo = {
+    whatsapp: { icon: "💬", label: "WhatsApp", apiKey: "whatsapp_business", apiLabel: "WhatsApp Business API" },
+    sms:      { icon: "📱", label: "SMS",       apiKey: "twilio",           apiLabel: "Twilio SMS API" },
+    email:    { icon: "✉️", label: "Email",      apiKey: "sendgrid",         apiLabel: "SendGrid Email API" },
+  };
+  const info = tabInfo[tab];
+  const hasKey = apiKeys[info.apiKey];
+
+  return (
+    <div style={{ padding: 24, maxWidth: 1100 }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>📣 Marketing Campaigns</div>
+        <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>Send WhatsApp, SMS, or Email campaigns to your customers and leads.</div>
+      </div>
+
+      {/* Channel tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.bg, borderRadius: 10, padding: 4, width: "fit-content" }}>
+        {Object.entries(tabInfo).map(([id, t]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit",
+            fontWeight: 700, fontSize: 13, background: tab === id ? C.surface : "transparent",
+            color: tab === id ? C.primary : C.textMid, boxShadow: tab === id ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+          }}>{t.icon} {t.label}</button>
+        ))}
+      </div>
+
+      {/* API key warning */}
+      {!hasKey && (
+        <div style={{ background: `${C.warning}12`, border: `1px solid ${C.warning}44`, borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: C.warning, display: "flex", alignItems: "center", gap: 10 }}>
+          ⚠️ <span><b>{info.apiLabel}</b> is not connected. Go to <b>Settings → API Keys</b> to add your key. You can still compose messages, but sending will be disabled.</span>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        {/* Left: Template picker + editor */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+            <div style={{ fontWeight: 700, marginBottom: 12, fontSize: 14 }}>📋 Message Templates</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+              {templates.map(t => (
+                <button key={t.id} onClick={() => selectTemplate(t)} style={{
+                  padding: "10px 14px", borderRadius: 8, border: `1.5px solid ${selectedTemplate === t.id ? C.primary : C.border}`,
+                  background: selectedTemplate === t.id ? `${C.primary}12` : C.bg, cursor: "pointer", fontFamily: "inherit",
+                  textAlign: "left", fontSize: 13, fontWeight: selectedTemplate === t.id ? 700 : 400, color: C.text,
+                }}>{t.label}</button>
+              ))}
+            </div>
+
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, color: C.textMid }}>✏️ Edit Message</div>
+            <textarea value={templateText} onChange={e => setTemplateText(e.target.value)} rows={6}
+              placeholder={`Write your ${info.label} message here...\nUse {name}, {phone}, {dealer_name}, {amount}, {model}, {address} as placeholders.`}
+              style={{ width: "100%", padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.bg, lineHeight: 1.6 }} />
+            <div style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>Variables: {"{"+"name}"}, {"{"+"phone}"}, {"{"+"dealer_name}"}, {"{"+"amount}"}, {"{"+"model}"}, {"{"+"address}"}</div>
+          </div>
+
+          {/* Variable substitution */}
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+            <div style={{ fontWeight: 700, marginBottom: 12, fontSize: 14 }}>🔤 Fill Variables</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {Object.entries({ name: "Customer Name", phone: "Your Phone", dealer_name: "Dealer Name", amount: "Offer Amount (₹)", model: "Vehicle Model", address: "Showroom Address" }).map(([k, label]) => (
+                <div key={k}>
+                  <div style={{ fontSize: 11, color: C.textMid, marginBottom: 3 }}>{label}</div>
+                  <input value={variables[k]} onChange={e => setVariables(p => ({ ...p, [k]: e.target.value }))}
+                    placeholder={`{${k}}`}
+                    style={{ width: "100%", padding: "7px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Contacts + preview + send */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Contact list */}
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 14 }}>
+              👥 Contact List <span style={{ fontSize: 12, color: C.textDim, fontWeight: 400 }}>({contactList.length} contacts)</span>
+            </div>
+            <textarea value={contacts} onChange={e => setContacts(e.target.value)} rows={8}
+              placeholder={tab === "email" ? "Enter email addresses, one per line:\njohn@example.com\nsuresh@example.com" : "Enter phone numbers, one per line:\n9876543210\n9123456789"}
+              style={{ width: "100%", padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.bg }} />
+            <div style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>
+              {tab === "email" ? "One email per line." : "One 10-digit mobile number per line (Indian numbers)."}
+            </div>
+          </div>
+
+          {/* Live preview */}
+          {templateText && (
+            <div style={{ background: tab === "whatsapp" ? "#e7fdd8" : C.surface, border: `1px solid ${tab === "whatsapp" ? "#25D36644" : C.border}`, borderRadius: 12, padding: 18 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13, color: tab === "whatsapp" ? "#128c7e" : C.text }}>
+                {info.icon} Preview
+              </div>
+              <div style={{ fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.7, color: "#333", background: tab === "whatsapp" ? "#dcf8c6" : C.bg, padding: 12, borderRadius: 10 }}>
+                {resolveText()}
+              </div>
+            </div>
+          )}
+
+          {/* Send button */}
+          <button onClick={handleSend} disabled={sending || !hasKey}
+            style={{ padding: "14px 24px", borderRadius: 10, background: hasKey ? C.primary : C.border, border: "none", color: "#fff", fontWeight: 700, fontSize: 15, cursor: hasKey ? "pointer" : "not-allowed", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            {sending ? "📤 Sending..." : `${info.icon} Send to ${contactList.length} contact${contactList.length !== 1 ? "s" : ""}`}
+          </button>
+          {!hasKey && (
+            <div style={{ fontSize: 12, color: C.textDim, textAlign: "center" }}>
+              Connect <b>{info.apiLabel}</b> in Settings → API Keys to enable sending.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -3939,6 +4201,50 @@ const ADMIN_NAV = [
   { id: "settings",      label: "Settings",     icon: "⚙️" },
 ];
 
+function AdminSettingsPanel({ toast }) {
+  const C = useC();
+  const [form, setForm] = useState({ support_name: "", support_phone: "", support_whatsapp: "", support_email: "" });
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API}/platform/settings/`).then(r => r.json()).then(d => { setForm(d); setLoaded(true); }).catch(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.admin.updateSettings(form);
+      toast("Settings saved!", "success");
+    } catch { toast("Failed to save settings.", "error"); }
+    setSaving(false);
+  };
+
+  if (!loaded) return <Spinner />;
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <Card>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: C.text }}>⚙️ Platform Settings</div>
+        <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>These contact details appear in dealer verification banners and support pages.</div>
+        {[
+          { key: "support_name",      label: "Support Team Name",    placeholder: "eRickshawDekho Support" },
+          { key: "support_email",     label: "Support Email",        placeholder: "support@erikshawdekho.com" },
+          { key: "support_phone",     label: "Support Phone",        placeholder: "+91 99999 99999" },
+          { key: "support_whatsapp",  label: "WhatsApp Number (with country code, no +)", placeholder: "919999999999" },
+        ].map(f => (
+          <div key={f.key} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{f.label}</div>
+            <input value={form[f.key] || ""} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+              placeholder={f.placeholder}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
+          </div>
+        ))}
+        <Btn label={saving ? "Saving..." : "💾 Save Settings"} color={C.primary} disabled={saving} onClick={save} />
+      </Card>
+    </div>
+  );
+}
+
 function AdminPortal({ user, onLogout }) {
   const C = useC();
   const { isDark, toggle } = useContext(ThemeCtx);
@@ -4322,6 +4628,9 @@ function AdminPortal({ user, onLogout }) {
             <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
           </div>
         )}
+
+        {/* Settings */}
+        {page === "settings" && <AdminSettingsPanel toast={toast} />}
       </div>
 
       {/* ── Admin: Reset Dealer Password Modal ── */}
@@ -4571,6 +4880,9 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
           <span style={{ fontWeight: 800, fontSize: 16, fontFamily: "Georgia,serif", color: C.text }}>eRickshaw<span style={{ color: C.accent }}>Dekho</span></span>
         </button>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <button onClick={onBack} style={{ padding: "7px 14px", borderRadius: 8, background: C.bg, border: `1.5px solid ${C.border}`, color: C.textMid, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}>
+            🏠 Home
+          </button>
           <span style={{ fontSize: 12, color: C.textDim }}>Are you a dealer?</span>
           <button onClick={onDealerPortal} style={{ padding: "7px 16px", borderRadius: 8, background: C.primary, border: "none", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
             Dealer Portal →
@@ -4745,6 +5057,7 @@ export default function App() {
       case "sales":       return <PlanGate plan={plan} feature="Sales" onUpgrade={goUpgrade}><SalesPage /></PlanGate>;
       case "customers":   return <PlanGate plan={plan} feature="Customers" onUpgrade={goUpgrade}><Customers /></PlanGate>;
       case "finance":     return <PlanGate plan={plan} feature="Finance" onUpgrade={goUpgrade}><Finance /></PlanGate>;
+      case "marketing":   return <MarketingPage />;
       case "reports":     return <PlanGate plan={plan} feature="Reports" onUpgrade={goUpgrade}><Reports /></PlanGate>;
       case "learn":       return <LearnPage />;
       case "support":     return <SupportPage />;
@@ -4820,7 +5133,7 @@ export default function App() {
                   <span>⏳ <b>Your showroom is under verification</b> by platform admin. Your profile will become visible to buyers after approval.</span>
                   <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
                     <a href="mailto:support@erikshawdekho.com" style={{ fontSize: 11, color: C_LIVE.textMid, textDecoration: "none" }}>✉ support@erikshawdekho.com</a>
-                    <a href="https://wa.me/919999999999?text=Hi+my+dealer+account+is+pending+verification" target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#25D366", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>
+                    <a href={`https://wa.me/${SP_WA.replace(/\D/g,"")}?text=Hi+my+dealer+account+is+pending+verification`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#25D366", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>
                   </div>
                 </div>
               )}
@@ -4830,7 +5143,7 @@ export default function App() {
             </div>
 
             {/* Floating WhatsApp Support */}
-            <a href={`https://wa.me/919999999999?text=Hi+I+need+help+with+my+dealer+account+on+eRickshawDekho`} target="_blank" rel="noreferrer"
+            <a href={`https://wa.me/${SP_WA.replace(/\D/g,"")}?text=Hi+I+need+help+with+my+dealer+account+on+eRickshawDekho`} target="_blank" rel="noreferrer"
               style={{ position: "fixed", bottom: 80, right: 16, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(37,211,102,0.4)", textDecoration: "none", fontSize: 26 }}>
               💬
             </a>

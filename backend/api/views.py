@@ -668,7 +668,10 @@ def apply_dealer(request):
 def public_enquiry(request):
     """
     Accept a visitor enquiry from the public marketplace.
-    Auto-assigns to a dealer based on vehicle → city → first verified dealer.
+    - Vehicle-specific enquiry  → assigned to that vehicle's dealer only.
+    - General enquiry (no vehicle) → broadcast to ALL verified dealers in the
+      same city (or all verified dealers if no city match), creating a lead in
+      each dealer's CRM so every relevant dealer can follow up.
     No authentication required.
     """
     customer_name = request.data.get('customer_name', '').strip()
@@ -684,37 +687,45 @@ def public_enquiry(request):
     notes      = request.data.get('notes', '').strip()
 
     vehicle = None
-    dealer  = None
+    primary_dealer = None          # for the PublicEnquiry record
+    broadcast_dealers = []         # all dealers to receive a lead
 
-    # 1. Try to match by vehicle → use that vehicle's dealer
+    # 1. Vehicle-specific enquiry → assign to that vehicle's dealer only
     if vehicle_id:
         vehicle = Vehicle.objects.filter(pk=vehicle_id, is_active=True).first()
         if vehicle:
-            dealer = vehicle.dealer
+            primary_dealer = vehicle.dealer
+            broadcast_dealers = [primary_dealer] if primary_dealer else []
 
-    # 2. Try to find a verified dealer in the same city
-    if not dealer and city:
-        dealer = DealerProfile.objects.filter(is_verified=True, city__icontains=city).first()
+    # 2. General enquiry (no vehicle) → broadcast to all matching dealers
+    if not vehicle_id:
+        if city:
+            broadcast_dealers = list(
+                DealerProfile.objects.filter(is_verified=True, city__icontains=city)
+            )
+        # Also include dealers whose city wasn't matched, fall back to ALL verified
+        if not broadcast_dealers:
+            broadcast_dealers = list(DealerProfile.objects.filter(is_verified=True))
+        primary_dealer = broadcast_dealers[0] if broadcast_dealers else None
 
-    # 3. Fall back to any verified dealer (platform will route)
-    if not dealer:
-        dealer = DealerProfile.objects.filter(is_verified=True).first()
-
+    # Create the canonical PublicEnquiry record (linked to primary dealer for admin view)
     enquiry = PublicEnquiry.objects.create(
         customer_name=customer_name,
         phone=phone,
         city=city,
         vehicle=vehicle,
-        dealer=dealer,
+        dealer=primary_dealer,
         notes=notes,
     )
 
-    # Auto-create a Lead in dealer CRM so buyer activity is always tracked
-    if dealer:
-        vehicle_label = str(vehicle) if vehicle else ''
+    # Create a Lead in every matching dealer's CRM
+    vehicle_label = str(vehicle) if vehicle else ''
+    for dealer in broadcast_dealers:
         lead_notes = notes or ''
         if vehicle_label:
             lead_notes = f"Enquired about {vehicle_label}. {lead_notes}".strip()
+        elif city:
+            lead_notes = f"General enquiry from {city}. {lead_notes}".strip()
         Lead.objects.get_or_create(
             dealer=dealer,
             customer_name=customer_name,
@@ -726,9 +737,9 @@ def public_enquiry(request):
             }
         )
 
-    # Notify the assigned dealer — fire-and-forget, never block the response
-    if dealer:
-        vehicle_name = str(vehicle) if vehicle else 'a vehicle'
+    # Notify all matching dealers — fire-and-forget
+    vehicle_name = str(vehicle) if vehicle else 'eRickshaw (general enquiry)'
+    for dealer in broadcast_dealers:
         try:
             from api.emails import send_public_enquiry_notification
             dealer_email = dealer.user.email
@@ -743,7 +754,7 @@ def public_enquiry(request):
                     notes=notes,
                 )
         except Exception:
-            pass  # Email failure is silent — admin sees it in NotificationLog
+            pass
 
         try:
             from api.notifications import notify_dealer_new_lead
@@ -756,7 +767,7 @@ def public_enquiry(request):
                     vehicle_name=vehicle_name,
                 )
         except Exception:
-            pass  # WhatsApp failure is silent
+            pass
 
     return Response({'message': 'Enquiry submitted! A dealer will call you within 24 hours.'}, status=status.HTTP_201_CREATED)
 
@@ -1425,6 +1436,71 @@ def platform_settings(request):
         "support_whatsapp": s.support_whatsapp,
         "support_email": s.support_email,
         "support_name": s.support_name,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def marketing_send(request):
+    """
+    Send a marketing campaign (WhatsApp / SMS / Email) to a list of contacts.
+    Requires the corresponding API key to be configured in dealer settings.
+    """
+    channel  = request.data.get("channel", "").lower()        # whatsapp | sms | email
+    message  = request.data.get("message", "").strip()
+    contacts = request.data.get("contacts", [])               # list of numbers or emails
+
+    if channel not in ("whatsapp", "sms", "email"):
+        return Response({"error": "Invalid channel. Use whatsapp, sms, or email."}, status=status.HTTP_400_BAD_REQUEST)
+    if not message:
+        return Response({"error": "Message cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+    if not contacts:
+        return Response({"error": "No contacts provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+    dealer = request.user.dealer_profile
+
+    # Map channel → required API service key
+    service_map = {"whatsapp": "whatsapp_business", "sms": "twilio", "email": "sendgrid"}
+    service_id  = service_map[channel]
+
+    api_key_obj = DealerAPIKey.objects.filter(dealer=dealer, service=service_id, is_active=True).first()
+    if not api_key_obj:
+        service_labels = {"whatsapp": "WhatsApp Business", "sms": "Twilio SMS", "email": "SendGrid"}
+        return Response(
+            {"error": f"{service_labels[channel]} API key not configured. Add it in Settings → API Keys."},
+            status=status.HTTP_402_PAYMENT_REQUIRED,
+        )
+
+    sent, failed = 0, 0
+    errors = []
+
+    for contact in contacts:
+        contact = contact.strip()
+        if not contact:
+            continue
+        try:
+            if channel == "whatsapp":
+                from api.notifications import send_whatsapp_message
+                send_whatsapp_message(to=contact, message=message, api_key=api_key_obj.api_key)
+            elif channel == "sms":
+                from api.notifications import send_sms_message
+                send_sms_message(to=contact, message=message,
+                                 account_sid=api_key_obj.api_key, auth_token=api_key_obj.api_secret)
+            elif channel == "email":
+                from api.emails import send_marketing_email
+                send_marketing_email(to=contact, subject=f"Message from {dealer.dealer_name}",
+                                     body=message, api_key=api_key_obj.api_key)
+            sent += 1
+        except Exception as e:
+            failed += 1
+            errors.append(str(e))
+
+    return Response({
+        "sent": sent,
+        "failed": failed,
+        "total": len(contacts),
+        "errors": errors[:5],  # Return first 5 errors for diagnosis
+        "message": f"Campaign sent to {sent} of {len(contacts)} contacts.",
     })
 
 
