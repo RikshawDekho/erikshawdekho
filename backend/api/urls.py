@@ -71,7 +71,7 @@ urlpatterns = [
     path('platform/settings/',                     views.platform_settings,        name='platform-settings'),
 
     # ── Admin extended ─────────────────────────────────────────────
-    path('admin/settings/',                        views.admin_update_settings,    name='admin-update-settings'),
-    path('admin/users/<int:user_id>/toggle-active/', views.admin_toggle_user_active, name='admin-toggle-user-active'),
-    path('admin/create-user/',                     views.admin_create_user,        name='admin-create-user'),
+    path('admin-portal/settings/',                              views.admin_update_settings,    name='admin-update-settings'),
+    path('admin-portal/users/<int:user_id>/toggle-active/',     views.admin_toggle_user_active, name='admin-toggle-user-active'),
+    path('admin-portal/create-user/',                           views.admin_create_user,        name='admin-create-user'),
 ]
