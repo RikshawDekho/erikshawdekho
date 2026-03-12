@@ -718,8 +718,20 @@ function AuthPage({ onAuth }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ width: 440, maxWidth: "100%" }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, position: "relative" }}>
+      {/* Language Toggle - Top Right */}
+      <button onClick={() => {
+        const next = localStorage.getItem("erd_lang") === "en" ? "hi" : "en";
+        i18n.changeLanguage(next);
+        localStorage.setItem("erd_lang", next);
+      }} title={localStorage.getItem("erd_lang") === "en" ? "भाषा बदलें हिंदी के लिए" : "Change language to English"}
+        style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", backdropFilter: "blur(5px)", transition: "all 0.2s" }}
+        onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; }}
+        onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}>
+        {localStorage.getItem("erd_lang") === "en" ? "हि" : "EN"}
+      </button>
+
+      <div style={{ width: 440, maxWidth: "100%" }}>>
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>🛺</div>
@@ -1078,10 +1090,18 @@ function Dashboard({ onNavigate }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [error, setError] = useState(null);
   const [doneTaskIds, setDoneTaskIds] = useState(new Set());
 
   useEffect(() => {
-    api.dashboard().then(setData).finally(() => setLoading(false));
+    api.dashboard()
+      .then(setData)
+      .catch(err => {
+        console.error("Dashboard fetch error:", err);
+        setError("Failed to load dashboard. Please refresh the page.");
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const markTaskDone = async (taskId) => {
@@ -1096,7 +1116,15 @@ function Dashboard({ onNavigate }) {
   };
 
   if (loading) return <Spinner />;
-  if (!data) return null;
+  if (error) return (
+    <div style={{ padding: 24, textAlign: "center", color: C.error || "#ef4444" }}>
+      <p>{error}</p>
+      <button onClick={() => window.location.reload()} style={{ marginTop: 16, padding: "8px 16px", background: C.primary, color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>
+        Refresh Page
+      </button>
+    </div>
+  );
+  if (!data) return <Spinner />;
 
   const fuelColors = { electric: C.success, petrol: "#f97316", cng: "#06b6d4", lpg: "#8b5cf6" };
   const plan = data.plan;
@@ -1282,6 +1310,8 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const plan = usePlan();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [error, setError] = useState(null);
   const [stats, setStats] = useState({ total: 0, inStock: 0, sold: 0, lowStock: 0 });
   const [filters, setFilters] = useState({ brand: "", fuel_type: "", stock_status: "", search: "" });
   const [page, setPage] = useState(1);
@@ -1301,19 +1331,26 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     const effectiveFilters = { ...filters, search: debouncedSearch };
     const params = new URLSearchParams({ page, ...Object.fromEntries(Object.entries(effectiveFilters).filter(([, v]) => v)) });
     try {
       const data = await api.vehicles.list(`?${params}`);
       setVehicles(data.results || data);
       setTotalPages(Math.ceil((data.count || (data.results || data).length) / 10));
+    } catch (err) {
+      console.error("Failed to load vehicles:", err);
+      setError("Failed to load vehicles. Please try again.");
     } finally { setLoading(false); }
   }, [page, debouncedSearch, filters.brand, filters.fuel_type, filters.stock_status]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    api.brands().then(d => setBrands(d.results || d));
-    api.dashboard().then(d => setStats({ total: d.total_vehicles, inStock: d.in_stock, sold: 0, lowStock: 0 }));
+    Promise.all([api.brands().catch(() => null), api.dashboard().catch(() => null)])
+      .then(([brandsData, dashData]) => {
+        if (brandsData) setBrands(brandsData.results || brandsData);
+        if (dashData) setStats({ total: dashData.total_vehicles, inStock: dashData.in_stock, sold: 0, lowStock: 0 });
+      });
   }, []);
 
   const setF = k => v => setFilters(p => ({ ...p, [k]: v }));
@@ -1421,7 +1458,18 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   return (
     <div style={{ padding: 24 }}>
-      <PlanListingBanner />
+      {loading && <Spinner />}
+      {error && (
+        <div style={{ padding: 24, textAlign: "center", color: C.error || "#ef4444", background: `${C.error || "#ef4444"}15`, borderRadius: 10, marginBottom: 20 }}>
+          <p>{error}</p>
+          <button onClick={load} style={{ marginTop: 16, padding: "8px 16px", background: C.primary, color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>
+            Try Again
+          </button>
+        </div>
+      )}
+      {!loading && !error && (
+        <>
+          <PlanListingBanner />
       {/* Stats */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
@@ -1621,6 +1669,8 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
           </div>
         </div>
       )}
+        </>
+      )}
     </div>
   );
 }
@@ -1635,6 +1685,8 @@ function Leads({ onNavigate }) {
   const [tab, setTab] = useState("leads"); // "leads" | "enquiries"
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [error, setError] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ customer_name: "", phone: "", email: "", source: "website", status: "new", notes: "", vehicle: "" });
   const [vehicles, setVehicles] = useState([]);
@@ -1654,11 +1706,15 @@ function Leads({ onNavigate }) {
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     const p = new URLSearchParams();
     if (dateFrom) p.set("date_from", dateFrom);
     if (dateTo)   p.set("date_to",   dateTo);
     const qs = p.toString() ? `?${p}` : "";
-    api.leads.list(qs).then(d => setLeads(d.results || d)).finally(() => setLoading(false));
+    api.leads.list(qs)
+      .then(d => setLeads(d.results || d))
+      .catch(err => { console.error("Failed to load leads:", err); setError("Failed to load leads. Please try again."); })
+      .finally(() => setLoading(false));
   }, [dateFrom, dateTo]);
 
   const loadEnquiries = useCallback(() => {
@@ -1671,7 +1727,12 @@ function Leads({ onNavigate }) {
     api.enquiries.list(`?${p}`).then(d => { setEnquiries(d.results || []); setEnquiryTotal(d.count || 0); }).catch(() => {}).finally(() => setEnquiriesLoading(false));
   }, [debouncedEnquirySearch, enquiryDateFrom, enquiryDateTo, enquiryPage]);
 
-  useEffect(() => { load(); api.vehicles.list().then(d => setVehicles(d.results || d)); }, [load]);
+  useEffect(() => {
+    load();
+    api.vehicles.list()
+      .then(d => setVehicles(d.results || d))
+      .catch(err => console.error("Failed to load vehicles:", err));
+  }, [load]);
 
   // Poll enquiries every 30 seconds when on that tab
   useEffect(() => {
@@ -1976,6 +2037,7 @@ function Customers() {
   const C = useC();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", email: "", city: "", address: "", gstin: "" });
   const [search, setSearch] = useState("");
@@ -2354,9 +2416,12 @@ function IntegrationsSection() {
               <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{svc.label}</div>
               <div style={{ fontSize: 12, color: C.textMid, marginBottom: 12 }}>{svc.desc}</div>
               {existing ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 11, color: C.success, fontWeight: 700 }}>✓ Connected</span>
-                  <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: existing.display_name }); }} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Edit</button>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: existing.display_name }); }} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Edit</button>
+                    <button onClick={async () => { if (confirm("Delete this API key?")) { try { await api.dealer.deleteApiKey(existing.id); setKeys(keys.filter(k => k.id !== existing.id)); toast(`${svc.label} deleted`, "success"); } catch { toast("Failed to delete", "error"); } }}} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.danger}44`, background: `${C.danger}10`, cursor: "pointer", fontFamily: "inherit", color: C.danger }}>Delete</button>
+                  </div>
                 </div>
               ) : (
                 <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: "" }); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: `1px dashed ${C.primary}`, background: `${C.primary}08`, color: C.primary, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
@@ -2376,6 +2441,12 @@ function IntegrationsSection() {
           <div style={{ background: C.surface, borderRadius: 16, padding: 24, maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{adding.icon} Connect {adding.label}</div>
             <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>{adding.desc}</div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>Display Name (optional)</div>
+              <input type="text" value={form.display_name} onChange={e => setForm(p => ({ ...p, display_name: e.target.value }))}
+                placeholder="e.g. Production Key, Staging Key"
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
+            </div>
             {adding.fields.map(f => (
               <div key={f} style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{adding.labels[f]}</div>
@@ -2412,6 +2483,7 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({ dealer_name: "", phone: "", city: "", email: "", address: "", description: "" });
   const [editSaving, setEditSaving] = useState(false);
@@ -2694,6 +2766,7 @@ function Reports() {
   const [data, setData] = useState(null);
   const [period, setPeriod] = useState("month");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -3229,12 +3302,29 @@ function BlogPostCard({ post, onDelete }) {
 // ═══════════════════════════════════════════════════════
 // SUPPORT PAGE
 // ═══════════════════════════════════════════════════════
-const SP_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "1800-XXX-XXXX";
-const SP_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || "support@erikshawdekho.com";
-const SP_WA    = import.meta.env.VITE_SUPPORT_WA    || "919876543210";
 
 function SupportPage() {
   const C = useC();
+  const [settings, setSettings] = useState({
+    support_phone: "1800-XXX-XXXX",
+    support_email: "support@erikshawdekho.com",
+    support_whatsapp: "919876543210",
+  });
+
+  useEffect(() => {
+    apiFetch("/platform/settings/")
+      .then(data => {
+        setSettings({
+          support_phone: data.support_phone || "1800-XXX-XXXX",
+          support_email: data.support_email || "support@erikshawdekho.com",
+          support_whatsapp: data.support_whatsapp || "919876543210",
+        });
+      })
+      .catch(err => {
+        console.error("Failed to load support settings:", err);
+      });
+  }, []);
+
   return (
     <div className="erd-page-pad" style={{ padding: 24, maxWidth: 900 }}>
       <div style={{ marginBottom: 28 }}>
@@ -3250,9 +3340,9 @@ function SupportPage() {
           <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>For showroom owners and dealers on our platform</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {[
-              { icon: "📞", label: "Call Us", value: SP_PHONE, action: () => window.open(`tel:${SP_PHONE}`) },
-              { icon: "💬", label: "WhatsApp", value: "Chat with us", action: () => window.open(`https://wa.me/${SP_WA}?text=Hi+I+need+help+with+my+dealer+account`) },
-              { icon: "✉️", label: "Email", value: SP_EMAIL, action: () => window.open(`mailto:${SP_EMAIL}?subject=Dealer Support`) },
+              { icon: "📞", label: "Call Us", value: settings.support_phone, action: () => window.open(`tel:${settings.support_phone}`) },
+              { icon: "💬", label: "WhatsApp", value: "Chat with us", action: () => window.open(`https://wa.me/${settings.support_whatsapp.replace(/\D/g,"")}?text=Hi+I+need+help+with+my+dealer+account`) },
+              { icon: "✉️", label: "Email", value: settings.support_email, action: () => window.open(`mailto:${settings.support_email}?subject=Dealer Support`) },
             ].map(({ icon, label, value, action }) => (
               <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
                 <span style={{ fontSize: 20 }}>{icon}</span>
@@ -3275,9 +3365,9 @@ function SupportPage() {
           <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>For eRickshaw drivers and buyers using the platform</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {[
-              { icon: "📞", label: "Driver Helpline", value: SP_PHONE, action: () => window.open(`tel:${SP_PHONE}`) },
-              { icon: "💬", label: "WhatsApp Help", value: "Get vehicle advice", action: () => window.open(`https://wa.me/${SP_WA}?text=Hi+I+need+help+finding+an+eRickshaw`) },
-              { icon: "✉️", label: "Email Support", value: SP_EMAIL, action: () => window.open(`mailto:${SP_EMAIL}?subject=Driver Support`) },
+              { icon: "📞", label: "Driver Helpline", value: settings.support_phone, action: () => window.open(`tel:${settings.support_phone}`) },
+              { icon: "💬", label: "WhatsApp Help", value: "Get vehicle advice", action: () => window.open(`https://wa.me/${settings.support_whatsapp.replace(/\D/g,"")}?text=Hi+I+need+help+finding+an+eRickshaw`) },
+              { icon: "✉️", label: "Email Support", value: settings.support_email, action: () => window.open(`mailto:${settings.support_email}?subject=Driver Support`) },
             ].map(({ icon, label, value, action }) => (
               <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
                 <span style={{ fontSize: 20 }}>{icon}</span>
@@ -3321,7 +3411,7 @@ function SupportPage() {
           <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>Need Pro Plan Assistance?</div>
           <div style={{ fontSize: 13, color: C.textMid, marginTop: 4 }}>Our team activates your Early Dealer Plan within minutes during business hours.</div>
         </div>
-        <Btn label="⭐ Upgrade to Early Dealer — ₹5000/yr" color={C.primary} onClick={() => window.open(`https://wa.me/${SP_WA}?text=Hi+I+want+to+upgrade+to+Early+Dealer+Plan`)} />
+        <Btn label="⭐ Upgrade to Early Dealer — ₹5000/yr" color={C.primary} onClick={() => window.open(`https://wa.me/${settings.support_whatsapp.replace(/\D/g,"")}?text=Hi+I+want+to+upgrade+to+Early+Dealer+Plan`)} />
       </div>
     </div>
   );
@@ -3355,18 +3445,21 @@ function MarketingPage() {
   const [contacts, setContacts] = useState(""); // newline-separated numbers/emails
   const [variables, setVariables] = useState({ name: "", phone: "", dealer_name: "", amount: "", model: "", address: "" });
   const [sending, setSending] = useState(false);
-  const [apiKeys, setApiKeys] = useState({ twilio: false, whatsapp_business: false, sendgrid: false });
+  const [apiKeys, setApiKeys] = useState({ twilio: false, whatsapp_business: false, gmail_smtp: false });
 
   // Check configured API keys
   useEffect(() => {
-    api.settings().then(d => {
-      const keys = d.api_keys || [];
-      setApiKeys({
-        twilio: keys.some(k => k.service === "twilio" && k.is_active),
-        whatsapp_business: keys.some(k => k.service === "whatsapp_business" && k.is_active),
-        sendgrid: keys.some(k => k.service === "sendgrid" && k.is_active),
+    api.dealer.apiKeys()
+      .then(keys => {
+        setApiKeys({
+          twilio: keys.some(k => k.service === "twilio" && k.is_active),
+          whatsapp_business: keys.some(k => k.service === "whatsapp_business" && k.is_active),
+          gmail_smtp: keys.some(k => k.service === "gmail_smtp" && k.is_active),
+        });
+      })
+      .catch(err => {
+        console.error("Failed to fetch API keys:", err);
       });
-    }).catch(() => {});
   }, []);
 
   const templates = MARKETING_TEMPLATES[tab] || [];
@@ -3391,9 +3484,9 @@ function MarketingPage() {
   const handleSend = async () => {
     if (!templateText.trim()) { toast("Please select or write a template.", "warning"); return; }
     if (contactList.length === 0) { toast("Please add at least one contact.", "warning"); return; }
-    const apiKeyNeeded = tab === "email" ? "sendgrid" : tab === "whatsapp" ? "whatsapp_business" : "twilio";
+    const apiKeyNeeded = tab === "email" ? "gmail_smtp" : tab === "whatsapp" ? "whatsapp_business" : "twilio";
     if (!apiKeys[apiKeyNeeded]) {
-      toast(`Connect your ${tab === "email" ? "SendGrid" : tab === "whatsapp" ? "WhatsApp Business" : "Twilio"} API key in Settings → API Keys first.`, "warning");
+      toast(`Connect your ${tab === "email" ? "Gmail SMTP" : tab === "whatsapp" ? "WhatsApp Business" : "Twilio"} API key in Settings → API Keys first.`, "warning");
       return;
     }
     setSending(true);
@@ -3414,7 +3507,7 @@ function MarketingPage() {
   const tabInfo = {
     whatsapp: { icon: "💬", label: "WhatsApp", apiKey: "whatsapp_business", apiLabel: "WhatsApp Business API" },
     sms:      { icon: "📱", label: "SMS",       apiKey: "twilio",           apiLabel: "Twilio SMS API" },
-    email:    { icon: "✉️", label: "Email",      apiKey: "sendgrid",         apiLabel: "SendGrid Email API" },
+    email:    { icon: "✉️", label: "Email",      apiKey: "gmail_smtp",       apiLabel: "Gmail SMTP API" },
   };
   const info = tabInfo[tab];
   const hasKey = apiKeys[info.apiKey];
@@ -3801,6 +3894,7 @@ function Marketplace() {
   const toast = useToast();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState({ fuel_type: "", search: "", city: "" });
   const [detailVehicle, setDetailVehicle] = useState(null);
   const [cityFilter, setCityFilter] = useState("");
@@ -3949,6 +4043,7 @@ function PlansPage({ onUpgrade }) {
   const C = useC();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     api.dashboard().then(setData).finally(() => setLoading(false));
@@ -4676,9 +4771,25 @@ function AdminPortal({ user, onLogout }) {
 // ═══════════════════════════════════════════════════════
 function LandingPage({ onDealer, onMarketplace }) {
   const C = useC();
+  const [lang, setLang] = useState(() => localStorage.getItem("erd_lang") || "en");
+
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg,${C.primaryD} 0%,${C.primary} 45%,#1a6b44 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Nunito','Segoe UI',sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg,${C.primaryD} 0%,${C.primary} 45%,#1a6b44 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Nunito','Segoe UI',sans-serif", position: "relative" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
+
+      {/* Language Toggle - Top Right */}
+      <button onClick={() => {
+        const next = lang === "en" ? "hi" : "en";
+        i18n.changeLanguage(next);
+        localStorage.setItem("erd_lang", next);
+        setLang(next);
+      }} title={lang === "en" ? "भाषा बदलें हिंदी के लिए" : "Change language to English"}
+        style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", backdropFilter: "blur(5px)", transition: "all 0.2s" }}
+        onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; }}
+        onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}>
+        {lang === "en" ? "हि" : "EN"}
+      </button>
+
       {/* Brand */}
       <div style={{ textAlign: "center", marginBottom: 48, color: "#fff" }}>
         <div style={{ fontSize: 56, marginBottom: 12 }}>🛺</div>
@@ -4746,6 +4857,7 @@ function PublicLearnSection() {
   const [videos, setVideos] = useState([]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [tab, setTab] = useState("videos");
   const [watchVideo, setWatchVideo] = useState(null);
   const [showLeadForm, setShowLeadForm] = useState(false);
@@ -5126,7 +5238,7 @@ export default function App() {
 
             <Sidebar page={page} setPage={setPage} dealer={dealer} onLogout={handleLogout} />
 
-            <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }} {...swipeHandlers}>
+            <div className="erd-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
               <Topbar dealer={dealer} page={page} onAddNew={() => setShowAddVehicle(true)} onProfile={() => setPage("account")} onBell={() => setPage("leads")} />
               {!dealerIsVerified && (
                 <div style={{ background: `${C_LIVE.warning}15`, borderBottom: `1px solid ${C_LIVE.warning}33`, padding: "10px 24px", fontSize: 13, color: C_LIVE.warning, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>

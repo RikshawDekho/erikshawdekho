@@ -187,73 +187,89 @@ def me(request):
 # ─── DASHBOARD ────────────────────────────────────────────────────
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def dashboard(request):
-    dealer = request.user.dealer_profile
-    now = timezone.now()
-    month_start = now.replace(day=1, hour=0, minute=0, second=0)
+    try:
+        dealer = request.user.dealer_profile
+    except (AttributeError, DealerProfile.DoesNotExist):
+        return Response(
+            {'error': 'Only dealer users can access dashboard'},
+            status=403
+        )
 
-    vehicles = Vehicle.objects.filter(dealer=dealer, is_active=True)
-    total_v = vehicles.count()
-    in_stock = vehicles.filter(stock_status='in_stock').count()
-    active_leads = Lead.objects.filter(dealer=dealer, status__in=['new','interested','follow_up']).count()
-    new_sales = Sale.objects.filter(dealer=dealer, sale_date__gte=month_start).count()
-    pending_tasks = Task.objects.filter(dealer=dealer, is_completed=False).count()
+    try:
+        now = timezone.now()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0)
 
-    _line_total = ExpressionWrapper(F('sale_price') * F('quantity'), output_field=DecimalField(max_digits=14, decimal_places=2))
+        vehicles = Vehicle.objects.filter(dealer=dealer, is_active=True)
+        total_v = vehicles.count()
+        in_stock = vehicles.filter(stock_status='in_stock').count()
+        active_leads = Lead.objects.filter(dealer=dealer, status__in=['new','interested','follow_up']).count()
+        new_sales = Sale.objects.filter(dealer=dealer, sale_date__gte=month_start).count()
+        pending_tasks = Task.objects.filter(dealer=dealer, is_completed=False).count()
 
-    monthly_rev = Sale.objects.filter(
-        dealer=dealer, sale_date__gte=month_start
-    ).annotate(line_total=_line_total).aggregate(total=Sum('line_total'))['total'] or 0
+        _line_total = ExpressionWrapper(F('sale_price') * F('quantity'), output_field=DecimalField(max_digits=14, decimal_places=2))
 
-    fuel_q = vehicles.values('fuel_type').annotate(count=Count('id'))
-    fuel_breakdown = {item['fuel_type']: item['count'] for item in fuel_q}
+        monthly_rev = Sale.objects.filter(
+            dealer=dealer, sale_date__gte=month_start
+        ).annotate(line_total=_line_total).aggregate(total=Sum('line_total'))['total'] or 0
 
-    recent_leads = Lead.objects.filter(dealer=dealer).order_by('-created_at')[:5]
-    upcoming_deliveries = Sale.objects.filter(
-        dealer=dealer, is_delivered=False, delivery_date__gte=date.today()
-    ).order_by('delivery_date')[:5]
-    upcoming_tasks = Task.objects.filter(
-        dealer=dealer, is_completed=False
-    ).order_by('due_date')[:5]
+        fuel_q = vehicles.values('fuel_type').annotate(count=Count('id'))
+        fuel_breakdown = {item['fuel_type']: item['count'] for item in fuel_q}
 
-    # Sales chart last 7 days
-    sales_chart = []
-    for i in range(6, -1, -1):
-        day = now - timedelta(days=i)
-        day_start = day.replace(hour=0, minute=0, second=0)
-        day_end = day.replace(hour=23, minute=59, second=59)
-        day_sales = Sale.objects.filter(
-            dealer=dealer, sale_date__range=(day_start, day_end)
-        ).annotate(line_total=_line_total).aggregate(total=Sum('line_total'), count=Count('id'))
-        sales_chart.append({
-            'date': day.strftime('%b %d'),
-            'revenue': float(day_sales['total'] or 0),
-            'count': day_sales['count'] or 0
-        })
+        recent_leads = Lead.objects.filter(dealer=dealer).order_by('-created_at')[:5]
+        upcoming_deliveries = Sale.objects.filter(
+            dealer=dealer, is_delivered=False, delivery_date__gte=date.today()
+        ).order_by('delivery_date')[:5]
+        upcoming_tasks = Task.objects.filter(
+            dealer=dealer, is_completed=False
+        ).order_by('due_date')[:5]
 
-    return Response({
-        'total_vehicles': total_v,
-        'in_stock': in_stock,
-        'active_leads': active_leads,
-        'new_sales': new_sales,
-        'pending_tasks': pending_tasks,
-        'monthly_revenue': float(monthly_rev),
-        'fuel_breakdown': fuel_breakdown,
-        'recent_leads': LeadSerializer(recent_leads, many=True).data,
-        'upcoming_deliveries': SaleSerializer(upcoming_deliveries, many=True).data,
-        'upcoming_tasks': TaskSerializer(upcoming_tasks, many=True).data,
-        'sales_chart': sales_chart,
-        'is_verified': dealer.is_verified,
-        'plan': {
-            'type': dealer.plan_type,
-            'is_active': dealer.plan_is_active,
-            'days_remaining': dealer.plan_days_remaining,
-            'expires_at': dealer.plan_expires_at.isoformat() if dealer.plan_expires_at else None,
+        # Sales chart last 7 days
+        sales_chart = []
+        for i in range(6, -1, -1):
+            day = now - timedelta(days=i)
+            day_start = day.replace(hour=0, minute=0, second=0)
+            day_end = day.replace(hour=23, minute=59, second=59)
+            day_sales = Sale.objects.filter(
+                dealer=dealer, sale_date__range=(day_start, day_end)
+            ).annotate(line_total=_line_total).aggregate(total=Sum('line_total'), count=Count('id'))
+            sales_chart.append({
+                'date': day.strftime('%b %d'),
+                'revenue': float(day_sales['total'] or 0),
+                'count': day_sales['count'] or 0
+            })
+
+        return Response({
+            'total_vehicles': total_v,
+            'in_stock': in_stock,
+            'active_leads': active_leads,
+            'new_sales': new_sales,
+            'pending_tasks': pending_tasks,
+            'monthly_revenue': float(monthly_rev),
+            'fuel_breakdown': fuel_breakdown,
+            'recent_leads': LeadSerializer(recent_leads, many=True).data,
+            'upcoming_deliveries': SaleSerializer(upcoming_deliveries, many=True).data,
+            'upcoming_tasks': TaskSerializer(upcoming_tasks, many=True).data,
+            'sales_chart': sales_chart,
             'is_verified': dealer.is_verified,
-            'listing_limit': dealer.plan.listing_limit if dealer.plan else 3,
-            'listing_count': Vehicle.objects.filter(dealer=dealer, is_active=True).count(),
-        },
-    })
+            'plan': {
+                'type': dealer.plan_type,
+                'is_active': dealer.plan_is_active,
+                'days_remaining': dealer.plan_days_remaining,
+                'expires_at': dealer.plan_expires_at.isoformat() if dealer.plan_expires_at else None,
+                'is_verified': dealer.is_verified,
+                'listing_limit': dealer.plan.listing_limit if dealer.plan else 3,
+                'listing_count': Vehicle.objects.filter(dealer=dealer, is_active=True).count(),
+            },
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {'error': f'Failed to load dashboard: {str(e)}'},
+            status=500
+        )
 
 
 # ─── VEHICLES ─────────────────────────────────────────────────────
@@ -381,6 +397,12 @@ class SaleViewSet(viewsets.ModelViewSet):
             raise ValidationError({'vehicle': f'Insufficient stock. Available: {vehicle.stock_quantity}'})
         inv_no = 'INV-' + uuid.uuid4().hex[:8].upper()
         sale = serializer.save(dealer=dealer, invoice_number=inv_no)
+
+        # Auto-mark linked lead as converted
+        if sale.lead:
+            sale.lead.status = 'converted'
+            sale.lead.save(update_fields=['status'])
+
         # Decrement stock
         vehicle.stock_quantity -= sale.quantity
         vehicle.save()
@@ -726,16 +748,25 @@ def public_enquiry(request):
             lead_notes = f"Enquired about {vehicle_label}. {lead_notes}".strip()
         elif city:
             lead_notes = f"General enquiry from {city}. {lead_notes}".strip()
-        Lead.objects.get_or_create(
+
+        # Prevent duplicate leads: include vehicle in lookup to create separate leads per vehicle
+        lead, created = Lead.objects.get_or_create(
             dealer=dealer,
             customer_name=customer_name,
             phone=phone,
+            vehicle=vehicle,  # Include vehicle in lookup to prevent duplicates
             defaults={
                 'source': 'marketplace',
                 'notes': lead_notes,
                 'status': 'new',
+                'email': email,
             }
         )
+
+        # If lead existed, update notes to include the new enquiry details
+        if not created and notes and notes not in lead.notes:
+            lead.notes = f"{lead.notes}\n---\n{lead_notes}"
+            lead.save(update_fields=['notes'])
 
     # Notify all matching dealers — fire-and-forget
     vehicle_name = str(vehicle) if vehicle else 'eRickshaw (general enquiry)'
@@ -1222,9 +1253,11 @@ def upgrade_plan(request):
 # ─── PASSWORD RESET ───────────────────────────────────────────────────────────
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAuthenticated])
 def admin_reset_dealer_password(request, dealer_id):
     """Super admin resets a dealer's password. Returns temp password if none provided."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin only'}, status=403)
     try:
         dealer = DealerProfile.objects.get(id=dealer_id)
     except DealerProfile.DoesNotExist:
@@ -1316,7 +1349,7 @@ def reset_password_confirm(request):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def admin_toggle_user_active(request, user_id):
-    if not request.user.is_superuser:
+    if not _is_admin(request.user):
         return Response({"error": "Admin only"}, status=403)
     try:
         target = User.objects.get(pk=user_id)
@@ -1333,7 +1366,7 @@ def admin_toggle_user_active(request, user_id):
 @permission_classes([IsAuthenticated])
 def admin_create_user(request):
     """Admin can create dealer, driver, or staff accounts."""
-    if not request.user.is_superuser:
+    if not _is_admin(request.user):
         return Response({"error": "Admin only"}, status=403)
 
     user_type = request.data.get("user_type", "dealer")  # dealer, staff
@@ -1460,12 +1493,12 @@ def marketing_send(request):
     dealer = request.user.dealer_profile
 
     # Map channel → required API service key
-    service_map = {"whatsapp": "whatsapp_business", "sms": "twilio", "email": "sendgrid"}
+    service_map = {"whatsapp": "whatsapp_business", "sms": "twilio", "email": "gmail_smtp"}
     service_id  = service_map[channel]
 
     api_key_obj = DealerAPIKey.objects.filter(dealer=dealer, service=service_id, is_active=True).first()
     if not api_key_obj:
-        service_labels = {"whatsapp": "WhatsApp Business", "sms": "Twilio SMS", "email": "SendGrid"}
+        service_labels = {"whatsapp": "WhatsApp Business", "sms": "Twilio SMS", "email": "Gmail SMTP"}
         return Response(
             {"error": f"{service_labels[channel]} API key not configured. Add it in Settings → API Keys."},
             status=status.HTTP_402_PAYMENT_REQUIRED,
@@ -1507,7 +1540,7 @@ def marketing_send(request):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def admin_update_settings(request):
-    if not request.user.is_superuser:
+    if not _is_admin(request.user):
         return Response({"error": "Admin only"}, status=403)
     s = PlatformSettings.get()
     for field in ["support_phone", "support_whatsapp", "support_email", "support_name", "homepage_intro_video_url"]:
