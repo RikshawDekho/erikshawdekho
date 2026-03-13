@@ -5092,6 +5092,7 @@ export default function App() {
     return d?.is_verified ?? true;
   });
   const [platformSettings, setPlatformSettings] = useState({ support_whatsapp: "919876543210", support_email: "support@erikshawdekho.com", support_phone: "1800-XXX-XXXX" });
+  const [freeTier, setFreeTier] = useState(null); // free tier usage data
 
   // Fetch platform settings once on mount
   useEffect(() => {

@@ -18,7 +18,20 @@ const FUEL_COLOR = { electric: "#16a34a", petrol: "#ea580c", cng: "#0891b2", lpg
 
 function fmtINR(n) { return `₹${Number(n || 0).toLocaleString("en-IN")}`; }
 
-function VehicleCard({ v }) {
+/* ── Star Rating ─────────────────────────────────── */
+function StarRating({ rating, size = 13 }) {
+  if (!rating) return <span style={{ fontSize: size - 2, color: "#9ca3af" }}>No reviews</span>;
+  const r = Math.round(rating);
+  return (
+    <span style={{ fontSize: size, color: "#f59e0b" }}>
+      {"★".repeat(r)}{"☆".repeat(5 - r)}
+      <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 4 }}>{Number(rating).toFixed(1)}</span>
+    </span>
+  );
+}
+
+/* ── Vehicle Card ────────────────────────────────── */
+function VehicleCard({ v, onEnquire }) {
   return (
     <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.08)", border: "1px solid #e5e7eb", transition: "transform 0.2s, box-shadow 0.2s", cursor: "pointer" }}
       onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
@@ -40,16 +53,23 @@ function VehicleCard({ v }) {
             <div style={{ fontSize: 11, color: "#9ca3af" }}>Starting at</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: G }}>{fmtINR(v.price)}</div>
           </div>
-          <Link to="/marketplace" style={{ background: G, color: "#fff", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: "none" }}>
-            जानें →
-          </Link>
+          {onEnquire ? (
+            <button onClick={() => onEnquire(v)} style={{ background: G, color: "#fff", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+              Enquiry भेजें
+            </button>
+          ) : (
+            <Link to="/marketplace" style={{ background: G, color: "#fff", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: "none" }}>
+              जानें →
+            </Link>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function LeadForm() {
+/* ── Lead / Enquiry Form ─────────────────────────── */
+function LeadForm({ dealerId, dealerName, vehicleId }) {
   const [form, setForm] = useState({ name: "", phone: "", city: "", model: "" });
   const [sent, setSent] = useState(false);
   const [err, setErr]   = useState("");
@@ -58,10 +78,13 @@ function LeadForm() {
     e.preventDefault();
     setErr("");
     try {
+      const body = { customer_name: form.name, phone: form.phone, city: form.city, notes: form.model ? `Model preference: ${form.model}` : "" };
+      if (dealerId) body.dealer = dealerId;
+      if (vehicleId) body.vehicle = vehicleId;
       const res = await fetch(`${API}/public/enquiry/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer_name: form.name, phone: form.phone, city: form.city, notes: form.model ? `Model preference: ${form.model}` : "" }),
+        body: JSON.stringify(body),
       });
       if (res.ok) { setSent(true); }
       else { setErr("कुछ गलत हुआ। फिर कोशिश करें।"); }
@@ -72,7 +95,9 @@ function LeadForm() {
     <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 12, padding: 24, textAlign: "center" }}>
       <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
       <div style={{ fontWeight: 700, color: G, fontSize: 16 }}>धन्यवाद! आपकी enquiry मिल गई।</div>
-      <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>हमारे dealer आपसे 24 घंटों में contact करेंगे।</div>
+      <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>
+        {dealerName ? `${dealerName} आपसे 24 घंटों में contact करेंगे।` : "हमारे dealer आपसे 24 घंटों में contact करेंगे।"}
+      </div>
     </div>
   );
 
@@ -94,14 +119,107 @@ function LeadForm() {
   );
 }
 
+/* ── Dealer Query Modal (for brand-based dealer selection) ─── */
+function DealerQueryModal({ brand, dealers, onClose }) {
+  const [selectedDealer, setSelectedDealer] = useState(null);
+
+  if (selectedDealer) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+        onClick={e => e.target === e.currentTarget && onClose()}>
+        <div style={{ background: "#fff", borderRadius: 16, width: 480, maxWidth: "100%", padding: 28, maxHeight: "90vh", overflowY: "auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>Enquiry — {selectedDealer.dealer_name}</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>📍 {selectedDealer.city} · ⭐ {selectedDealer.avg_rating || "New"} · {selectedDealer.vehicle_count} vehicles</div>
+            </div>
+            <button onClick={() => setSelectedDealer(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#9ca3af" }}>←</button>
+          </div>
+          <LeadForm dealerId={selectedDealer.id} dealerName={selectedDealer.dealer_name} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fff", borderRadius: 16, width: 540, maxWidth: "100%", padding: 28, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 17, color: "#111827" }}>Select a Dealer — {brand}</div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>Sorted by rating & reviews</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#9ca3af" }}>✕</button>
+        </div>
+        {dealers.length === 0 ? (
+          <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No dealers found for this brand.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {dealers.map(d => (
+              <div key={d.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", transition: "all 0.15s" }}
+                onClick={() => setSelectedDealer(d)}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = G; e.currentTarget.style.background = "#f0fdf4"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.background = "#fff"; }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{d.dealer_name}</div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>📍 {d.city}{d.state ? `, ${d.state}` : ""}</div>
+                  <div style={{ marginTop: 4 }}><StarRating rating={d.avg_rating} /></div>
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>{d.vehicle_count} vehicles · {d.review_count || 0} reviews</div>
+                </div>
+                <button style={{ background: G, color: "#fff", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                  Send Query →
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Featured Product Enquiry Modal ──────────────── */
+function FeaturedEnquiryModal({ vehicle, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fff", borderRadius: 16, width: 480, maxWidth: "100%", padding: 28 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>{vehicle.brand_name} {vehicle.model_name}</div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>{fmtINR(vehicle.price)} · {vehicle.dealer_city || "India"}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#9ca3af" }}>✕</button>
+        </div>
+        <LeadForm dealerId={vehicle.dealer_id} dealerName={vehicle.dealer_name} vehicleId={vehicle.id} />
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [vehicles, setVehicles] = useState([]);
   const [stats, setStats]       = useState({ dealer_count: 0, vehicle_count: 0, city_count: 0 });
+  const [brands, setBrands]     = useState([]);
+  const [selectedBrand, setSelectedBrand] = useState(null);
+  const [brandDealers, setBrandDealers]   = useState([]);
+  const [brandLoading, setBrandLoading]   = useState(false);
+  const [enquireVehicle, setEnquireVehicle] = useState(null);
 
   useEffect(() => {
     publicFetch("/marketplace/?featured=true").then(d => d?.results && setVehicles(d.results.slice(0, 6)));
     publicFetch("/stats/").then(d => d && setStats(d));
+    publicFetch("/brands/").then(d => { if (Array.isArray(d)) setBrands(d); else if (d?.results) setBrands(d.results); });
   }, []);
+
+  const handleBrandSelect = async (brand) => {
+    setBrandLoading(true);
+    setSelectedBrand(brand.name);
+    const data = await publicFetch(`/public/dealers-by-brand/?brand=${encodeURIComponent(brand.name)}`);
+    setBrandDealers(data?.results || []);
+    setBrandLoading(false);
+  };
 
   return (
     <div style={{ fontFamily: "'Inter', 'Nunito', sans-serif", background: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -153,6 +271,51 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── PROFILE SELECTION (Customer / Dealer / Financer) ── */}
+      <section style={{ padding: "48px 24px", maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+        <h2 style={{ textAlign: "center", fontSize: "clamp(20px,3vw,28px)", fontWeight: 800, color: "#111827", marginBottom: 8 }}>आप कौन हैं?</h2>
+        <p style={{ textAlign: "center", color: "#6b7280", marginBottom: 32, fontSize: 14 }}>अपना profile चुनें और dedicated ecosystem access करें</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
+          {[
+            { icon: "🛺", title: "Customer / Buyer", desc: "E-Rickshaw compare करें, best pricing पाएँ, nearest dealer खोजें", link: "/marketplace", color: G, label: "Browse Vehicles →" },
+            { icon: "🏪", title: "Dealer / Showroom", desc: "अपनी showroom manage करें, leads track करें, invoice generate करें", link: "/dashboard", color: D, label: "Dealer Login →" },
+            { icon: "🏦", title: "Financer / NBFC", desc: "E-Rickshaw loans offer करें, dealers से connect हों, documents upload करें", link: "/financer", color: "#7c3aed", label: "Financer Portal →" },
+          ].map(({ icon, title, desc, link, color, label }) => (
+            <Link key={title} to={link} style={{ textDecoration: "none", color: "inherit" }}>
+              <div style={{ background: "#fff", borderRadius: 16, padding: 28, border: "2px solid #e5e7eb", textAlign: "center", transition: "all 0.2s", cursor: "pointer" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = `0 12px 32px ${color}20`; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "none"; }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>{icon}</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: "#111827", marginBottom: 8 }}>{title}</div>
+                <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.7, marginBottom: 16 }}>{desc}</div>
+                <span style={{ background: color, color: "#fff", padding: "10px 24px", borderRadius: 10, fontSize: 14, fontWeight: 700, display: "inline-block" }}>{label}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ── BRAND CATEGORY SELECTOR → DEALER QUERY ────── */}
+      {brands.length > 0 && (
+        <section style={{ background: "#f9fafb", padding: "48px 24px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <h2 style={{ textAlign: "center", fontSize: "clamp(18px,3vw,26px)", fontWeight: 800, color: "#111827", marginBottom: 8 }}>Brand से Dealer खोजें</h2>
+            <p style={{ textAlign: "center", color: "#6b7280", marginBottom: 28, fontSize: 14 }}>Brand select करें → verified dealers देखें → enquiry भेजें</p>
+            <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
+              {brands.map(b => (
+                <button key={b.id} onClick={() => handleBrandSelect(b)}
+                  style={{ background: "#fff", border: "2px solid #e5e7eb", padding: "12px 22px", borderRadius: 12, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", color: "#111827" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = G; e.currentTarget.style.background = "#f0fdf4"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.background = "#fff"; }}>
+                  {b.logo && <img src={b.logo} alt="" style={{ width: 20, height: 20, objectFit: "contain", marginRight: 6, verticalAlign: "middle" }} />}
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ── HOW IT WORKS ─────────────────────────────────── */}
       <section style={{ padding: "56px 24px", maxWidth: 1100, margin: "0 auto", width: "100%" }}>
         <h2 style={{ textAlign: "center", fontSize: "clamp(20px,3vw,28px)", fontWeight: 800, color: "#111827", marginBottom: 8 }}>यह कैसे काम करता है?</h2>
@@ -173,7 +336,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── FEATURED VEHICLES ────────────────────────────── */}
+      {/* ── FEATURED VEHICLES (with enquiry) ──────────────── */}
       {vehicles.length > 0 && (
         <section style={{ padding: "0 24px 56px", maxWidth: 1100, margin: "0 auto", width: "100%" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
@@ -184,7 +347,7 @@ export default function HomePage() {
             <Link to="/marketplace" style={{ color: G, fontWeight: 600, fontSize: 14, textDecoration: "none" }}>सभी देखें →</Link>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-            {vehicles.map(v => <VehicleCard key={v.id} v={v} />)}
+            {vehicles.map(v => <VehicleCard key={v.id} v={v} onEnquire={setEnquireVehicle} />)}
           </div>
         </section>
       )}
@@ -228,6 +391,14 @@ export default function HomePage() {
       </section>
 
       <Footer />
+
+      {/* ── MODALS ────────────────────────────────────────── */}
+      {selectedBrand && !brandLoading && (
+        <DealerQueryModal brand={selectedBrand} dealers={brandDealers} onClose={() => { setSelectedBrand(null); setBrandDealers([]); }} />
+      )}
+      {enquireVehicle && (
+        <FeaturedEnquiryModal vehicle={enquireVehicle} onClose={() => setEnquireVehicle(null)} />
+      )}
     </div>
   );
 }

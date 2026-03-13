@@ -38,6 +38,15 @@ export default function Navbar() {
 
           {/* CTA */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Global Refresh Button */}
+            <button onClick={() => { if ('caches' in window) caches.keys().then(names => names.forEach(n => caches.delete(n))); window.location.reload(); }}
+              title="Hard Refresh"
+              style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 16, color: "#6b7280", transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = G; e.currentTarget.style.color = G; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.color = "#6b7280"; }}>
+              🔄
+            </button>
+
             <Link to="/dashboard" style={{
               background: G, color: "#fff", padding: "8px 18px", borderRadius: 8,
               fontWeight: 600, fontSize: 13, textDecoration: "none",

@@ -5,6 +5,7 @@ import App from './App.jsx'
 import HomePage from './pages/HomePage.jsx'
 import MarketplacePage from './pages/MarketplacePage.jsx'
 import DealerDirectoryPage from './pages/DealerDirectoryPage.jsx'
+import FinancerPage from './pages/FinancerPage.jsx'
 
 // Register service worker for PWA offline support
 if ('serviceWorker' in navigator) {
