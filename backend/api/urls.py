@@ -77,4 +77,19 @@ urlpatterns = [
     path('admin-portal/settings/',                              views.admin_update_settings,    name='admin-update-settings'),
     path('admin-portal/users/<int:user_id>/toggle-active/',     views.admin_toggle_user_active, name='admin-toggle-user-active'),
     path('admin-portal/create-user/',                           views.admin_create_user,        name='admin-create-user'),
+
+    # ── Financer ecosystem ─────────────────────────────────────────
+    path('auth/register/financer/',     views.register_financer,      name='register-financer'),
+    path('auth/register/customer/',     views.register_customer,      name='register-customer'),
+    path('financer/profile/',           views.financer_profile,       name='financer-profile'),
+    path('financer/documents/',         views.financer_documents,     name='financer-documents'),
+    path('public/financers/',           views.public_financers,       name='public-financers'),
+
+    # ── Public vehicle detail & comparison ─────────────────────────
+    path('public/vehicles/<int:vehicle_id>/', views.vehicle_detail_public, name='vehicle-detail-public'),
+    path('public/vehicles/compare/',    views.vehicles_compare,       name='vehicles-compare'),
+    path('public/dealers-by-brand/',    views.dealers_by_brand,       name='dealers-by-brand'),
+
+    # ── Free tier usage ────────────────────────────────────────────
+    path('dealer/free-tier-usage/',     views.free_tier_usage,        name='free-tier-usage'),
 ]

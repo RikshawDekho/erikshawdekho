@@ -4,7 +4,11 @@ from django.contrib.auth.models import User
 from django.db.models import Avg
 from django.utils import timezone
 from datetime import timedelta
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, VideoResource, BlogPost, Plan
+from .models import (
+    DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan,
+    DealerApplication, DealerReview, UserProfile, VideoResource, BlogPost, Plan,
+    FinancerProfile, FinancerDocument, CustomerProfile,
+)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -306,3 +310,109 @@ class PlanSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug', 'price', 'listing_limit', 'priority_ranking',
                   'featured_badge', 'whatsapp_alerts', 'analytics_access',
                   'yearly_subscription', 'max_dealers', 'signups_count', 'is_available', 'is_active']
+
+
+# ─── FINANCER SERIALIZERS ─────────────────────────────────────────
+
+class FinancerProfileSerializer(serializers.ModelSerializer):
+    username = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = FinancerProfile
+        fields = '__all__'
+        extra_kwargs = {'user': {'read_only': True}}
+
+    def get_username(self, obj):
+        return obj.user.username
+
+
+class FinancerDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = FinancerDocument
+        fields = '__all__'
+        extra_kwargs = {'financer': {'read_only': True}}
+
+
+class FinancerRegisterSerializer(serializers.Serializer):
+    email        = serializers.EmailField()
+    password     = serializers.CharField(min_length=8, write_only=True)
+    company_name = serializers.CharField(max_length=200)
+    phone        = serializers.CharField(max_length=15)
+    city         = serializers.CharField(max_length=100, required=False, default='')
+    contact_person = serializers.CharField(max_length=200, required=False, default='')
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Email already registered.")
+        return value.lower()
+
+    def create(self, validated_data):
+        email = validated_data['email']
+        username = email.split('@')[0]
+        base = username
+        n = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base}{n}"
+            n += 1
+        user = User.objects.create_user(
+            username=username, email=email,
+            password=validated_data['password'],
+            first_name=validated_data.get('contact_person', ''),
+        )
+        UserProfile.objects.create(user=user, user_type='financer', phone=validated_data['phone'], city=validated_data.get('city', ''))
+        financer = FinancerProfile.objects.create(
+            user=user,
+            company_name=validated_data['company_name'],
+            phone=validated_data['phone'],
+            email=email,
+            city=validated_data.get('city', ''),
+            contact_person=validated_data.get('contact_person', ''),
+        )
+        return user
+
+
+class CustomerRegisterSerializer(serializers.Serializer):
+    email     = serializers.EmailField()
+    password  = serializers.CharField(min_length=8, write_only=True)
+    full_name = serializers.CharField(max_length=200)
+    phone     = serializers.CharField(max_length=15)
+    city      = serializers.CharField(max_length=100, required=False, default='')
+    pincode   = serializers.CharField(max_length=10, required=False, default='')
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Email already registered.")
+        return value.lower()
+
+    def create(self, validated_data):
+        email = validated_data['email']
+        username = email.split('@')[0]
+        base = username
+        n = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base}{n}"
+            n += 1
+        user = User.objects.create_user(
+            username=username, email=email,
+            password=validated_data['password'],
+            first_name=validated_data['full_name'].split()[0] if validated_data['full_name'] else '',
+            last_name=' '.join(validated_data['full_name'].split()[1:]) if len(validated_data['full_name'].split()) > 1 else '',
+        )
+        UserProfile.objects.create(user=user, user_type='customer', phone=validated_data['phone'], city=validated_data.get('city', ''))
+        CustomerProfile.objects.create(
+            user=user,
+            full_name=validated_data['full_name'],
+            phone=validated_data['phone'],
+            city=validated_data.get('city', ''),
+            pincode=validated_data.get('pincode', ''),
+        )
+        return user
+
+
+class PublicFinancerSerializer(serializers.ModelSerializer):
+    """Public-facing financer info for the financer ecosystem page."""
+    class Meta:
+        model  = FinancerProfile
+        fields = ['id', 'company_name', 'city', 'state', 'interest_rate_min', 'interest_rate_max',
+                  'max_loan_amount', 'min_loan_amount', 'max_tenure_months', 'processing_fee_pct',
+                  'description', 'logo', 'is_verified']

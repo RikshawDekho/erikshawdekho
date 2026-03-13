@@ -12,14 +12,15 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource, BlogPost, DealerAPIKey, PlatformSettings
+from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource, BlogPost, DealerAPIKey, PlatformSettings, FinancerProfile, FinancerDocument, CustomerProfile
 from .serializers import (
     VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
     CustomerSerializer, TaskSerializer, FinanceLoanSerializer, BrandSerializer,
     DealerProfileSerializer, RegisterSerializer, DriverRegisterSerializer,
     DealerApplicationSerializer, DealerReviewSerializer,
     PublicDealerSerializer, PublicVehicleSerializer, VideoResourceSerializer,
-    BlogPostSerializer,
+    BlogPostSerializer, FinancerProfileSerializer, FinancerDocumentSerializer,
+    FinancerRegisterSerializer, CustomerRegisterSerializer, PublicFinancerSerializer,
 )
 
 
@@ -1561,3 +1562,158 @@ def admin_update_settings(request):
             setattr(s, field, request.data[field])
     s.save()
     return Response({"status": "ok"})
+
+
+# ─── FINANCER REGISTRATION & PROFILE ──────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_financer(request):
+    """Register a financer/NBFC account."""
+    throttle = AuthThrottle()
+    if not throttle.allow_request(request, None):
+        return Response({'error': 'Too many requests.'}, status=429)
+    ser = FinancerRegisterSerializer(data=request.data)
+    if ser.is_valid():
+        user = ser.save()
+        financer = user.financer_profile
+        return Response({
+            **_jwt_response(user),
+            'user': {'id': user.id, 'username': user.username, 'email': user.email, 'user_type': 'financer'},
+            'financer': {'id': financer.id, 'company_name': financer.company_name, 'city': financer.city},
+        }, status=201)
+    return Response(ser.errors, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_customer(request):
+    """Register a customer/buyer account."""
+    throttle = AuthThrottle()
+    if not throttle.allow_request(request, None):
+        return Response({'error': 'Too many requests.'}, status=429)
+    ser = CustomerRegisterSerializer(data=request.data)
+    if ser.is_valid():
+        user = ser.save()
+        cust = user.customer_profile
+        return Response({
+            **_jwt_response(user),
+            'user': {'id': user.id, 'username': user.username, 'email': user.email, 'user_type': 'customer'},
+            'customer': {'id': cust.id, 'full_name': cust.full_name, 'city': cust.city},
+        }, status=201)
+    return Response(ser.errors, status=400)
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def financer_profile(request):
+    """Get or update the authenticated financer's profile."""
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+    if request.method == 'PATCH':
+        ser = FinancerProfileSerializer(fp, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            return Response(ser.data)
+        return Response(ser.errors, status=400)
+    return Response(FinancerProfileSerializer(fp).data)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def financer_documents(request):
+    """List or upload documents for financer onboarding."""
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+    if request.method == 'POST':
+        ser = FinancerDocumentSerializer(data=request.data)
+        if ser.is_valid():
+            ser.save(financer=fp)
+            return Response(ser.data, status=201)
+        return Response(ser.errors, status=400)
+    docs = fp.documents.all()
+    return Response(FinancerDocumentSerializer(docs, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_financers(request):
+    """Public list of verified financers for the ecosystem page."""
+    qs = FinancerProfile.objects.filter(is_verified=True).order_by('-created_at')
+    city = request.query_params.get('city', '')
+    if city:
+        qs = qs.filter(city__icontains=city)
+    return Response(PublicFinancerSerializer(qs, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def vehicle_detail_public(request, vehicle_id):
+    """Full public vehicle detail with dealer and specs."""
+    try:
+        v = Vehicle.objects.select_related('dealer', 'brand').get(pk=vehicle_id, is_active=True)
+    except Vehicle.DoesNotExist:
+        return Response({'error': 'Vehicle not found'}, status=404)
+    return Response(PublicVehicleSerializer(v).data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def vehicles_compare(request):
+    """Compare up to 4 vehicles side-by-side."""
+    ids_param = request.query_params.get('ids', '')
+    try:
+        ids = [int(x) for x in ids_param.split(',') if x.strip()][:4]
+    except ValueError:
+        return Response({'error': 'Invalid vehicle IDs'}, status=400)
+    if not ids:
+        return Response({'error': 'Provide vehicle IDs via ?ids=1,2,3'}, status=400)
+    vehicles = Vehicle.objects.filter(pk__in=ids, is_active=True).select_related('dealer', 'brand')
+    return Response(PublicVehicleSerializer(vehicles, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def dealers_by_brand(request):
+    """List dealers that carry vehicles of a specific brand, ordered by rating."""
+    brand_id = request.query_params.get('brand_id', '')
+    brand_name = request.query_params.get('brand', '')
+    if not brand_id and not brand_name:
+        return Response({'error': 'Provide brand_id or brand parameter'}, status=400)
+    # Find dealers with vehicles of this brand
+    vq = Vehicle.objects.filter(is_active=True)
+    if brand_id:
+        vq = vq.filter(brand_id=brand_id)
+    elif brand_name:
+        vq = vq.filter(brand__name__icontains=brand_name)
+    dealer_ids = vq.values_list('dealer_id', flat=True).distinct()
+    dealers = DealerProfile.objects.filter(id__in=dealer_ids, is_verified=True)
+    data = PublicDealerSerializer(dealers, many=True).data
+    # Sort by avg_rating descending
+    data.sort(key=lambda d: float(d.get('avg_rating') or 0), reverse=True)
+    return Response({'results': data, 'count': len(data)})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def free_tier_usage(request):
+    """Return current usage vs free-tier limits for the authenticated dealer."""
+    try:
+        dealer = request.user.dealer_profile
+    except (AttributeError, DealerProfile.DoesNotExist):
+        return Response({'error': 'Dealer only'}, status=403)
+    is_free = dealer.plan_type == 'free'
+    return Response({
+        'plan_type': dealer.plan_type,
+        'is_free': is_free,
+        'listings': {'used': dealer.vehicles.filter(is_active=True).count(), 'limit': 3 if is_free else None},
+        'leads': {'used': dealer.lifetime_lead_count, 'limit': 50 if is_free else None},
+        'invoices': {'used': dealer.invoice_count, 'limit': 20 if is_free else None},
+        'marketing': {'allowed': not is_free},
+        'analytics': {'allowed': not is_free},
+        'financer_tab': {'allowed': not is_free},
+    })

@@ -10,6 +10,8 @@ class UserProfile(models.Model):
         ('driver', 'Driver / Buyer'),
         ('dealer', 'Dealer / Showroom'),
         ('admin',  'Platform Admin'),
+        ('financer', 'Financer / NBFC'),
+        ('customer', 'Customer / Buyer'),
     ]
     user      = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     user_type = models.CharField(max_length=20, choices=USER_TYPES, default='dealer')
@@ -45,6 +47,9 @@ class DealerProfile(models.Model):
     plan_expires_at = models.DateTimeField(null=True, blank=True)
     plan            = models.ForeignKey('Plan', on_delete=models.SET_NULL, null=True, blank=True, related_name='dealers')
     listing_count   = models.IntegerField(default=0, help_text='Cached count of active listings')
+    # ── Free Tier Tracking ────────────────────────────────
+    lifetime_lead_count   = models.IntegerField(default=0, help_text='Lifetime leads received (free tier limit: 50)')
+    invoice_count         = models.IntegerField(default=0, help_text='Invoices generated (free tier limit: 20)')
     # ── Notification Preferences ──────────────────────────
     notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
     notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')
@@ -534,3 +539,82 @@ class NotificationLog(models.Model):
     def __str__(self):
         status = '✓' if self.success else '✗'
         return f"[{status}] {self.channel} {self.notif_type} → {self.recipient}"
+
+
+# ─── FINANCER PROFILE ─────────────────────────────────────────────
+
+class FinancerProfile(models.Model):
+    """Profile for NBFC / financer partners."""
+    user           = models.OneToOneField(User, on_delete=models.CASCADE, related_name='financer_profile')
+    company_name   = models.CharField(max_length=200)
+    contact_person = models.CharField(max_length=200, blank=True)
+    phone          = models.CharField(max_length=15)
+    email          = models.EmailField(blank=True)
+    city           = models.CharField(max_length=100, blank=True)
+    state          = models.CharField(max_length=100, blank=True)
+    gstin          = models.CharField(max_length=20, blank=True)
+    pan_number     = models.CharField(max_length=12, blank=True)
+    description    = models.TextField(blank=True)
+    logo           = models.ImageField(upload_to='financers/', null=True, blank=True)
+    is_verified    = models.BooleanField(default=False)
+    interest_rate_min = models.DecimalField(max_digits=5, decimal_places=2, default=8.0)
+    interest_rate_max = models.DecimalField(max_digits=5, decimal_places=2, default=18.0)
+    max_loan_amount   = models.DecimalField(max_digits=12, decimal_places=2, default=500000)
+    min_loan_amount   = models.DecimalField(max_digits=12, decimal_places=2, default=50000)
+    max_tenure_months = models.IntegerField(default=60)
+    processing_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=2.0)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.company_name
+
+
+class FinancerDocument(models.Model):
+    """Documents uploaded by financer for onboarding."""
+    DOC_TYPES = [
+        ('registration', 'Company Registration'),
+        ('pan', 'PAN Card'),
+        ('gst', 'GST Certificate'),
+        ('rbi_license', 'RBI / NBFC License'),
+        ('address_proof', 'Address Proof'),
+        ('bank_statement', 'Bank Statement'),
+        ('agreement', 'Partnership Agreement'),
+        ('other', 'Other'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+    financer   = models.ForeignKey(FinancerProfile, on_delete=models.CASCADE, related_name='documents')
+    doc_type   = models.CharField(max_length=30, choices=DOC_TYPES, default='other')
+    title      = models.CharField(max_length=200, blank=True)
+    file       = models.FileField(upload_to='financer_docs/')
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    notes      = models.TextField(blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"{self.financer.company_name} — {self.get_doc_type_display()}"
+
+
+# ─── CUSTOMER PROFILE (registered buyers) ─────────────────────────
+
+class CustomerProfile(models.Model):
+    """Registered buyers who can compare and raise queries."""
+    user       = models.OneToOneField(User, on_delete=models.CASCADE, related_name='customer_profile')
+    full_name  = models.CharField(max_length=200)
+    phone      = models.CharField(max_length=15)
+    city       = models.CharField(max_length=100, blank=True)
+    state      = models.CharField(max_length=100, blank=True)
+    pincode    = models.CharField(max_length=10, blank=True)
+    latitude   = models.FloatField(null=True, blank=True)
+    longitude  = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.full_name
