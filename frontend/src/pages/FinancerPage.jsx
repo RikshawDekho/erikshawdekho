@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
+import Navbar from "../components/NavbarNew";
+import FooterNew from "../components/FooterNew";
 
 const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
 const G = "#16a34a";
@@ -58,7 +58,7 @@ function FinancerLoginForm({ onSuccess }) {
       <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 20, textAlign: "center", color: "#111827" }}>🔐 Financer Login</div>
       {err && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 13 }}>{err}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-        <input style={inp} placeholder="Username *" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} required />
+        <input style={inp} placeholder="Email or Username *" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} required />
         <input style={inp} type="password" placeholder="Password *" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required />
       </div>
       <button type="submit" disabled={loading}
@@ -71,7 +71,7 @@ function FinancerLoginForm({ onSuccess }) {
 
 /* ─── Registration Form ─────────────────────────────────── */
 function FinancerRegForm({ onSuccess }) {
-  const [form, setForm] = useState({ username: "", password: "", company_name: "", license_number: "", phone: "", city: "", state: "", interest_rate_min: "", interest_rate_max: "", loan_amount_min: "", loan_amount_max: "" });
+  const [form, setForm] = useState({ email: "", password: "", company_name: "", contact_person: "", phone: "", city: "" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const inp = { width: "100%", padding: "11px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
@@ -80,6 +80,7 @@ function FinancerRegForm({ onSuccess }) {
     e.preventDefault();
     setErr(""); setLoading(true);
     if (form.phone && !/^[6-9]\d{9}$/.test(form.phone)) { setErr("Valid 10-digit Indian mobile number required."); setLoading(false); return; }
+    if (form.password.length < 8) { setErr("Password must be at least 8 characters."); setLoading(false); return; }
     try {
       const res = await fetch(`${API}/auth/register/financer/`, {
         method: "POST",
@@ -98,17 +99,12 @@ function FinancerRegForm({ onSuccess }) {
       <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 20, textAlign: "center", color: "#111827" }}>🏦 Financer Registration</div>
       {err && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 13 }}>{err}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-        <input style={inp} placeholder="Username *" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} required />
-        <input style={inp} type="password" placeholder="Password *" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required />
+        <input style={inp} type="email" placeholder="Email *" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} required />
+        <input style={inp} type="password" placeholder="Password * (min 8 chars)" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required minLength={8} />
         <input style={inp} placeholder="Company Name *" value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value }))} required />
-        <input style={inp} placeholder="License Number" value={form.license_number} onChange={e => setForm(p => ({ ...p, license_number: e.target.value }))} />
-        <input style={inp} placeholder="Phone * (10 digits)" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} required maxLength={10} />
+        <input style={inp} placeholder="Contact Person" value={form.contact_person} onChange={e => setForm(p => ({ ...p, contact_person: e.target.value }))} />
+        <input style={inp} placeholder="Phone * (10 digits)" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} required maxLength={10} inputMode="numeric" />
         <input style={inp} placeholder="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
-        <input style={inp} placeholder="State" value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))} />
-        <input style={inp} type="number" step="0.1" placeholder="Min Interest Rate %" value={form.interest_rate_min} onChange={e => setForm(p => ({ ...p, interest_rate_min: e.target.value }))} />
-        <input style={inp} type="number" step="0.1" placeholder="Max Interest Rate %" value={form.interest_rate_max} onChange={e => setForm(p => ({ ...p, interest_rate_max: e.target.value }))} />
-        <input style={inp} type="number" placeholder="Min Loan Amount" value={form.loan_amount_min} onChange={e => setForm(p => ({ ...p, loan_amount_min: e.target.value }))} />
-        <input style={inp} type="number" placeholder="Max Loan Amount" value={form.loan_amount_max} onChange={e => setForm(p => ({ ...p, loan_amount_max: e.target.value }))} />
       </div>
       <button type="submit" disabled={loading}
         style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
@@ -768,7 +764,10 @@ export default function FinancerPage() {
         )}
       </div>
 
-      <Footer />
+      <FooterNew />
+      {/* Bottom spacer for mobile nav */}
+      <div style={{ height: 60 }} className="mobile-bottom-spacer" />
+      <style>{`@media (min-width: 769px) { .mobile-bottom-spacer { display: none; } }`}</style>
     </div>
   );
 }

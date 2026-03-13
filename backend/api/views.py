@@ -130,14 +130,11 @@ def login_view(request):
             'id': user.id, 'username': user.username, 'email': user.email,
             'first_name': user.first_name, 'last_name': user.last_name,
             'user_type': user_type,
-            'is_superuser': user.is_superuser,
         },
         'dealer': {
             'id':    dealer.id if dealer else None,
             'name':  dealer.dealer_name if dealer else username,
             'city':  dealer.city if dealer else '',
-            'phone': dealer.phone if dealer else '',
-            'gstin': dealer.gstin if dealer else '',
         }
     }, status=status.HTTP_200_OK)
 
@@ -1281,8 +1278,11 @@ def admin_reset_dealer_password(request, dealer_id):
             __import__('string').ascii_letters + __import__('string').digits, k=10))
     dealer.user.set_password(new_password)
     dealer.user.save()
-    return Response({'success': True, 'new_password': new_password,
-                     'dealer_name': dealer.dealer_name, 'username': dealer.user.username})
+    # Never return plaintext passwords in API responses (visible in browser Network tab)
+    masked = new_password[:2] + '●' * (len(new_password) - 4) + new_password[-2:] if len(new_password) > 4 else '●●●●'
+    return Response({'success': True, 'temp_password_hint': masked,
+                     'dealer_name': dealer.dealer_name, 'username': dealer.user.username,
+                     'message': 'Password reset. Share the new password securely with the dealer.'})
 
 
 @api_view(['POST'])
@@ -1520,6 +1520,8 @@ def marketing_send(request):
     sent, failed = 0, 0
     errors = []
 
+    extra_cfg = api_key_obj.extra_config or {}
+
     for contact in contacts:
         contact = contact.strip()
         if not contact:
@@ -1527,15 +1529,23 @@ def marketing_send(request):
         try:
             if channel == "whatsapp":
                 from api.notifications import send_whatsapp_message
-                send_whatsapp_message(to=contact, message=message, api_key=api_key_obj.api_key)
+                send_whatsapp_message(
+                    to=contact, message=message,
+                    api_key=api_key_obj.api_key, api_secret=api_key_obj.api_secret,
+                    extra_config=extra_cfg,
+                )
             elif channel == "sms":
                 from api.notifications import send_sms_message
-                send_sms_message(to=contact, message=message,
-                                 account_sid=api_key_obj.api_key, auth_token=api_key_obj.api_secret)
+                send_sms_message(
+                    to=contact, message=message,
+                    account_sid=api_key_obj.api_key, auth_token=api_key_obj.api_secret,
+                    extra_config=extra_cfg,
+                )
             elif channel == "email":
-                from api.emails import send_marketing_email
+                from api.notifications import send_marketing_email
                 send_marketing_email(to=contact, subject=f"Message from {dealer.dealer_name}",
-                                     body=message, api_key=api_key_obj.api_key)
+                                     body=message, api_key=api_key_obj.api_secret,
+                                     smtp_user=api_key_obj.api_key)
             sent += 1
         except Exception as e:
             failed += 1
