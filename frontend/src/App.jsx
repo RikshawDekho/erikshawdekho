@@ -1,5 +1,7 @@
 ﻿import React, { Component, useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
 import { SalesPage } from './SalesPage';
+import NavbarNew from './components/NavbarNew';
+import FooterNew from './components/FooterNew';
 import { LIGHT_C, DARK_C, ThemeCtx, useC } from './theme';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -48,16 +50,37 @@ class ErrorBoundary extends Component {
   }
   render() {
     if (this.state.hasError) {
+      const errMsg = String(this.state.error);
+      const isChunkError = /loading chunk|dynamically imported module|failed to fetch/i.test(errMsg);
+      if (isChunkError) {
+        return (
+          <div style={{ fontFamily: "'Inter','Nunito',sans-serif", minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
+            <div style={{ fontSize: 64, marginBottom: 20 }}>🛺</div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1f2937", marginBottom: 8 }}>Updating ErikshawDekho...</h2>
+            <p style={{ fontSize: 14, color: "#6b7280", maxWidth: 360, lineHeight: 1.6, marginBottom: 24 }}>A new version is being deployed. The page will reload automatically.</p>
+            <button onClick={() => { if ("caches" in window) caches.keys().then(n => n.forEach(k => caches.delete(k))); window.location.reload(); }}
+              style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "12px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              🔄 Retry Now
+            </button>
+          </div>
+        );
+      }
       return (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, background: "#f5f5f5", fontFamily: "monospace", color: "#333" }}>
           <div style={{ maxWidth: 600, background: "#fff", border: "1px solid #ccc", borderRadius: 8, padding: 24 }}>
             <div style={{ fontSize: 20, fontWeight: "bold", marginBottom: 12, color: "#d32f2f" }}>⚠️ Something Went Wrong</div>
             <div style={{ fontSize: 12, marginBottom: 16, color: "#666", wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
-              {String(this.state.error)}
+              {errMsg}
             </div>
-            <button onClick={() => window.location.reload()} style={{ padding: "10px 20px", background: "#1e88e5", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: "bold" }}>
-              🔄 Reload Page
-            </button>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => window.location.reload()} style={{ padding: "10px 20px", background: "#1e88e5", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: "bold" }}>
+                🔄 Reload Page
+              </button>
+              <button onClick={() => { if ("caches" in window) caches.keys().then(n => n.forEach(k => caches.delete(k))); window.location.reload(); }}
+                style={{ padding: "10px 20px", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 4, cursor: "pointer", fontWeight: "bold" }}>
+                Hard Refresh
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -217,6 +240,9 @@ const api = {
     toggleUserActive:   (id)       => apiFetch(`/admin-portal/users/${id}/toggle-active/`, { method: "PATCH" }),
     createUser:         (d)        => apiFetch("/admin-portal/create-user/", { method: "POST", body: JSON.stringify(d) }),
     updateSettings:     (d)        => apiFetch("/admin-portal/settings/", { method: "PATCH", body: JSON.stringify(d) }),
+    financers:          (p="")     => apiFetch(`/admin-portal/financers/${p}`),
+    verifyFinancer:     (id,d)     => apiFetch(`/admin-portal/financers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    financeApps:        (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
   },
   auth: {
     forgotPassword:  (d) => apiFetch("/auth/forgot-password/",  { method: "POST", body: JSON.stringify(d) }),
@@ -228,6 +254,13 @@ const api = {
     apiKeys:         ()       => apiFetch("/dealer/api-keys/"),
     saveApiKey:      (d)      => apiFetch("/dealer/api-keys/", { method: "POST", body: JSON.stringify(d) }),
     deleteApiKey:    (id)     => apiFetch(`/dealer/api-keys/${id}/`, { method: "DELETE" }),
+    financers:       ()       => apiFetch("/dealer/financers/"),
+    applyFinancer:   (id)     => apiFetch(`/dealer/financers/${id}/apply/`, { method: "POST" }),
+    financerReqs:    (id)     => apiFetch(`/dealer/financers/${id}/requirements/`),
+    finApps:         ()       => apiFetch("/dealer/finance-applications/"),
+    createFinApp:    (d)      => apiFetch("/dealer/finance-applications/", { method: "POST", body: JSON.stringify(d) }),
+    finAppDocs:      (id)     => apiFetch(`/dealer/finance-applications/${id}/documents/`),
+    uploadFinAppDoc: (id,d)   => apiFetch(`/dealer/finance-applications/${id}/documents/`, { method: "POST", body: d }),
   },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),
@@ -1080,6 +1113,11 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
               {unread > 9 ? "9+" : unread}
             </span>
           )}
+        </button>
+        {/* Hard refresh */}
+        <button onClick={() => { if ("caches" in window) caches.keys().then(names => names.forEach(n => caches.delete(n))); window.location.reload(); }}
+          title="Hard Refresh" style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          🔄
         </button>
         {/* Language toggle */}
         <button onClick={() => {
@@ -2422,15 +2460,40 @@ function IntegrationsSection() {
   const toast = useToast();
   const [keys, setKeys] = useState([]);
   const [adding, setAdding] = useState(null);
-  const [form, setForm] = useState({ api_key: "", api_secret: "", display_name: "" });
+  const [form, setForm] = useState({ api_key: "", api_secret: "", display_name: "", from_number: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { api.dealer.apiKeys().then(setKeys).catch(() => {}); }, []);
 
+  const PROVIDER_OPTIONS = {
+    whatsapp: [
+      { id: "twilio", label: "Twilio", fields: ["api_key", "api_secret"], labels: { api_key: "Account SID", api_secret: "Auth Token" }, extraFields: [{ key: "from_number", label: "WhatsApp From Number", placeholder: "e.g. whatsapp:+14155238886" }] },
+      { id: "gupshup", label: "Gupshup", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "source_number", label: "Source Number", placeholder: "e.g. 919876543210" }, { key: "app_name", label: "App Name", placeholder: "e.g. ErikshawDekho" }] },
+      { id: "meta_cloud", label: "Meta Cloud API", fields: ["api_key"], labels: { api_key: "Access Token" }, extraFields: [{ key: "phone_number_id", label: "Phone Number ID", placeholder: "Your WABA phone number ID" }] },
+      { id: "360dialog", label: "360dialog", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [] },
+      { id: "wati", label: "Wati", fields: ["api_key"], labels: { api_key: "API Token" }, extraFields: [{ key: "api_url", label: "Wati Server URL", placeholder: "e.g. https://live-server-XXXXX.wati.io" }] },
+      { id: "aisensy", label: "AiSensy", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "campaign_name", label: "Campaign Name", placeholder: "e.g. marketing" }] },
+    ],
+    sms: [
+      { id: "twilio", label: "Twilio", fields: ["api_key", "api_secret"], labels: { api_key: "Account SID", api_secret: "Auth Token" }, extraFields: [{ key: "from_number", label: "SMS From Number", placeholder: "e.g. +1234567890" }] },
+      { id: "gupshup", label: "Gupshup", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "source_number", label: "Source Number", placeholder: "e.g. 919876543210" }] },
+      { id: "msg91", label: "MSG91", fields: ["api_key"], labels: { api_key: "Auth Key" }, extraFields: [{ key: "sender_id", label: "Sender ID", placeholder: "e.g. ERIKSH" }, { key: "template_id", label: "Template ID", placeholder: "DLT template ID" }] },
+      { id: "textlocal", label: "Textlocal", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "sender", label: "Sender Name", placeholder: "e.g. ERIKSH" }] },
+      { id: "fast2sms", label: "Fast2SMS", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "sender_id", label: "Sender ID", placeholder: "e.g. ERIKSH" }] },
+    ],
+    email: [
+      { id: "gmail", label: "Gmail SMTP", fields: ["api_key", "api_secret"], labels: { api_key: "Gmail Address", api_secret: "App Password" }, extraFields: [] },
+      { id: "sendgrid", label: "SendGrid", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "from_email", label: "From Email", placeholder: "e.g. info@yourdomain.com" }] },
+      { id: "mailgun", label: "Mailgun", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "domain", label: "Domain", placeholder: "e.g. mg.yourdomain.com" }, { key: "from_email", label: "From Email", placeholder: "e.g. info@yourdomain.com" }] },
+      { id: "ses", label: "Amazon SES", fields: ["api_key", "api_secret"], labels: { api_key: "Access Key ID", api_secret: "Secret Access Key" }, extraFields: [{ key: "region", label: "AWS Region", placeholder: "e.g. ap-south-1" }, { key: "from_email", label: "From Email", placeholder: "e.g. info@yourdomain.com" }] },
+    ],
+  };
+  const [selectedProvider, setSelectedProvider] = useState({ whatsapp: "twilio", sms: "twilio", email: "gmail" });
+
   const SERVICES = [
-    { id: "twilio", label: "Twilio", desc: "SMS OTP + WhatsApp alerts", icon: "📱", fields: ["api_key", "api_secret"], labels: { api_key: "Account SID", api_secret: "Auth Token" } },
-    { id: "gmail_smtp", label: "Gmail SMTP", desc: "Email marketing & notifications", icon: "📧", fields: ["api_key", "api_secret"], labels: { api_key: "Gmail Address", api_secret: "App Password" } },
-    { id: "whatsapp_business", label: "WhatsApp Business", desc: "Bulk WhatsApp messaging", icon: "💬", fields: ["api_key"], labels: { api_key: "API Token" } },
+    { id: "twilio", label: "SMS Service", desc: "SMS OTP + marketing — choose your provider", icon: "📱", hasProviderSelect: true, providerKey: "sms" },
+    { id: "gmail_smtp", label: "Email Service", desc: "Email marketing & notifications — choose your provider", icon: "📧", hasProviderSelect: true, providerKey: "email" },
+    { id: "whatsapp_business", label: "WhatsApp Business", desc: "Bulk WhatsApp messaging — choose your provider below", icon: "💬", hasProviderSelect: true },
     { id: "firebase", label: "Firebase", desc: "Push notifications (mobile/PWA)", icon: "🔔", fields: ["api_key"], labels: { api_key: "Server Key" } },
   ];
 
@@ -2446,14 +2509,14 @@ function IntegrationsSection() {
               <div style={{ fontSize: 12, color: C.textMid, marginBottom: 12 }}>{svc.desc}</div>
               {existing ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: C.success, fontWeight: 700 }}>✓ Connected</span>
+                  <span style={{ fontSize: 11, color: C.success, fontWeight: 700 }}>✓ {existing.extra_config?.provider ? `Connected (${existing.extra_config.provider})` : "Connected"}</span>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: existing.display_name }); }} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Edit</button>
+                    <button onClick={() => { setAdding(svc); if (svc.hasProviderSelect && existing?.extra_config?.provider) { const pKey = svc.providerKey || (svc.id === "whatsapp_business" ? "whatsapp" : svc.id === "twilio" ? "sms" : "email"); setSelectedProvider(p => ({ ...p, [pKey]: existing.extra_config.provider })); } setForm({ api_key: "", api_secret: "", display_name: existing.display_name, from_number: existing.extra_config?.from_number || "", source_number: existing.extra_config?.source_number || "", phone_number_id: existing.extra_config?.phone_number_id || "", api_url: existing.extra_config?.api_url || "", app_name: existing.extra_config?.app_name || "", campaign_name: existing.extra_config?.campaign_name || "" }); }} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Edit</button>
                     <button onClick={async () => { if (confirm("Delete this API key?")) { try { await api.dealer.deleteApiKey(existing.id); setKeys(keys.filter(k => k.id !== existing.id)); toast(`${svc.label} deleted`, "success"); } catch { toast("Failed to delete", "error"); } }}} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.danger}44`, background: `${C.danger}10`, cursor: "pointer", fontFamily: "inherit", color: C.danger }}>Delete</button>
                   </div>
                 </div>
               ) : (
-                <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: "" }); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: `1px dashed ${C.primary}`, background: `${C.primary}08`, color: C.primary, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                <button onClick={() => { setAdding(svc); setForm({ api_key: "", api_secret: "", display_name: "", from_number: "" }); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: `1px dashed ${C.primary}`, background: `${C.primary}08`, color: C.primary, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
                   + Connect
                 </button>
               )}
@@ -2476,20 +2539,65 @@ function IntegrationsSection() {
                 placeholder="e.g. Production Key, Staging Key"
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
             </div>
-            {adding.fields.map(f => (
+            {adding.hasProviderSelect && (() => {
+              const pKey = adding.providerKey || (adding.id === "whatsapp_business" ? "whatsapp" : "sms");
+              const provList = PROVIDER_OPTIONS[pKey] || [];
+              const curProv = selectedProvider[pKey] || provList[0]?.id;
+              return (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>Choose Provider</div>
+                <select value={curProv} onChange={e => setSelectedProvider(p => ({ ...p, [pKey]: e.target.value }))}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }}>
+                  {provList.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+              </div>
+            );})()}
+            {(() => {
+              const pKey = adding.hasProviderSelect ? (adding.providerKey || (adding.id === "whatsapp_business" ? "whatsapp" : "sms")) : null;
+              const provList = pKey ? PROVIDER_OPTIONS[pKey] || [] : [];
+              const curProv = pKey ? (selectedProvider[pKey] || provList[0]?.id) : null;
+              const prov = pKey ? provList.find(p => p.id === curProv) : null;
+              return (adding.hasProviderSelect ? prov?.fields || [] : adding.fields || []).map(f => {
+              const labels = adding.hasProviderSelect ? prov?.labels || {} : adding.labels || {};
+              return (
               <div key={f} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{adding.labels[f]}</div>
-                <input type={f === "api_secret" ? "password" : "text"} value={form[f]} onChange={e => setForm(p => ({ ...p, [f]: e.target.value }))}
-                  placeholder={`Enter ${adding.labels[f]}`}
+                <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{labels[f] || f}</div>
+                <input type={f === "api_secret" ? "password" : "text"} value={form[f] || ""} onChange={e => setForm(p => ({ ...p, [f]: e.target.value }))}
+                  placeholder={`Enter ${labels[f] || f}`}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
               </div>
-            ))}
+            );});})()}
+            {(() => {
+              const pKey = adding.hasProviderSelect ? (adding.providerKey || (adding.id === "whatsapp_business" ? "whatsapp" : "sms")) : null;
+              const provList = pKey ? PROVIDER_OPTIONS[pKey] || [] : [];
+              const curProv = pKey ? (selectedProvider[pKey] || provList[0]?.id) : null;
+              const prov = pKey ? provList.find(p => p.id === curProv) : null;
+              return (adding.hasProviderSelect ? prov?.extraFields || [] : adding.extraFields || []).map(ef => (
+              <div key={ef.key} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{ef.label}</div>
+                <input type="text" value={form[ef.key] || ""} onChange={e => setForm(p => ({ ...p, [ef.key]: e.target.value }))}
+                  placeholder={ef.placeholder}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" }} />
+              </div>
+            ));})()}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <button onClick={() => setAdding(null)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: C.textMid }}>Cancel</button>
               <button disabled={saving} onClick={async () => {
                 setSaving(true);
                 try {
-                  await api.dealer.saveApiKey({ service: adding.id, ...form });
+                  const extraCfg = {};
+                  if (adding.hasProviderSelect) {
+                    const pKey = adding.providerKey || (adding.id === "whatsapp_business" ? "whatsapp" : "sms");
+                    const provList = PROVIDER_OPTIONS[pKey] || [];
+                    const curProv = selectedProvider[pKey] || provList[0]?.id;
+                    extraCfg.provider = curProv;
+                    const prov = provList.find(p => p.id === curProv);
+                    (prov?.extraFields || []).forEach(ef => { if (form[ef.key]) extraCfg[ef.key] = form[ef.key]; });
+                  } else {
+                    if (form.from_number) extraCfg.from_number = form.from_number;
+                    (adding.extraFields || []).forEach(ef => { if (form[ef.key]) extraCfg[ef.key] = form[ef.key]; });
+                  }
+                  await api.dealer.saveApiKey({ service: adding.id, api_key: form.api_key, api_secret: form.api_secret || "", display_name: form.display_name, extra_config: extraCfg });
                   const updated = await api.dealer.apiKeys();
                   setKeys(updated);
                   toast(`${adding.label} connected!`, "success");
@@ -3515,19 +3623,23 @@ function MarketingPage() {
     if (contactList.length === 0) { toast("Please add at least one contact.", "warning"); return; }
     const apiKeyNeeded = tab === "email" ? "gmail_smtp" : tab === "whatsapp" ? "whatsapp_business" : "twilio";
     if (!apiKeys[apiKeyNeeded]) {
-      toast(`Connect your ${tab === "email" ? "Gmail SMTP" : tab === "whatsapp" ? "WhatsApp Business" : "Twilio"} API key in Settings → API Keys first.`, "warning");
+      toast(`Connect your ${tab === "email" ? "Email Service" : tab === "whatsapp" ? "WhatsApp Business" : "SMS Service"} in Settings → Integrations first.`, "warning");
       return;
     }
     setSending(true);
     try {
-      await apiFetch("/marketing/send/", {
+      const result = await apiFetch("/marketing/send/", {
         method: "POST",
         body: JSON.stringify({ channel: tab, message: resolveText(), contacts: contactList }),
       });
-      toast(`Campaign sent to ${contactList.length} contact${contactList.length !== 1 ? "s" : ""}!`, "success");
-      setContacts("");
+      if (result.failed > 0) {
+        toast(`Sent: ${result.sent}, Failed: ${result.failed}. ${result.errors?.[0] || "Check API key settings."}`, result.sent > 0 ? "warning" : "error");
+      } else {
+        toast(`Campaign sent to ${result.sent} contact${result.sent !== 1 ? "s" : ""}!`, "success");
+      }
+      if (result.sent > 0) setContacts("");
     } catch (err) {
-      const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to send. Check API keys in Settings.";
+      const msg = typeof err === "object" ? (err.error || Object.values(err).flat().join(" ")) : "Failed to send. Check API keys in Settings.";
       toast(msg, "error");
     }
     setSending(false);
@@ -3535,7 +3647,7 @@ function MarketingPage() {
 
   const tabInfo = {
     whatsapp: { icon: "💬", label: "WhatsApp", apiKey: "whatsapp_business", apiLabel: "WhatsApp Business API" },
-    sms:      { icon: "📱", label: "SMS",       apiKey: "twilio",           apiLabel: "Twilio SMS API" },
+    sms:      { icon: "📱", label: "SMS",       apiKey: "twilio",           apiLabel: "SMS Provider" },
     email:    { icon: "✉️", label: "Email",      apiKey: "gmail_smtp",       apiLabel: "Gmail SMTP API" },
   };
   const info = tabInfo[tab];
@@ -4767,7 +4879,7 @@ function AdminPortal({ user, onLogout }) {
             <div style={{ background: `${C.success}12`, border: `1.5px solid ${C.success}44`, borderRadius: 10, padding: 18, marginBottom: 16 }}>
               <div style={{ fontWeight: 700, color: C.success, marginBottom: 8 }}>✓ Password reset successfully</div>
               <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>New temporary password:</div>
-              <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 800, color: C.text, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 14px", letterSpacing: 2 }}>{resetPwdResult}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 800, color: C.text, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 14px", letterSpacing: 2 }}>{resetPwdResult}</div><div style={{ fontSize: 12, color: C.textDim, marginTop: 6 }}>Share the full password securely with the dealer (not shown here for security).</div>
               <div style={{ fontSize: 11, color: C.textDim, marginTop: 8 }}>Please share this securely with the dealer. They should change it after logging in.</div>
             </div>
           ) : (
@@ -4781,7 +4893,7 @@ function AdminPortal({ user, onLogout }) {
                   setResetPwdLoading(true);
                   try {
                     const r = await api.admin.resetDealerPassword(resetPwdDealer.id, { new_password: resetPwdInput });
-                    setResetPwdResult(r.new_password);
+                    setResetPwdResult(r.temp_password_hint || 'Password reset successfully');
                     toast(`Password reset for ${r.dealer_name}`, "success");
                   } catch { toast("Failed to reset password", "error"); }
                   setResetPwdLoading(false);
@@ -5062,7 +5174,7 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
 // ═══════════════════════════════════════════════════════
 const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "support", "account"];
 
-export default function App() {
+export default function App({ skipLanding = false }) {
   const [isDark, setIsDark] = useState(() => localStorage.getItem("erd_theme") === "dark");
   const toggleTheme = () => setIsDark(d => { const next = !d; localStorage.setItem("erd_theme", next ? "dark" : "light"); return next; });
 
@@ -5077,10 +5189,10 @@ export default function App() {
     const user = JSON.parse(localStorage.getItem("erd_user") || "null");
     const token = localStorage.getItem("erd_access");
     if (token && user) {
-      if (user.user_type === "admin" || user.is_superuser) return "admin";
+      if (user.user_type === "admin") return "admin";
       return "dealer";
     }
-    return null;
+    return skipLanding ? "dealer" : null;
   });
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
@@ -5154,7 +5266,7 @@ export default function App() {
     localStorage.setItem("erd_dealer", JSON.stringify(data.dealer));
     localStorage.setItem("erd_user",   JSON.stringify(data.user));
     setAuth(data);
-    setAppMode(data.user?.user_type === "admin" || data.user?.is_superuser ? "admin" : "dealer");
+    setAppMode(data.user?.user_type === "admin" ? "admin" : "dealer");
   };
 
   const handleLogout = () => {
@@ -5204,12 +5316,16 @@ export default function App() {
     return (
       <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
         <ToastProvider>
-          <AuthPage onAuth={handleAuth} />
-          <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
-            <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
-              ← Back to home
-            </button>
+          <NavbarNew />
+          <div style={{ paddingTop: 60 }}>
+            <AuthPage onAuth={handleAuth} />
+            <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
+              <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
+                ← Back to home
+              </button>
+            </div>
           </div>
+          <FooterNew />
         </ToastProvider>
       </ThemeCtx.Provider>
     );

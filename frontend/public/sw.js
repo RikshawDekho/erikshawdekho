@@ -1,10 +1,10 @@
 // ErikshawDekho Service Worker — PWA offline support
 // Increment version to force all clients to get fresh assets on next load
-const CACHE_NAME = 'erikshaw-v3';
+const CACHE_NAME = 'erikshaw-v4';
 const STATIC_ASSETS = [
   '/',
-  '/marketplace',
-  '/dealers',
+  '/driver/marketplace',
+  '/driver/dealers',
   '/manifest.json',
   '/rickshaw.svg',
 ];

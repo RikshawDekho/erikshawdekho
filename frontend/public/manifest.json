@@ -34,19 +34,19 @@
     {
       "name": "Marketplace",
       "short_name": "Marketplace",
-      "url": "/marketplace",
+      "url": "/driver/marketplace",
       "description": "Browse E-Rickshaws"
     },
     {
       "name": "Find Dealers",
       "short_name": "Dealers",
-      "url": "/dealers",
+      "url": "/driver/dealers",
       "description": "Find dealers near you"
     },
     {
       "name": "Dealer Login",
       "short_name": "Dashboard",
-      "url": "/dashboard",
+      "url": "/dealer",
       "description": "Dealer SaaS Dashboard"
     }
   ],

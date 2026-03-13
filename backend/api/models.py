@@ -481,13 +481,19 @@ class DealerAPIKey(models.Model):
 # ─── PUBLIC ENQUIRY (no auth needed, no required dealer FK) ───────
 
 class PublicEnquiry(models.Model):
-    """Visitor lead from public marketplace / homepage — no login required."""
+    """
+    Visitor lead from public marketplace / homepage — no login required.
+    Must target a specific dealer (brand + dealer selection mandatory from v3).
+    """
     customer_name = models.CharField(max_length=200)
     phone         = models.CharField(max_length=15)
+    pincode       = models.CharField(max_length=10, blank=True)
     city          = models.CharField(max_length=100, blank=True)
+    brand_name    = models.CharField(max_length=100, blank=True,
+                                     help_text='Brand selected by driver during enquiry')
     vehicle       = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True)
     dealer        = models.ForeignKey(DealerProfile, on_delete=models.SET_NULL, null=True, blank=True,
-                                      help_text='Auto-assigned based on vehicle or city')
+                                      help_text='Targeted dealer selected by driver. Lead goes only to this dealer.')
     notes         = models.TextField(blank=True)
     is_processed  = models.BooleanField(default=False)
     created_at    = models.DateTimeField(auto_now_add=True)
@@ -618,3 +624,200 @@ class CustomerProfile(models.Model):
 
     def __str__(self):
         return self.full_name
+
+
+# ─── FINANCER PLANS & SUBSCRIPTIONS ──────────────────────────────
+
+class FinancerPlan(models.Model):
+    """Subscription tiers for financer/NBFC partners."""
+    SLUG_FREE    = 'free'
+    SLUG_STARTER = 'starter'  # ₹5,000/yr — first 20 dealers
+    SLUG_GROWTH  = 'growth'   # Commission model — unlimited dealers
+
+    name                      = models.CharField(max_length=100, unique=True)
+    slug                      = models.CharField(max_length=50, unique=True)
+    price_per_year            = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    max_dealer_associations   = models.IntegerField(default=0,
+                                    help_text='Max dealers this financer can onboard. 0 = unlimited.')
+    max_finance_applications  = models.IntegerField(default=10,
+                                    help_text='Free tier: 10 applications before upgrade required.')
+    success_commission_pct    = models.DecimalField(max_digits=5, decimal_places=2, default=0,
+                                    help_text='Platform commission % charged on successful loan disbursement.')
+    is_active                 = models.BooleanField(default=True)
+    features_json             = models.JSONField(default=list, blank=True,
+                                    help_text='List of feature strings to display on plan card.')
+    created_at                = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} (₹{self.price_per_year}/yr)"
+
+    class Meta:
+        ordering = ['price_per_year']
+
+
+class FinancerSubscription(models.Model):
+    """Active subscription record for a financer."""
+    financer           = models.OneToOneField(FinancerProfile, on_delete=models.CASCADE,
+                                              related_name='subscription')
+    plan               = models.ForeignKey(FinancerPlan, on_delete=models.PROTECT)
+    started_at         = models.DateTimeField(auto_now_add=True)
+    expires_at         = models.DateTimeField(null=True, blank=True)
+    is_active          = models.BooleanField(default=True)
+    applications_used  = models.IntegerField(default=0,
+                                help_text='Financed applications this billing cycle (free tier limit enforced).')
+    auto_renew         = models.BooleanField(default=False)
+
+    @property
+    def is_within_limit(self):
+        """Return True if financer can process more applications under current plan."""
+        limit = self.plan.max_finance_applications
+        if limit == 0:
+            return True
+        return self.applications_used < limit
+
+    def __str__(self):
+        return f"{self.financer.company_name} — {self.plan.name}"
+
+    class Meta:
+        ordering = ['-started_at']
+
+
+# ─── FINANCER ↔ DEALER ASSOCIATION ───────────────────────────────
+
+class FinancerDealerAssociation(models.Model):
+    """
+    Dealer applies to a financer. Financer approves/rejects.
+    Admin/Superadmin must have already verified the dealer before financer sees them.
+    Once financer approves: dealer appears as 'verified' in the financer's ecosystem.
+    """
+    STATUS_CHOICES = [
+        ('pending',   'Pending Financer Approval'),
+        ('approved',  'Approved by Financer'),
+        ('rejected',  'Rejected by Financer'),
+        ('suspended', 'Suspended'),
+    ]
+    financer    = models.ForeignKey(FinancerProfile, on_delete=models.CASCADE,
+                                    related_name='dealer_associations')
+    dealer      = models.ForeignKey(DealerProfile, on_delete=models.CASCADE,
+                                    related_name='financer_associations')
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    applied_at  = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    notes       = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ('financer', 'dealer')
+        ordering = ['-applied_at']
+
+    def __str__(self):
+        return f"{self.dealer.dealer_name} → {self.financer.company_name} [{self.status}]"
+
+
+# ─── FINANCER REQUIRED DOCUMENTS ─────────────────────────────────
+
+class FinancerRequiredDocument(models.Model):
+    """
+    Documents a financer mandates from a dealer before processing any loan application.
+    Financer can customise this list. Dealer must upload all mandatory docs.
+    """
+    DOC_TYPES = [
+        ('aadhaar',           'Aadhaar Card'),
+        ('pan',               'PAN Card'),
+        ('voter_id',          'Voter ID'),
+        ('driving_license',   'Driving License'),
+        ('bank_statement',    'Bank Statement (3 months)'),
+        ('income_proof',      'Income / Salary Proof'),
+        ('address_proof',     'Address Proof'),
+        ('passport_photo',    'Passport Size Photo (2 copies)'),
+        ('vehicle_quotation', 'Vehicle Quotation from Dealer'),
+        ('form_16',           'Form 16 / ITR'),
+        ('other',             'Other'),
+    ]
+    financer       = models.ForeignKey(FinancerProfile, on_delete=models.CASCADE,
+                                       related_name='required_documents')
+    doc_type       = models.CharField(max_length=30, choices=DOC_TYPES)
+    description    = models.CharField(max_length=300, blank=True,
+                                      help_text='Additional instructions for this document.')
+    is_mandatory   = models.BooleanField(default=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('financer', 'doc_type')
+        ordering = ['doc_type']
+
+    def __str__(self):
+        flag = '(mandatory)' if self.is_mandatory else '(optional)'
+        return f"{self.financer.company_name} — {self.get_doc_type_display()} {flag}"
+
+
+# ─── FINANCE APPLICATION (dealer → financer) ─────────────────────
+
+class FinanceApplication(models.Model):
+    """
+    Full loan application created by dealer on behalf of a customer/buyer.
+    Dealer collects mandatory documents, uploads them here, then submits to financer.
+    Financer can update status; dealer and customer see the latest status.
+    """
+    STATUS_CHOICES = [
+        ('draft',        'Draft — Collecting Documents'),
+        ('submitted',    'Submitted to Financer'),
+        ('under_review', 'Under Review'),
+        ('docs_required','Additional Documents Required'),
+        ('approved',     'Approved'),
+        ('rejected',     'Rejected'),
+        ('disbursed',    'Loan Disbursed'),
+        ('cancelled',    'Cancelled'),
+    ]
+
+    dealer         = models.ForeignKey(DealerProfile,   on_delete=models.CASCADE,
+                                       related_name='finance_applications')
+    financer       = models.ForeignKey(FinancerProfile, on_delete=models.CASCADE,
+                                       related_name='received_applications')
+    vehicle        = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True)
+
+    # Customer / buyer details
+    customer_name    = models.CharField(max_length=200)
+    customer_phone   = models.CharField(max_length=15)
+    customer_email   = models.EmailField(blank=True)
+    customer_address = models.TextField(blank=True)
+    customer_aadhaar = models.CharField(max_length=20, blank=True)
+    customer_pan     = models.CharField(max_length=12, blank=True)
+    customer_dob     = models.DateField(null=True, blank=True)
+
+    # Loan parameters
+    vehicle_price    = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    loan_amount      = models.DecimalField(max_digits=10, decimal_places=2)
+    down_payment     = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    tenure_months    = models.IntegerField(default=36)
+
+    # Workflow tracking
+    status           = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    status_notes     = models.TextField(blank=True,
+                                        help_text='Financer notes visible to dealer on status update.')
+    submitted_at     = models.DateTimeField(null=True, blank=True)
+    reviewed_at      = models.DateTimeField(null=True, blank=True)
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"FA-{self.pk} | {self.customer_name} → {self.financer.company_name} [{self.status}]"
+
+
+class FinanceApplicationDocument(models.Model):
+    """
+    Customer documents uploaded by dealer against a FinanceApplication.
+    Each document maps to a FinancerRequiredDocument.doc_type.
+    """
+    application  = models.ForeignKey(FinanceApplication, on_delete=models.CASCADE,
+                                     related_name='documents')
+    doc_type     = models.CharField(max_length=30,
+                                    help_text='Must match one of FinancerRequiredDocument.doc_type choices.')
+    file         = models.FileField(upload_to='finance_app_docs/')
+    notes        = models.CharField(max_length=300, blank=True)
+    uploaded_at  = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"FA-{self.application_id} — {self.doc_type}"
