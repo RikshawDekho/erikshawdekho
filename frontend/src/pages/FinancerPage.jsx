@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
+import { SectionSkeleton } from "../components/PageSkeleton";
 
 const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
 const G = "#16a34a";
@@ -116,7 +117,7 @@ function FinancerRegForm({ onSuccess }) {
 
 /* ─── Dashboard Tab: Profile ────────────────────────────── */
 function ProfileTab({ profile }) {
-  if (!profile) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading...</div>;
+  if (!profile) return <SectionSkeleton rows={4} style={{ padding: 40 }} />;
   return (
     <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e5e7eb" }}>
       <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#111827" }}>Profile Details</div>
@@ -165,7 +166,7 @@ function DealersTab({ authFetch }) {
     setActionLoading(null);
   };
 
-  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading dealers...</div>;
+  if (loading) return <SectionSkeleton rows={3} style={{ padding: 40 }} />;
 
   return (
     <div>

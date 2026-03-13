@@ -50,16 +50,37 @@ class ErrorBoundary extends Component {
   }
   render() {
     if (this.state.hasError) {
+      const errMsg = String(this.state.error);
+      const isChunkError = /loading chunk|dynamically imported module|failed to fetch/i.test(errMsg);
+      if (isChunkError) {
+        return (
+          <div style={{ fontFamily: "'Inter','Nunito',sans-serif", minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
+            <div style={{ fontSize: 64, marginBottom: 20 }}>🛺</div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1f2937", marginBottom: 8 }}>Updating ErikshawDekho...</h2>
+            <p style={{ fontSize: 14, color: "#6b7280", maxWidth: 360, lineHeight: 1.6, marginBottom: 24 }}>A new version is being deployed. The page will reload automatically.</p>
+            <button onClick={() => { if ("caches" in window) caches.keys().then(n => n.forEach(k => caches.delete(k))); window.location.reload(); }}
+              style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "12px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              🔄 Retry Now
+            </button>
+          </div>
+        );
+      }
       return (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, background: "#f5f5f5", fontFamily: "monospace", color: "#333" }}>
           <div style={{ maxWidth: 600, background: "#fff", border: "1px solid #ccc", borderRadius: 8, padding: 24 }}>
             <div style={{ fontSize: 20, fontWeight: "bold", marginBottom: 12, color: "#d32f2f" }}>⚠️ Something Went Wrong</div>
             <div style={{ fontSize: 12, marginBottom: 16, color: "#666", wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
-              {String(this.state.error)}
+              {errMsg}
             </div>
-            <button onClick={() => window.location.reload()} style={{ padding: "10px 20px", background: "#1e88e5", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: "bold" }}>
-              🔄 Reload Page
-            </button>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => window.location.reload()} style={{ padding: "10px 20px", background: "#1e88e5", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: "bold" }}>
+                🔄 Reload Page
+              </button>
+              <button onClick={() => { if ("caches" in window) caches.keys().then(n => n.forEach(k => caches.delete(k))); window.location.reload(); }}
+                style={{ padding: "10px 20px", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 4, cursor: "pointer", fontWeight: "bold" }}>
+                Hard Refresh
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -1092,6 +1113,11 @@ function Topbar({ dealer, page, onAddNew, onProfile, onBell }) {
               {unread > 9 ? "9+" : unread}
             </span>
           )}
+        </button>
+        {/* Hard refresh */}
+        <button onClick={() => { if ("caches" in window) caches.keys().then(names => names.forEach(n => caches.delete(n))); window.location.reload(); }}
+          title="Hard Refresh" style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          🔄
         </button>
         {/* Language toggle */}
         <button onClick={() => {

@@ -8,6 +8,7 @@ import { useSearchParams, Link } from "react-router-dom";
 import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
 import { useI18n } from "../i18n";
+import { CardSkeleton } from "../components/PageSkeleton";
 
 const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
 const G = "#16a34a";
@@ -447,9 +448,8 @@ export default function DriverMarketplacePage() {
       {/* Grid */}
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px", width: "100%", flex: 1 }}>
         {loading ? (
-          <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>🔍</div>
-            <div>{t("market.loading")}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
+            <CardSkeleton count={6} />
           </div>
         ) : vehicles.length === 0 ? (
           <div style={{ textAlign: "center", padding: 60 }}>
