@@ -22,6 +22,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/"            element={<HomePage />} />
         <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/dealers"     element={<DealerDirectoryPage />} />
+          <Route path="/financer"    element={<FinancerPage />} />
 
         {/* Dealer SaaS dashboard – handles its own auth internally */}
         <Route path="/dashboard"   element={<App />} />
