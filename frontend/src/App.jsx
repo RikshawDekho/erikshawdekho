@@ -217,6 +217,9 @@ const api = {
     toggleUserActive:   (id)       => apiFetch(`/admin-portal/users/${id}/toggle-active/`, { method: "PATCH" }),
     createUser:         (d)        => apiFetch("/admin-portal/create-user/", { method: "POST", body: JSON.stringify(d) }),
     updateSettings:     (d)        => apiFetch("/admin-portal/settings/", { method: "PATCH", body: JSON.stringify(d) }),
+    financers:          (p="")     => apiFetch(`/admin-portal/financers/${p}`),
+    verifyFinancer:     (id,d)     => apiFetch(`/admin-portal/financers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    financeApps:        (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
   },
   auth: {
     forgotPassword:  (d) => apiFetch("/auth/forgot-password/",  { method: "POST", body: JSON.stringify(d) }),
@@ -228,6 +231,13 @@ const api = {
     apiKeys:         ()       => apiFetch("/dealer/api-keys/"),
     saveApiKey:      (d)      => apiFetch("/dealer/api-keys/", { method: "POST", body: JSON.stringify(d) }),
     deleteApiKey:    (id)     => apiFetch(`/dealer/api-keys/${id}/`, { method: "DELETE" }),
+    financers:       ()       => apiFetch("/dealer/financers/"),
+    applyFinancer:   (id)     => apiFetch(`/dealer/financers/${id}/apply/`, { method: "POST" }),
+    financerReqs:    (id)     => apiFetch(`/dealer/financers/${id}/requirements/`),
+    finApps:         ()       => apiFetch("/dealer/finance-applications/"),
+    createFinApp:    (d)      => apiFetch("/dealer/finance-applications/", { method: "POST", body: JSON.stringify(d) }),
+    finAppDocs:      (id)     => apiFetch(`/dealer/finance-applications/${id}/documents/`),
+    uploadFinAppDoc: (id,d)   => apiFetch(`/dealer/finance-applications/${id}/documents/`, { method: "POST", body: d }),
   },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import App from './App.jsx'
+import RoleLandingPage from './pages/RoleLandingPage.jsx'
 import HomePage from './pages/HomePage.jsx'
 import MarketplacePage from './pages/MarketplacePage.jsx'
 import DealerDirectoryPage from './pages/DealerDirectoryPage.jsx'
@@ -18,11 +19,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        {/* Public marketplace pages */}
-        <Route path="/"            element={<HomePage />} />
+        {/* Entry: Role selection page — first screen at erikshawdekho.com */}
+        <Route path="/"            element={<RoleLandingPage />} />
+
+        {/* Public: driver/buyer journey */}
+        <Route path="/home"        element={<HomePage />} />
         <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/dealers"     element={<DealerDirectoryPage />} />
-          <Route path="/financer"    element={<FinancerPage />} />
+        <Route path="/financer"    element={<FinancerPage />} />
 
         {/* Dealer SaaS dashboard – handles its own auth internally */}
         <Route path="/dashboard"   element={<App />} />
