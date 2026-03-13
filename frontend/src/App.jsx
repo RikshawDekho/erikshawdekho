@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
+﻿import React, { Component, useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
 import { SalesPage } from './SalesPage';
 import { LIGHT_C, DARK_C, ThemeCtx, useC } from './theme';
 import i18n from 'i18next';
@@ -33,6 +33,38 @@ i18n.use(initReactI18next).init({
   fallbackLng: "en",
   interpolation: { escapeValue: false },
 });
+
+// ── Error Boundary ──────────────────────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("ErrorBoundary caught:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, background: "#f5f5f5", fontFamily: "monospace", color: "#333" }}>
+          <div style={{ maxWidth: 600, background: "#fff", border: "1px solid #ccc", borderRadius: 8, padding: 24 }}>
+            <div style={{ fontSize: 20, fontWeight: "bold", marginBottom: 12, color: "#d32f2f" }}>⚠️ Something Went Wrong</div>
+            <div style={{ fontSize: 12, marginBottom: 16, color: "#666", wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
+              {String(this.state.error)}
+            </div>
+            <button onClick={() => window.location.reload()} style={{ padding: "10px 20px", background: "#1e88e5", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: "bold" }}>
+              🔄 Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ── Debounce hook: delays rapid input (e.g. search) by `delay` ms ──
 function useDebounce(value, delay = 350) {
@@ -731,7 +763,7 @@ function AuthPage({ onAuth }) {
         {localStorage.getItem("erd_lang") === "en" ? "हि" : "EN"}
       </button>
 
-      <div style={{ width: 440, maxWidth: "100%" }}>>
+      <div style={{ width: 440, maxWidth: "100%" }}>
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>🛺</div>
@@ -1091,7 +1123,6 @@ function Dashboard({ onNavigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [error, setError] = useState(null);
   const [doneTaskIds, setDoneTaskIds] = useState(new Set());
 
   useEffect(() => {
@@ -1310,7 +1341,6 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const plan = usePlan();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({ total: 0, inStock: 0, sold: 0, lowStock: 0 });
   const [filters, setFilters] = useState({ brand: "", fuel_type: "", stock_status: "", search: "" });
@@ -1685,7 +1715,6 @@ function Leads({ onNavigate }) {
   const [tab, setTab] = useState("leads"); // "leads" | "enquiries"
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [error, setError] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ customer_name: "", phone: "", email: "", source: "website", status: "new", notes: "", vehicle: "" });
@@ -5031,6 +5060,8 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
 // ═══════════════════════════════════════════════════════
 // ROOT APP
 // ═══════════════════════════════════════════════════════
+const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "support", "account"];
+
 export default function App() {
   const [isDark, setIsDark] = useState(() => localStorage.getItem("erd_theme") === "dark");
   const toggleTheme = () => setIsDark(d => { const next = !d; localStorage.setItem("erd_theme", next ? "dark" : "light"); return next; });
@@ -5046,13 +5077,30 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   // Swipe nav order (matches BOTTOM_NAV for mobile)
-  const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "support", "account"];
   const [plan, setPlan] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [dealerIsVerified, setDealerIsVerified] = useState(() => {
     const d = JSON.parse(localStorage.getItem("erd_dealer") || "null");
     return d?.is_verified ?? true;
   });
+  const [platformSettings, setPlatformSettings] = useState({ support_whatsapp: "919876543210", support_email: "support@erikshawdekho.com", support_phone: "1800-XXX-XXXX" });
+
+  // Fetch platform settings once on mount
+  useEffect(() => {
+    let isMounted = true;
+    apiFetch("/platform/settings/")
+      .then(data => {
+        if (isMounted) {
+          setPlatformSettings({
+            support_whatsapp: data.support_whatsapp || "919876543210",
+            support_email: data.support_email || "support@erikshawdekho.com",
+            support_phone: data.support_phone || "1800-XXX-XXXX"
+          });
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   // Screen saver
   const [sleeping, setSleeping] = useState(false);
@@ -5076,7 +5124,18 @@ export default function App() {
   // Fetch plan once on login
   useEffect(() => {
     if (auth && appMode !== "admin") {
-      api.dashboard().then(d => { setPlan(d.plan); setDealerIsVerified(d.is_verified ?? true); }).catch(() => {});
+      api.dashboard()
+        .then(d => { 
+          if (d && d.plan) {
+            setPlan(d.plan);
+          }
+          if (d) {
+            setDealerIsVerified(d.is_verified ?? true);
+          }
+        })
+        .catch((err) => {
+          console.error("Dashboard fetch error:", err);
+        });
     }
   }, [auth, appMode]);
 
@@ -5097,6 +5156,17 @@ export default function App() {
   };
 
   const C_LIVE = isDark ? DARK_C : LIGHT_C;
+
+  // Swipe navigation between pages (mobile/PWA) — must be before any early returns
+  const swipeLeft  = useCallback(() => {
+    const idx = SWIPE_PAGES.indexOf(page);
+    if (idx < SWIPE_PAGES.length - 1) setPage(SWIPE_PAGES[idx + 1]);
+  }, [page]);
+  const swipeRight = useCallback(() => {
+    const idx = SWIPE_PAGES.indexOf(page);
+    if (idx > 0) setPage(SWIPE_PAGES[idx - 1]);
+  }, [page]);
+  const swipeHandlers = useSwipeNav(swipeLeft, swipeRight);
 
   // 1. No auth + no mode chosen → landing page
   if (!auth && appMode === null) {
@@ -5149,17 +5219,6 @@ export default function App() {
 
   const dealer = auth.dealer;
   const goUpgrade = () => setShowUpgradeModal(true);
-
-  // Swipe navigation between pages (mobile/PWA)
-  const swipeLeft  = useCallback(() => {
-    const idx = SWIPE_PAGES.indexOf(page);
-    if (idx < SWIPE_PAGES.length - 1) setPage(SWIPE_PAGES[idx + 1]);
-  }, [page, SWIPE_PAGES]);
-  const swipeRight = useCallback(() => {
-    const idx = SWIPE_PAGES.indexOf(page);
-    if (idx > 0) setPage(SWIPE_PAGES[idx - 1]);
-  }, [page, SWIPE_PAGES]);
-  const swipeHandlers = useSwipeNav(swipeLeft, swipeRight);
 
   const renderPage = () => {
     switch (page) {
@@ -5245,7 +5304,7 @@ export default function App() {
                   <span>⏳ <b>Your showroom is under verification</b> by platform admin. Your profile will become visible to buyers after approval.</span>
                   <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
                     <a href="mailto:support@erikshawdekho.com" style={{ fontSize: 11, color: C_LIVE.textMid, textDecoration: "none" }}>✉ support@erikshawdekho.com</a>
-                    <a href={`https://wa.me/${SP_WA.replace(/\D/g,"")}?text=Hi+my+dealer+account+is+pending+verification`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#25D366", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>
+                    <a href={`https://wa.me/${platformSettings.support_whatsapp.replace(/\D/g,"")}?text=Hi+my+dealer+account+is+pending+verification`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#25D366", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>
                   </div>
                 </div>
               )}
@@ -5255,7 +5314,7 @@ export default function App() {
             </div>
 
             {/* Floating WhatsApp Support */}
-            <a href={`https://wa.me/${SP_WA.replace(/\D/g,"")}?text=Hi+I+need+help+with+my+dealer+account+on+eRickshawDekho`} target="_blank" rel="noreferrer"
+            <a href={`https://wa.me/${platformSettings.support_whatsapp.replace(/\D/g,"")}?text=Hi+I+need+help+with+my+dealer+account+on+eRickshawDekho`} target="_blank" rel="noreferrer"
               style={{ position: "fixed", bottom: 80, right: 16, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(37,211,102,0.4)", textDecoration: "none", fontSize: 26 }}>
               💬
             </a>
