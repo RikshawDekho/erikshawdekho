@@ -273,3 +273,84 @@ def push_offer_notification(fcm_token: str, offer_title: str):
         body=offer_title,
         data={'type': 'offer'},
     )
+
+
+# ─── Dealer-owned API Key helpers (marketing_send uses these) ────
+
+def send_whatsapp_message(to: str, message: str, api_key: str = '', **kwargs):
+    """
+    Send a WhatsApp message using a dealer's own WhatsApp Business API key.
+    Falls back to platform Twilio if no dealer key is provided.
+    """
+    try:
+        if api_key:
+            # Use dealer's own WhatsApp Business token (360dialog / WABA)
+            import requests as _req
+            headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+            phone = to.strip().replace(' ', '').replace('-', '')
+            if not phone.startswith('+'):
+                if len(phone) == 10:
+                    phone = '+91' + phone
+                else:
+                    phone = '+' + phone
+            payload = {
+                'messaging_product': 'whatsapp',
+                'to': phone,
+                'type': 'text',
+                'text': {'body': message},
+            }
+            _req.post('https://waba.360dialog.io/v1/messages', json=payload, headers=headers, timeout=10)
+        else:
+            send_whatsapp(to, message)
+    except Exception as e:
+        logger.warning(f'send_whatsapp_message failed: {e}')
+
+
+def send_sms_message(to: str, message: str, account_sid: str = '', auth_token: str = '', **kwargs):
+    """
+    Send an SMS using a dealer's own Twilio credentials (from DealerAPIKey).
+    """
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        from_number = kwargs.get('from_number', getattr(settings, 'TWILIO_PHONE_FROM', None))
+        if not from_number:
+            logger.warning('No Twilio from_number configured for SMS.')
+            return
+        phone = to.strip().replace(' ', '').replace('-', '')
+        if not phone.startswith('+'):
+            if len(phone) == 10:
+                phone = '+91' + phone
+            else:
+                phone = '+' + phone
+        client.messages.create(to=phone, from_=from_number, body=message)
+    except Exception as e:
+        logger.warning(f'send_sms_message failed: {e}')
+
+
+def send_marketing_email(to: str, subject: str, body: str, api_key: str = '', **kwargs):
+    """
+    Send a marketing email via Gmail SMTP using dealer's own SMTP credentials.
+    Dealer API key is the Gmail app password.
+    """
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        smtp_user = kwargs.get('smtp_user', to)
+        smtp_pass = api_key
+        if not smtp_pass:
+            from django.core.mail import send_mail
+            send_mail(subject, body, 'noreply@erikshawdekho.com', [to], fail_silently=True)
+            return
+        msg = MIMEMultipart()
+        msg['From'] = smtp_user
+        msg['To'] = to
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, to, msg.as_string())
+    except Exception as e:
+        logger.warning(f'send_marketing_email failed: {e}')
+

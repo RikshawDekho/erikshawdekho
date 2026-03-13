@@ -12,7 +12,13 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan, DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource, BlogPost, DealerAPIKey, PlatformSettings, FinancerProfile, FinancerDocument, CustomerProfile
+from .models import (
+    DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan,
+    DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource,
+    BlogPost, DealerAPIKey, PlatformSettings, FinancerProfile, FinancerDocument,
+    CustomerProfile, FinancerPlan, FinancerSubscription, FinancerDealerAssociation,
+    FinancerRequiredDocument, FinanceApplication, FinanceApplicationDocument,
+)
 from .serializers import (
     VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
     CustomerSerializer, TaskSerializer, FinanceLoanSerializer, BrandSerializer,
@@ -703,52 +709,62 @@ def apply_dealer(request):
 @permission_classes([AllowAny])
 def public_enquiry(request):
     """
-    Accept a visitor enquiry from the public marketplace.
-    - Vehicle-specific enquiry  → assigned to that vehicle's dealer only.
-    - General enquiry (no vehicle) → broadcast to ALL verified dealers in the
-      same city (or all verified dealers if no city match), creating a lead in
-      each dealer's CRM so every relevant dealer can follow up.
-    No authentication required.
+    Accept a targeted visitor enquiry from the public marketplace / homepage.
+    From v3: brand and dealer selection are mandatory so the lead goes to ONE specific dealer.
+    Fallback broadcast is preserved for legacy API calls without dealer.
     """
     customer_name = request.data.get('customer_name', '').strip()
     phone         = request.data.get('phone', '').strip()
+    pincode       = request.data.get('pincode', '').strip()
+    brand_name    = request.data.get('brand_name', '').strip()
+    dealer_id     = request.data.get('dealer')
+    vehicle_id    = request.data.get('vehicle')
+    city          = request.data.get('city', '').strip()
+    notes         = request.data.get('notes', '').strip()
+    email         = request.data.get('email', '').strip()
 
     if not customer_name:
         return Response({'customer_name': 'Name is required.'}, status=status.HTTP_400_BAD_REQUEST)
     if not phone:
         return Response({'phone': 'Mobile number is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    vehicle_id = request.data.get('vehicle')
-    city       = request.data.get('city', '').strip()
-    notes      = request.data.get('notes', '').strip()
-
     vehicle = None
-    primary_dealer = None          # for the PublicEnquiry record
-    broadcast_dealers = []         # all dealers to receive a lead
+    primary_dealer = None
+    broadcast_dealers = []
 
-    # 1. Vehicle-specific enquiry → assign to that vehicle's dealer only
+    # Resolve vehicle
     if vehicle_id:
         vehicle = Vehicle.objects.filter(pk=vehicle_id, is_active=True).first()
-        if vehicle:
+        if vehicle and not primary_dealer:
             primary_dealer = vehicle.dealer
-            broadcast_dealers = [primary_dealer] if primary_dealer else []
 
-    # 2. General enquiry (no vehicle) → broadcast to all matching dealers
-    if not vehicle_id:
-        if city:
-            broadcast_dealers = list(
-                DealerProfile.objects.filter(is_verified=True, city__icontains=city)
-            )
-        # Also include dealers whose city wasn't matched, fall back to ALL verified
-        if not broadcast_dealers:
+    # Targeted: dealer explicitly selected by driver
+    if dealer_id:
+        primary_dealer = DealerProfile.objects.filter(pk=dealer_id, is_verified=True).first()
+        if primary_dealer:
+            broadcast_dealers = [primary_dealer]
+
+    # Fallback broadcast when no dealer selected (legacy / general enquiry)
+    if not broadcast_dealers:
+        if vehicle and vehicle.dealer:
+            broadcast_dealers = [vehicle.dealer]
+            primary_dealer = vehicle.dealer
+        elif city:
+            broadcast_dealers = list(DealerProfile.objects.filter(is_verified=True, city__icontains=city))
+            if not broadcast_dealers:
+                broadcast_dealers = list(DealerProfile.objects.filter(is_verified=True))
+            primary_dealer = broadcast_dealers[0] if broadcast_dealers else None
+        else:
             broadcast_dealers = list(DealerProfile.objects.filter(is_verified=True))
-        primary_dealer = broadcast_dealers[0] if broadcast_dealers else None
+            primary_dealer = broadcast_dealers[0] if broadcast_dealers else None
 
-    # Create the canonical PublicEnquiry record (linked to primary dealer for admin view)
+    # Create canonical PublicEnquiry record
     enquiry = PublicEnquiry.objects.create(
         customer_name=customer_name,
         phone=phone,
+        pincode=pincode,
         city=city,
+        brand_name=brand_name,
         vehicle=vehicle,
         dealer=primary_dealer,
         notes=notes,
@@ -763,12 +779,11 @@ def public_enquiry(request):
         elif city:
             lead_notes = f"General enquiry from {city}. {lead_notes}".strip()
 
-        # Prevent duplicate leads: include vehicle in lookup to create separate leads per vehicle
-        lead, created = Lead.objects.get_or_create(
+        Lead.objects.get_or_create(
             dealer=dealer,
             customer_name=customer_name,
             phone=phone,
-            vehicle=vehicle,  # Include vehicle in lookup to prevent duplicates
+            vehicle=vehicle,
             defaults={
                 'source': 'marketplace',
                 'notes': lead_notes,
@@ -777,44 +792,28 @@ def public_enquiry(request):
             }
         )
 
-        # If lead existed, update notes to include the new enquiry details
-        if not created and notes and notes not in lead.notes:
-            lead.notes = f"{lead.notes}\n---\n{lead_notes}"
-            lead.save(update_fields=['notes'])
-
-    # Notify all matching dealers — fire-and-forget
-    vehicle_name = str(vehicle) if vehicle else 'eRickshaw (general enquiry)'
+    # Notify dealers (fire-and-forget)
+    vehicle_name = str(vehicle) if vehicle else ('eRickshaw enquiry — ' + (brand_name or 'General'))
     for dealer in broadcast_dealers:
         try:
             from api.emails import send_public_enquiry_notification
             dealer_email = dealer.user.email
             if dealer_email and dealer.notify_email:
                 send_public_enquiry_notification(
-                    dealer_email=dealer_email,
-                    dealer_name=dealer.dealer_name,
-                    customer_name=customer_name,
-                    customer_phone=phone,
-                    city=city,
-                    vehicle_name=vehicle_name,
-                    notes=notes,
+                    dealer_email=dealer_email, dealer_name=dealer.dealer_name,
+                    customer_name=customer_name, customer_phone=phone,
+                    city=city, vehicle_name=vehicle_name, notes=notes,
                 )
         except Exception:
             pass
-
         try:
             from api.notifications import notify_dealer_new_lead
             if dealer.phone and dealer.notify_whatsapp:
-                notify_dealer_new_lead(
-                    dealer_name=dealer.dealer_name,
-                    dealer_phone=dealer.phone,
-                    customer_name=customer_name,
-                    customer_phone=phone,
-                    vehicle_name=vehicle_name,
-                )
+                notify_dealer_new_lead(dealer.dealer_name, dealer.phone, customer_name, phone, vehicle_name)
         except Exception:
             pass
 
-    return Response({'message': 'Enquiry submitted! A dealer will call you within 24 hours.'}, status=status.HTTP_201_CREATED)
+    return Response({'message': 'Enquiry submitted! The dealer will contact you within 24 hours.'}, status=status.HTTP_201_CREATED)
 
 
 # ─── DEALER ENQUIRIES (authenticated dealers see their assigned public enquiries) ──
@@ -1717,3 +1716,653 @@ def free_tier_usage(request):
         'analytics': {'allowed': not is_free},
         'financer_tab': {'allowed': not is_free},
     })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FINANCER ECOSYSTEM — DEALER ASSOCIATIONS
+# ═══════════════════════════════════════════════════════════════════
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def financer_dealer_list(request):
+    """
+    Financer sees all admin-verified dealers.
+    Shows association status (pending/approved/rejected/none) for each.
+    """
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+
+    search = request.query_params.get('search', '')
+    city   = request.query_params.get('city', '')
+    status_filter = request.query_params.get('status', '')
+
+    dealers = DealerProfile.objects.filter(is_verified=True).select_related('user')
+    if search: dealers = dealers.filter(Q(dealer_name__icontains=search) | Q(city__icontains=search))
+    if city:   dealers = dealers.filter(city__icontains=city)
+
+    # Build association map for this financer
+    assoc_map = {
+        a.dealer_id: a
+        for a in FinancerDealerAssociation.objects.filter(financer=fp)
+    }
+
+    result = []
+    for d in dealers:
+        assoc = assoc_map.get(d.id)
+        assoc_status = assoc.status if assoc else None
+        if status_filter and assoc_status != status_filter:
+            continue
+        result.append({
+            'id': d.id,
+            'dealer_name': d.dealer_name,
+            'city': d.city,
+            'state': d.state,
+            'phone': d.phone,
+            'is_verified': d.is_verified,
+            'vehicle_count': d.vehicles.filter(is_active=True).count(),
+            'association_id': assoc.id if assoc else None,
+            'association_status': assoc_status,
+        })
+
+    return Response({'results': result, 'count': len(result)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def financer_approve_dealer(request, dealer_id):
+    """Financer approves or rejects a dealer who applied to work with them."""
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+
+    try:
+        dealer = DealerProfile.objects.get(pk=dealer_id, is_verified=True)
+    except DealerProfile.DoesNotExist:
+        return Response({'error': 'Dealer not found or not verified'}, status=404)
+
+    new_status = request.data.get('status')  # approved | rejected | suspended
+    if new_status not in ('approved', 'rejected', 'suspended'):
+        return Response({'error': 'status must be approved, rejected, or suspended'}, status=400)
+
+    assoc, _ = FinancerDealerAssociation.objects.get_or_create(financer=fp, dealer=dealer)
+    assoc.status = new_status
+    assoc.reviewed_at = timezone.now()
+    assoc.notes = request.data.get('notes', '')
+    assoc.save()
+
+    return Response({
+        'message': f'Dealer {dealer.dealer_name} {new_status}.',
+        'association_id': assoc.id,
+        'status': assoc.status,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def dealer_apply_to_financer(request, financer_id):
+    """Dealer applies to work with a financer (submits association request)."""
+    try:
+        dealer = request.user.dealer_profile
+    except (AttributeError, DealerProfile.DoesNotExist):
+        return Response({'error': 'Not a dealer account'}, status=403)
+
+    if not dealer.is_verified:
+        return Response({'error': 'Your dealer account must be verified by admin before applying to a financer.'}, status=403)
+
+    try:
+        fp = FinancerProfile.objects.get(pk=financer_id, is_verified=True)
+    except FinancerProfile.DoesNotExist:
+        return Response({'error': 'Financer not found or not verified'}, status=404)
+
+    assoc, created = FinancerDealerAssociation.objects.get_or_create(
+        financer=fp, dealer=dealer,
+        defaults={'status': 'pending'}
+    )
+    if not created and assoc.status == 'rejected':
+        assoc.status = 'pending'
+        assoc.reviewed_at = None
+        assoc.save()
+
+    return Response({
+        'message': f'Application sent to {fp.company_name}. Awaiting their approval.',
+        'association_id': assoc.id,
+        'status': assoc.status,
+    }, status=201 if created else 200)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dealer_financer_list(request):
+    """
+    Dealer sees all verified financers plus their association status.
+    """
+    try:
+        dealer = request.user.dealer_profile
+    except (AttributeError, DealerProfile.DoesNotExist):
+        return Response({'error': 'Not a dealer account'}, status=403)
+
+    financers = FinancerProfile.objects.filter(is_verified=True).order_by('company_name')
+    assoc_map = {
+        a.financer_id: a
+        for a in FinancerDealerAssociation.objects.filter(dealer=dealer)
+    }
+
+    result = []
+    for fp in financers:
+        assoc = assoc_map.get(fp.id)
+        result.append({
+            'id': fp.id,
+            'company_name': fp.company_name,
+            'city': fp.city,
+            'state': fp.state,
+            'phone': fp.phone,
+            'interest_rate_min': str(fp.interest_rate_min),
+            'interest_rate_max': str(fp.interest_rate_max),
+            'min_loan_amount': str(fp.min_loan_amount),
+            'max_loan_amount': str(fp.max_loan_amount),
+            'processing_fee_pct': str(fp.processing_fee_pct),
+            'association_id': assoc.id if assoc else None,
+            'association_status': assoc.status if assoc else None,
+        })
+
+    return Response({'results': result, 'count': len(result)})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FINANCER DOCUMENT REQUIREMENTS
+# ═══════════════════════════════════════════════════════════════════
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def financer_required_documents(request):
+    """
+    GET:  Financer gets list of required document types they've set.
+    POST: Financer adds a required document type.
+    """
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+
+    if request.method == 'POST':
+        doc_type    = request.data.get('doc_type', '').strip()
+        description = request.data.get('description', '').strip()
+        is_mandatory = request.data.get('is_mandatory', True)
+
+        valid_types = [c[0] for c in FinancerRequiredDocument.DOC_TYPES]
+        if doc_type not in valid_types:
+            return Response({'error': f'Invalid doc_type. Choose from: {valid_types}'}, status=400)
+
+        obj, created = FinancerRequiredDocument.objects.get_or_create(
+            financer=fp, doc_type=doc_type,
+            defaults={'description': description, 'is_mandatory': bool(is_mandatory)}
+        )
+        if not created:
+            obj.description = description
+            obj.is_mandatory = bool(is_mandatory)
+            obj.save()
+
+        return Response({
+            'id': obj.id, 'doc_type': obj.doc_type,
+            'doc_type_label': obj.get_doc_type_display(),
+            'description': obj.description,
+            'is_mandatory': obj.is_mandatory,
+        }, status=201 if created else 200)
+
+    docs = FinancerRequiredDocument.objects.filter(financer=fp)
+    data = [{
+        'id': d.id, 'doc_type': d.doc_type,
+        'doc_type_label': d.get_doc_type_display(),
+        'description': d.description,
+        'is_mandatory': d.is_mandatory,
+    } for d in docs]
+    return Response(data)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def financer_required_document_delete(request, doc_id):
+    """Financer removes a required document type."""
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+    try:
+        FinancerRequiredDocument.objects.get(pk=doc_id, financer=fp).delete()
+    except FinancerRequiredDocument.DoesNotExist:
+        return Response({'error': 'Not found'}, status=404)
+    return Response(status=204)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dealer_financer_requirements(request, financer_id):
+    """Dealer fetches the list of documents required by a specific financer."""
+    try:
+        fp = FinancerProfile.objects.get(pk=financer_id)
+    except FinancerProfile.DoesNotExist:
+        return Response({'error': 'Financer not found'}, status=404)
+
+    docs = FinancerRequiredDocument.objects.filter(financer=fp)
+    data = [{
+        'id': d.id, 'doc_type': d.doc_type,
+        'doc_type_label': d.get_doc_type_display(),
+        'description': d.description,
+        'is_mandatory': d.is_mandatory,
+    } for d in docs]
+    return Response(data)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FINANCE APPLICATIONS (Dealer → Financer workflow)
+# ═══════════════════════════════════════════════════════════════════
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def dealer_finance_applications(request):
+    """
+    GET:  Dealer lists their own finance applications.
+    POST: Dealer creates a new finance application (draft or submit directly).
+    """
+    try:
+        dealer = request.user.dealer_profile
+    except (AttributeError, DealerProfile.DoesNotExist):
+        return Response({'error': 'Not a dealer account'}, status=403)
+
+    if request.method == 'POST':
+        data = request.data
+        financer_id = data.get('financer')
+        if not financer_id:
+            return Response({'error': 'financer is required'}, status=400)
+        try:
+            fp = FinancerProfile.objects.get(pk=financer_id, is_verified=True)
+        except FinancerProfile.DoesNotExist:
+            return Response({'error': 'Financer not found or not verified'}, status=404)
+
+        # Check association is approved
+        assoc = FinancerDealerAssociation.objects.filter(financer=fp, dealer=dealer, status='approved').first()
+        if not assoc:
+            return Response({
+                'error': f'You must first apply to {fp.company_name} and be approved before submitting applications.'
+            }, status=403)
+
+        vehicle_id = data.get('vehicle')
+        vehicle = Vehicle.objects.filter(pk=vehicle_id, dealer=dealer).first() if vehicle_id else None
+
+        app = FinanceApplication.objects.create(
+            dealer=dealer,
+            financer=fp,
+            vehicle=vehicle,
+            customer_name=data.get('customer_name', '').strip(),
+            customer_phone=data.get('customer_phone', '').strip(),
+            customer_email=data.get('customer_email', '').strip(),
+            customer_address=data.get('customer_address', '').strip(),
+            customer_aadhaar=data.get('customer_aadhaar', '').strip(),
+            customer_pan=data.get('customer_pan', '').strip(),
+            vehicle_price=data.get('vehicle_price') or None,
+            loan_amount=data.get('loan_amount', 0),
+            down_payment=data.get('down_payment', 0),
+            tenure_months=int(data.get('tenure_months', 36)),
+            status='submitted' if data.get('submit') else 'draft',
+        )
+        if data.get('submit'):
+            app.submitted_at = timezone.now()
+            app.save(update_fields=['submitted_at'])
+
+            # Increment financer subscription applications_used
+            try:
+                sub = fp.subscription
+                sub.applications_used = FinanceApplication.objects.filter(
+                    financer=fp, status__in=['submitted', 'under_review', 'approved', 'disbursed']
+                ).count()
+                sub.save(update_fields=['applications_used'])
+            except Exception:
+                pass
+
+            # Push notification to financer
+            try:
+                from api.notifications import send_push_notification
+                financer_profile_obj = fp
+                financer_token = getattr(getattr(financer_profile_obj.user, 'profile', None), 'fcm_token', None)
+                if financer_token:
+                    send_push_notification(
+                        fcm_token=financer_token,
+                        title='New Finance Application 🔔',
+                        body=f'{dealer.dealer_name} submitted an application for {app.customer_name}',
+                        data={'type': 'finance_application', 'app_id': str(app.id)}
+                    )
+            except Exception:
+                pass
+
+        return Response({
+            'id': app.id,
+            'status': app.status,
+            'message': 'Application submitted to financer.' if data.get('submit') else 'Draft saved.'
+        }, status=201)
+
+    # GET — list applications for this dealer
+    search    = request.query_params.get('search', '')
+    app_status = request.query_params.get('status', '')
+    qs = FinanceApplication.objects.filter(dealer=dealer).select_related('financer', 'vehicle')
+    if search:     qs = qs.filter(Q(customer_name__icontains=search) | Q(customer_phone__icontains=search))
+    if app_status: qs = qs.filter(status=app_status)
+    qs = qs.order_by('-created_at')
+
+    data = [{
+        'id': a.id,
+        'customer_name': a.customer_name,
+        'customer_phone': a.customer_phone,
+        'financer_name': a.financer.company_name,
+        'vehicle': str(a.vehicle) if a.vehicle else None,
+        'loan_amount': str(a.loan_amount),
+        'tenure_months': a.tenure_months,
+        'status': a.status,
+        'status_display': a.get_status_display(),
+        'status_notes': a.status_notes,
+        'submitted_at': a.submitted_at.isoformat() if a.submitted_at else None,
+        'created_at': a.created_at.isoformat(),
+        'doc_count': a.documents.count(),
+    } for a in qs]
+
+    return Response({'results': data, 'count': qs.count()})
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def finance_application_documents(request, app_id):
+    """
+    GET:  List documents uploaded for a finance application.
+    POST: Upload a document for the application.
+    """
+    try:
+        dealer = request.user.dealer_profile
+    except (AttributeError, DealerProfile.DoesNotExist):
+        return Response({'error': 'Not a dealer account'}, status=403)
+
+    try:
+        app = FinanceApplication.objects.get(pk=app_id, dealer=dealer)
+    except FinanceApplication.DoesNotExist:
+        return Response({'error': 'Application not found'}, status=404)
+
+    if request.method == 'POST':
+        doc_type = request.data.get('doc_type', '')
+        file     = request.FILES.get('file')
+        notes    = request.data.get('notes', '')
+        if not file:
+            return Response({'error': 'file is required'}, status=400)
+        doc = FinanceApplicationDocument.objects.create(
+            application=app, doc_type=doc_type, file=file, notes=notes
+        )
+        return Response({'id': doc.id, 'doc_type': doc.doc_type, 'notes': doc.notes}, status=201)
+
+    docs = app.documents.all()
+    data = [{
+        'id': d.id, 'doc_type': d.doc_type, 'notes': d.notes,
+        'file': request.build_absolute_uri(d.file.url) if d.file else None,
+        'uploaded_at': d.uploaded_at.isoformat(),
+    } for d in docs]
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def financer_applications(request):
+    """
+    Financer sees all incoming finance applications sorted by date.
+    Supports filter by status and dealer search.
+    """
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+
+    search    = request.query_params.get('search', '')
+    app_status = request.query_params.get('status', '')
+    qs = FinanceApplication.objects.filter(financer=fp).select_related('dealer', 'vehicle')
+    if search:     qs = qs.filter(Q(customer_name__icontains=search) | Q(dealer__dealer_name__icontains=search))
+    if app_status: qs = qs.filter(status=app_status)
+    qs = qs.order_by('-created_at')
+
+    data = [{
+        'id': a.id,
+        'customer_name': a.customer_name,
+        'customer_phone': a.customer_phone,
+        'customer_email': a.customer_email,
+        'customer_address': a.customer_address,
+        'customer_aadhaar': a.customer_aadhaar,
+        'customer_pan': a.customer_pan,
+        'dealer_id': a.dealer_id,
+        'dealer_name': a.dealer.dealer_name,
+        'dealer_phone': a.dealer.phone,
+        'dealer_city': a.dealer.city,
+        'vehicle': str(a.vehicle) if a.vehicle else None,
+        'vehicle_price': str(a.vehicle_price) if a.vehicle_price else None,
+        'loan_amount': str(a.loan_amount),
+        'down_payment': str(a.down_payment),
+        'tenure_months': a.tenure_months,
+        'status': a.status,
+        'status_display': a.get_status_display(),
+        'status_notes': a.status_notes,
+        'submitted_at': a.submitted_at.isoformat() if a.submitted_at else None,
+        'reviewed_at': a.reviewed_at.isoformat() if a.reviewed_at else None,
+        'created_at': a.created_at.isoformat(),
+        'doc_count': a.documents.count(),
+        'documents': [{
+            'id': d.id, 'doc_type': d.doc_type,
+            'file': request.build_absolute_uri(d.file.url) if d.file else None,
+            'uploaded_at': d.uploaded_at.isoformat(),
+        } for d in a.documents.all()],
+    } for a in qs]
+
+    return Response({'results': data, 'count': qs.count()})
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def financer_update_application_status(request, app_id):
+    """
+    Financer updates the status of a finance application.
+    The new status and notes are immediately visible to the dealer.
+    """
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+
+    try:
+        app = FinanceApplication.objects.get(pk=app_id, financer=fp)
+    except FinanceApplication.DoesNotExist:
+        return Response({'error': 'Application not found'}, status=404)
+
+    new_status = request.data.get('status')
+    valid_statuses = [c[0] for c in FinanceApplication.STATUS_CHOICES]
+    if new_status not in valid_statuses:
+        return Response({'error': f'Invalid status. Choose from: {valid_statuses}'}, status=400)
+
+    app.status = new_status
+    app.status_notes = request.data.get('status_notes', app.status_notes)
+    app.reviewed_at = timezone.now()
+    app.save(update_fields=['status', 'status_notes', 'reviewed_at', 'updated_at'])
+
+    # Notify dealer via push notification
+    try:
+        from api.notifications import send_push_notification
+        dealer_token = getattr(getattr(app.dealer.user, 'profile', None), 'fcm_token', None)
+        if dealer_token:
+            send_push_notification(
+                fcm_token=dealer_token,
+                title=f'Finance Application Update 📋',
+                body=f'{fp.company_name}: Application for {app.customer_name} is now {app.get_status_display()}',
+                data={'type': 'finance_update', 'app_id': str(app.id), 'status': new_status}
+            )
+    except Exception:
+        pass
+
+    return Response({
+        'id': app.id,
+        'status': app.status,
+        'status_display': app.get_status_display(),
+        'status_notes': app.status_notes,
+        'message': 'Application status updated. Dealer has been notified.',
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FINANCER PLANS & SUBSCRIPTIONS
+# ═══════════════════════════════════════════════════════════════════
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def financer_plans_list(request):
+    """List available financer subscription plans with pricing."""
+    plans = FinancerPlan.objects.filter(is_active=True)
+    data = [{
+        'id': p.id,
+        'name': p.name,
+        'slug': p.slug,
+        'price_per_year': str(p.price_per_year),
+        'max_dealer_associations': p.max_dealer_associations,
+        'max_finance_applications': p.max_finance_applications,
+        'success_commission_pct': str(p.success_commission_pct),
+        'features': p.features_json,
+    } for p in plans]
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def financer_subscription_status(request):
+    """Return the authenticated financer's subscription details."""
+    try:
+        fp = request.user.financer_profile
+    except (AttributeError, FinancerProfile.DoesNotExist):
+        return Response({'error': 'Not a financer account'}, status=403)
+
+    try:
+        sub = fp.subscription
+        return Response({
+            'plan_name': sub.plan.name,
+            'plan_slug': sub.plan.slug,
+            'price_per_year': str(sub.plan.price_per_year),
+            'max_applications': sub.plan.max_finance_applications,
+            'applications_used': sub.applications_used,
+            'is_within_limit': sub.is_within_limit,
+            'expires_at': sub.expires_at.isoformat() if sub.expires_at else None,
+            'is_active': sub.is_active,
+        })
+    except FinancerSubscription.DoesNotExist:
+        # Financer on implicit free tier
+        apps_used = FinanceApplication.objects.filter(
+            financer=fp, status__in=['submitted', 'under_review', 'approved', 'disbursed']
+        ).count()
+        return Response({
+            'plan_name': 'Free',
+            'plan_slug': 'free',
+            'price_per_year': '0',
+            'max_applications': 10,
+            'applications_used': apps_used,
+            'is_within_limit': apps_used < 10,
+            'expires_at': None,
+            'is_active': True,
+        })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ADMIN — FINANCER MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_financers(request, financer_id=None):
+    """Admin manages all financer registrations and verifications."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=403)
+
+    if request.method == 'PATCH' and financer_id:
+        try:
+            fp = FinancerProfile.objects.get(pk=financer_id)
+        except FinancerProfile.DoesNotExist:
+            return Response({'error': 'Financer not found'}, status=404)
+        if 'is_verified' in request.data:
+            fp.is_verified = bool(request.data['is_verified'])
+            fp.save(update_fields=['is_verified'])
+            # Send approval notification
+            try:
+                if fp.is_verified and fp.user.email:
+                    from django.core.mail import send_mail
+                    send_mail(
+                        subject='eRickshawDekho — Financer Account Approved! ✅',
+                        message=f'Congratulations {fp.company_name}!\n\nYour financer account has been approved by our team. You can now log in and start onboarding dealers.\n\n— eRickshawDekho Team',
+                        from_email='noreply@erikshawdekho.com',
+                        recipient_list=[fp.user.email],
+                        fail_silently=True,
+                    )
+            except Exception:
+                pass
+        return Response({'id': fp.id, 'is_verified': fp.is_verified})
+
+    # GET — list all financers
+    search = request.query_params.get('search', '')
+    verified = request.query_params.get('verified', '')
+    qs = FinancerProfile.objects.select_related('user').order_by('-created_at')
+    if search:   qs = qs.filter(Q(company_name__icontains=search) | Q(phone__icontains=search))
+    if verified == '1': qs = qs.filter(is_verified=True)
+    if verified == '0': qs = qs.filter(is_verified=False)
+
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+
+    data = [{
+        'id': fp.id,
+        'company_name': fp.company_name,
+        'phone': fp.phone,
+        'email': fp.user.email,
+        'city': fp.city,
+        'state': fp.state,
+        'license_number': getattr(fp, 'license_number', ''),
+        'is_verified': fp.is_verified,
+        'created_at': fp.created_at.isoformat(),
+        'username': fp.user.username,
+        'doc_count': fp.documents.count(),
+        'association_count': fp.dealer_associations.filter(status='approved').count(),
+        'application_count': fp.received_applications.count(),
+    } for fp in qs]
+
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_finance_applications(request):
+    """Admin sees all finance applications across all dealer-financer pairs."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=403)
+
+    search    = request.query_params.get('search', '')
+    app_status = request.query_params.get('status', '')
+    qs = FinanceApplication.objects.select_related('dealer', 'financer', 'vehicle').order_by('-created_at')
+    if search:     qs = qs.filter(Q(customer_name__icontains=search) | Q(dealer__dealer_name__icontains=search))
+    if app_status: qs = qs.filter(status=app_status)
+
+    page_size = int(request.query_params.get('page_size', 20))
+    page      = int(request.query_params.get('page', 1))
+    total     = qs.count()
+    qs = qs[(page-1)*page_size : page*page_size]
+
+    data = [{
+        'id': a.id,
+        'customer_name': a.customer_name,
+        'dealer_name': a.dealer.dealer_name,
+        'financer_name': a.financer.company_name,
+        'loan_amount': str(a.loan_amount),
+        'status': a.status,
+        'status_display': a.get_status_display(),
+        'created_at': a.created_at.isoformat(),
+    } for a in qs]
+
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})

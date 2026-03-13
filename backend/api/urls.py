@@ -92,4 +92,30 @@ urlpatterns = [
 
     # ── Free tier usage ────────────────────────────────────────────
     path('dealer/free-tier-usage/',     views.free_tier_usage,        name='free-tier-usage'),
+
+    # ── Financer Ecosystem v3 ──────────────────────────────────────
+    # Financer: dealer associations
+    path('financer/dealers/',                                  views.financer_dealer_list,               name='financer-dealer-list'),
+    path('financer/dealers/<int:dealer_id>/approve/',          views.financer_approve_dealer,            name='financer-approve-dealer'),
+    # Financer: required document settings
+    path('financer/required-documents/',                       views.financer_required_documents,        name='financer-required-documents'),
+    path('financer/required-documents/<int:doc_id>/',          views.financer_required_document_delete,  name='financer-required-doc-delete'),
+    # Financer: incoming applications
+    path('financer/applications/',                             views.financer_applications,              name='financer-applications'),
+    path('financer/applications/<int:app_id>/update-status/',  views.financer_update_application_status, name='financer-update-app-status'),
+    # Financer: subscription plans
+    path('financer/plans/',                                    views.financer_plans_list,                name='financer-plans'),
+    path('financer/subscription/',                             views.financer_subscription_status,       name='financer-subscription'),
+
+    # Dealer: financer-related views
+    path('dealer/financers/',                                  views.dealer_financer_list,              name='dealer-financer-list'),
+    path('dealer/financers/<int:financer_id>/apply/',          views.dealer_apply_to_financer,          name='dealer-apply-financer'),
+    path('dealer/financers/<int:financer_id>/requirements/',   views.dealer_financer_requirements,      name='dealer-financer-requirements'),
+    path('dealer/finance-applications/',                       views.dealer_finance_applications,       name='dealer-finance-applications'),
+    path('dealer/finance-applications/<int:app_id>/documents/',views.finance_application_documents,     name='finance-app-documents'),
+
+    # Admin: financer management
+    path('admin-portal/financers/',                            views.admin_financers,                   name='admin-financers'),
+    path('admin-portal/financers/<int:financer_id>/',          views.admin_financers,                   name='admin-financer-detail'),
+    path('admin-portal/finance-applications/',                 views.admin_finance_applications,        name='admin-finance-applications'),
 ]
