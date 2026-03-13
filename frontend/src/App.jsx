@@ -5073,7 +5073,15 @@ export default function App() {
     return token ? { token, dealer, user } : null;
   });
   // appMode: null = landing, 'dealer' = dealer auth/portal, 'public' = public marketplace, 'admin' = admin portal
-  const [appMode, setAppMode] = useState(null);
+  const [appMode, setAppMode] = useState(() => {
+    const user = JSON.parse(localStorage.getItem("erd_user") || "null");
+    const token = localStorage.getItem("erd_access");
+    if (token && user) {
+      if (user.user_type === "admin" || user.is_superuser) return "admin";
+      return "dealer";
+    }
+    return null;
+  });
   const [page, setPage] = useState("dashboard");
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   // Swipe nav order (matches BOTTOM_NAV for mobile)
@@ -5123,7 +5131,7 @@ export default function App() {
 
   // Fetch plan once on login
   useEffect(() => {
-    if (auth && appMode !== "admin") {
+    if (auth && appMode !== "admin" && auth.user?.user_type !== "admin") {
       api.dashboard()
         .then(d => { 
           if (d && d.plan) {

@@ -161,8 +161,21 @@ def me(request):
     def _d(field, default=''):
         return getattr(dealer, field, default) if dealer else default
 
+    profile = getattr(user, 'profile', None)
+    if user.is_superuser or user.is_staff:
+        user_type = 'admin'
+    elif profile:
+        user_type = profile.user_type
+    else:
+        user_type = 'dealer' if dealer else 'driver'
+
     return Response({
-        'user': {'id': user.id, 'username': user.username, 'email': user.email},
+        'user': {
+            'id': user.id, 'username': user.username, 'email': user.email,
+            'first_name': user.first_name, 'last_name': user.last_name,
+            'user_type': user_type,
+            'is_superuser': user.is_superuser,
+        },
         'dealer': {
             'id':                   _d('id', None),
             'name':                 _d('dealer_name'),
