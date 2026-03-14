@@ -16,7 +16,7 @@ export default function RoleLandingPage() {
 
   // Fetch live platform stats for social proof
   useEffect(() => {
-    const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
+    const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
     fetch(`${API}/stats/`)
       .then(r => r.ok ? r.json() : null)
       .then(d => d && setStats(d))

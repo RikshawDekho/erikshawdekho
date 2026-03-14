@@ -8,10 +8,11 @@ import { Link } from "react-router-dom";
 import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
 import { useI18n } from "../i18n";
+import { ROLE_C, TYPO, RADIUS, CONTROL, LAYOUT } from "../theme";
 
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
-const G = "#16a34a";
-const D = "#1e3a8a";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
+const G = ROLE_C.driver;
+const D = ROLE_C.dealer;
 
 async function publicFetch(path) {
   const res = await fetch(`${API}${path}`);
@@ -143,7 +144,7 @@ function LeadForm({ presetBrand, presetDealerId, presetDealerName, vehicleId, al
     </div>
   );
 
-  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 15, fontFamily: "inherit", outline: "none", boxSizing: "border-box", minHeight: 46 };
+  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: RADIUS.md, fontSize: 15, fontFamily: "inherit", outline: "none", boxSizing: "border-box", minHeight: CONTROL.md };
   const sel = { ...inp, background: "#fff", cursor: "pointer" };
 
   return (
@@ -175,7 +176,7 @@ function LeadForm({ presetBrand, presetDealerId, presetDealerName, vehicleId, al
         <input style={inp} placeholder={t("form.city")} value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
       </div>
       <textarea style={{ ...inp, marginBottom: 12, minHeight: 60, resize: "vertical" }} placeholder={t("form.notes")} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
-      <button type="submit" style={{ width: "100%", background: G, color: "#fff", padding: "14px", borderRadius: 12, fontSize: 16, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit", minHeight: 52 }}>
+      <button type="submit" style={{ width: "100%", background: G, color: "#fff", padding: "14px", borderRadius: RADIUS.lg, fontSize: 16, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit", minHeight: CONTROL.lg }}>
         {t("form.submit")}
       </button>
     </form>
@@ -291,7 +292,7 @@ export default function DriverHomePage() {
   };
 
   return (
-    <div style={{ fontFamily: "'Inter', 'Nunito', sans-serif", background: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: TYPO.body, background: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -307,7 +308,7 @@ export default function DriverHomePage() {
       <section style={{ background: `linear-gradient(135deg, ${D} 0%, #1e40af 40%, ${G} 100%)`, color: "#fff", padding: "60px 24px 52px", textAlign: "center", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 30% 50%, rgba(255,255,255,0.06) 0%, transparent 50%), radial-gradient(circle at 70% 80%, rgba(22,163,74,0.3) 0%, transparent 50%)" }} />
         <div style={{ maxWidth: 720, margin: "0 auto", position: "relative" }}>
-          <div className="hero-text" style={{ fontFamily: "'Noto Sans Devanagari', sans-serif", fontSize: "clamp(26px,5vw,44px)", fontWeight: 800, lineHeight: 1.3, marginBottom: 10, textShadow: "0 2px 12px rgba(0,0,0,0.2)" }}>
+          <div className="hero-text" style={{ fontFamily: TYPO.hindi, fontSize: "clamp(26px,5vw,44px)", fontWeight: 800, lineHeight: 1.3, marginBottom: 10, textShadow: "0 2px 12px rgba(0,0,0,0.2)" }}>
             {lang === "en" ? "India's Most Trusted\nE-Rickshaw Platform" : "भारत का सबसे भरोसेमंद\nई-रिक्शा प्लेटफॉर्म"}
           </div>
           <div className="hero-sub" style={{ fontSize: 15, color: "#bfdbfe", marginBottom: 8, fontWeight: 600 }}>
@@ -318,7 +319,7 @@ export default function DriverHomePage() {
           </div>
 
           {/* Lead form in hero */}
-          <div className="hero-cta" style={{ background: "rgba(255,255,255,0.97)", borderRadius: 16, padding: 24, maxWidth: 560, margin: "0 auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", color: "#111" }}>
+          <div className="hero-cta" style={{ background: "rgba(255,255,255,0.97)", borderRadius: RADIUS.xl, padding: 24, maxWidth: 560, margin: "0 auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", color: "#111" }}>
             <div style={{ fontWeight: 700, fontSize: 17, color: "#111827", marginBottom: 16 }}>{t("form.get_quote")}</div>
             <LeadForm allBrands={brands} t={t} />
           </div>
@@ -335,7 +336,7 @@ export default function DriverHomePage() {
             { n: "₹0", l: t("landing.hero.free") },
           ].map(({ n, l }) => (
             <div key={l}>
-              <div style={{ fontSize: "clamp(22px,4vw,34px)", fontWeight: 800, color: G, fontFamily: "'Poppins',sans-serif" }}>{n}</div>
+              <div style={{ fontSize: "clamp(22px,4vw,34px)", fontWeight: 800, color: G, fontFamily: TYPO.heading }}>{n}</div>
               <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{l}</div>
             </div>
           ))}
@@ -343,11 +344,12 @@ export default function DriverHomePage() {
       </section>
 
       {/* ── QUICK ACTIONS (big touch targets for drivers) ── */}
-      <section style={{ padding: "36px 24px", maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+      <section style={{ padding: "36px 24px", maxWidth: LAYOUT.contentWidth, margin: "0 auto", width: "100%" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14 }}>
           {[
             { icon: "🔍", link: "/driver/marketplace", label: t("driver.explore") },
             { icon: "📍", link: "/driver/dealers", label: t("driver.find_dealer") },
+            { icon: "🎓", link: "/driver/learn", label: t("driver.learn") },
             { icon: "⚖", link: "/driver/marketplace", label: t("driver.compare") },
             { icon: "💰", link: "/driver/marketplace", label: t("driver.emi") },
           ].map(({ icon, link, label }) => (
@@ -366,7 +368,7 @@ export default function DriverHomePage() {
       {/* ── BRAND → DEALER SELECTOR ── */}
       {brands.length > 0 && (
         <section style={{ background: "#f9fafb", padding: "40px 24px" }}>
-          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto" }}>
             <h2 style={{ textAlign: "center", fontSize: "clamp(18px,3vw,26px)", fontWeight: 800, color: "#111827", marginBottom: 8 }}>{t("brand.find_by")}</h2>
             <p style={{ textAlign: "center", color: "#6b7280", marginBottom: 24, fontSize: 14 }}>{t("brand.select_see")}</p>
             <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
@@ -385,7 +387,7 @@ export default function DriverHomePage() {
       )}
 
       {/* ── HOW IT WORKS ── */}
-      <section style={{ padding: "48px 24px", maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+      <section style={{ padding: "48px 24px", maxWidth: LAYOUT.contentWidth, margin: "0 auto", width: "100%" }}>
         <h2 style={{ textAlign: "center", fontSize: "clamp(20px,3vw,28px)", fontWeight: 800, color: "#111827", marginBottom: 8 }}>{t("how.title")}</h2>
         <p style={{ textAlign: "center", color: "#6b7280", marginBottom: 36, fontSize: 14 }}>{t("how.subtitle")}</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 24 }}>
@@ -406,7 +408,7 @@ export default function DriverHomePage() {
 
       {/* ── FEATURED VEHICLES ── */}
       {vehicles.length > 0 && (
-        <section style={{ padding: "0 24px 48px", maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+        <section style={{ padding: "0 24px 48px", maxWidth: LAYOUT.contentWidth, margin: "0 auto", width: "100%" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
             <div>
               <h2 style={{ fontSize: "clamp(18px,3vw,26px)", fontWeight: 800, color: "#111827" }}>
@@ -431,7 +433,7 @@ export default function DriverHomePage() {
           <div style={{ display: "flex", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
             {[["electric", `⚡ ${t("fuel.electric")}`], ["cng", `🔵 ${t("fuel.cng")}`], ["petrol", `⛽ ${t("fuel.petrol")}`], ["lpg", `🟣 ${t("fuel.lpg")}`]].map(([fuel, label]) => (
               <Link key={fuel} to={`/driver/marketplace?fuel=${fuel}`}
-                style={{ background: "#fff", border: `2px solid ${FUEL_COLOR[fuel]}`, color: FUEL_COLOR[fuel], padding: "12px 24px", borderRadius: 50, fontWeight: 700, fontSize: 15, textDecoration: "none", transition: "all 0.15s", minHeight: 46, display: "flex", alignItems: "center" }}
+                style={{ background: "#fff", border: `2px solid ${FUEL_COLOR[fuel]}`, color: FUEL_COLOR[fuel], padding: "12px 24px", borderRadius: RADIUS.pill, fontWeight: 700, fontSize: 15, textDecoration: "none", transition: "all 0.15s", minHeight: CONTROL.md, display: "flex", alignItems: "center" }}
                 onMouseEnter={e => { e.currentTarget.style.background = FUEL_COLOR[fuel]; e.currentTarget.style.color = "#fff"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = FUEL_COLOR[fuel]; }}>
                 {label}
@@ -445,7 +447,7 @@ export default function DriverHomePage() {
       <section style={{ background: `linear-gradient(135deg, ${D}, #1e40af)`, color: "#fff", padding: "48px 24px", textAlign: "center" }}>
         <div style={{ maxWidth: 640, margin: "0 auto" }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>🏪</div>
-          <h2 style={{ fontFamily: "'Noto Sans Devanagari', sans-serif", fontSize: "clamp(20px,3vw,28px)", fontWeight: 800, marginBottom: 10 }}>
+          <h2 style={{ fontFamily: TYPO.hindi, fontSize: "clamp(20px,3vw,28px)", fontWeight: 800, marginBottom: 10 }}>
             {t("cta.are_you_dealer")}
           </h2>
           <p style={{ color: "#bfdbfe", fontSize: 15, marginBottom: 28, lineHeight: 1.6 }}>

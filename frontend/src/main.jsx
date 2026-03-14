@@ -30,17 +30,50 @@ if (import.meta.env.PROD) {
 }
 
 // ─── New ecosystem pages ─────────────────────────────────
-import LandingPage from './pages/LandingPage.jsx'
+import LandingEntryPage from './pages/LandingEntryPage.jsx'
 import DriverHomePage from './pages/DriverHomePage.jsx'
 import DriverMarketplacePage from './pages/DriverMarketplacePage.jsx'
 import DriverDealerDirectoryPage from './pages/DriverDealerDirectoryPage.jsx'
+import DriverLearnHubPage from './pages/DriverLearnHubPage.jsx'
 import DealerPortalPage from './pages/DealerPortalPage.jsx'
 import FinancerPage from './pages/FinancerPage.jsx'
 
 // Register service worker for PWA offline support
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+
+      if (registration.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        if (!newWorker) return;
+
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            newWorker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+
+      if (navigator.serviceWorker.controller) {
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+      }
+
+      window.setInterval(() => {
+        registration.update().catch(() => {});
+      }, 60 * 60 * 1000);
+    } catch {
+      // Keep startup resilient even if SW registration fails.
+    }
   });
 }
 
@@ -50,12 +83,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <I18nProvider>
         <Routes>
           {/* Landing: branded entry with 3 ecosystem cards */}
-          <Route path="/"                    element={<LandingPage />} />
+          <Route path="/"                    element={<LandingEntryPage />} />
 
           {/* Driver ecosystem — no login, Hindi default */}
           <Route path="/driver"              element={<DriverHomePage />} />
           <Route path="/driver/marketplace"  element={<DriverMarketplacePage />} />
           <Route path="/driver/dealers"      element={<DriverDealerDirectoryPage />} />
+          <Route path="/driver/learn"        element={<DriverLearnHubPage />} />
 
           {/* Dealer ecosystem — login required, full SaaS portal */}
           <Route path="/dealer"              element={<DealerPortalPage />} />
@@ -68,6 +102,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/home"        element={<Navigate to="/driver" replace />} />
           <Route path="/marketplace" element={<Navigate to="/driver/marketplace" replace />} />
           <Route path="/dealers"     element={<Navigate to="/driver/dealers" replace />} />
+          <Route path="/learn"       element={<Navigate to="/driver/learn" replace />} />
           <Route path="/dashboard"   element={<Navigate to="/dealer" replace />} />
           <Route path="/login"       element={<Navigate to="/dealer" replace />} />
 

@@ -36,6 +36,48 @@ export const DARK_C = {
   info:     "#60a5fa",
 };
 
+export const ROLE_C = {
+  driver: "#16a34a",
+  dealer: "#1e3a8a",
+  financer: "#7c3aed",
+};
+
+export const TYPO = {
+  body: "'Inter', 'Nunito', sans-serif",
+  heading: "'Poppins', sans-serif",
+  hindi: "'Noto Sans Devanagari', sans-serif",
+};
+
+export const LAYOUT = {
+  navWidth: 1200,
+  contentWidth: 1100,
+  contentWidthNarrow: 1000,
+};
+
+export const SPACE = {
+  xxs: 6,
+  xs: 8,
+  sm: 10,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  section: 24,
+  sectionLg: 40,
+};
+
+export const RADIUS = {
+  sm: 8,
+  md: 10,
+  lg: 12,
+  xl: 16,
+  pill: 999,
+};
+
+export const CONTROL = {
+  md: 46,
+  lg: 52,
+};
+
 export const ThemeCtx = createContext({ isDark: false, toggle: () => {}, C: LIGHT_C });
 
 export function useTheme() {

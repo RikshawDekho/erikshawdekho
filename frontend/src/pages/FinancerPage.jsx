@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
 import { SectionSkeleton } from "../components/PageSkeleton";
+import { ROLE_C, TYPO, RADIUS, CONTROL, LAYOUT } from "../theme";
 
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
-const G = "#16a34a";
-const P = "#7c3aed";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
+const G = ROLE_C.driver;
+const P = ROLE_C.financer;
 
 function fmtINR(n) { return `₹${Number(n || 0).toLocaleString("en-IN")}`; }
 
@@ -33,7 +34,7 @@ function FinancerLoginForm({ onSuccess }) {
   const [form, setForm] = useState({ username: "", password: "" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: RADIUS.sm, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", minHeight: CONTROL.md };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -63,7 +64,7 @@ function FinancerLoginForm({ onSuccess }) {
         <input style={inp} type="password" placeholder="Password *" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required />
       </div>
       <button type="submit" disabled={loading}
-        style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
+        style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: RADIUS.md, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1, minHeight: CONTROL.md }}>
         {loading ? "Logging in..." : "Login →"}
       </button>
     </form>
@@ -75,7 +76,7 @@ function FinancerRegForm({ onSuccess }) {
   const [form, setForm] = useState({ email: "", password: "", company_name: "", contact_person: "", phone: "", city: "" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const inp = { width: "100%", padding: "11px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  const inp = { width: "100%", padding: "11px 14px", border: "1.5px solid #e5e7eb", borderRadius: RADIUS.sm, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", minHeight: CONTROL.md };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -108,7 +109,7 @@ function FinancerRegForm({ onSuccess }) {
         <input style={inp} placeholder="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
       </div>
       <button type="submit" disabled={loading}
-        style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
+        style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: RADIUS.md, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1, minHeight: CONTROL.md }}>
         {loading ? "Registering..." : "Register as Financer →"}
       </button>
     </form>
@@ -672,7 +673,7 @@ export default function FinancerPage() {
   ];
 
   return (
-    <div style={{ fontFamily: "'Inter', 'Nunito', sans-serif", background: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: TYPO.body, background: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <style>{`* { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
       <Navbar />
 
@@ -703,7 +704,7 @@ export default function FinancerPage() {
       </div>
 
       {/* Content */}
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
+      <div style={{ maxWidth: LAYOUT.contentWidthNarrow, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
         {mode === "browse" && <FinancerListing />}
         {mode === "login" && (
           <div>
