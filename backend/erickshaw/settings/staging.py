@@ -18,6 +18,8 @@ SECRET_KEY = _raw_secret
 ALLOWED_HOSTS = [
     'staging.erikshawdekho.com',
     'staging-api.erikshawdekho.com',
+    'healthcheck.railway.app',   # Railway internal healthcheck host
+    '.up.railway.app',           # Railway preview domains
     'localhost', '127.0.0.1',
     *[h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()],
 ]

@@ -19,7 +19,8 @@ ALLOWED_HOSTS = [
     'erikshawdekho.com',
     'www.erikshawdekho.com',
     'api.erikshawdekho.com',
-    'erikshawdekho-production.up.railway.app',
+    'healthcheck.railway.app',   # Railway internal healthcheck host
+    '.up.railway.app',           # Railway preview domains
     *[h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()],
 ]
 
