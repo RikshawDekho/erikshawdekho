@@ -15,14 +15,7 @@ if not _raw_secret:
 SECRET_KEY = _raw_secret
 
 # ── Hosts ─────────────────────────────────────────────────────────
-ALLOWED_HOSTS = [
-    'demo.erikshawdekho.com',
-    'demo-api.erikshawdekho.com',
-    'healthcheck.railway.app',   # Railway internal healthcheck host
-    '.up.railway.app',           # Railway preview domains
-    'localhost', '127.0.0.1',
-    *[h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()],
-]
+ALLOWED_HOSTS = ['*']  # Demo env — open to all hosts, not a security concern
 
 # ── Database: DEMO_DATABASE_URL or DATABASE_URL ───────────────────
 _db_url = os.environ.get('DEMO_DATABASE_URL') or os.environ.get('DATABASE_URL')

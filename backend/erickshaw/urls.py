@@ -13,8 +13,15 @@ def health(request):
     return JsonResponse({'status': 'ok'})
 
 
+def health_plain(request):
+    """Middleware-bypassing health check for Railway. No auth, no CSRF, no SSL checks."""
+    from django.http import HttpResponse
+    return HttpResponse('ok', content_type='text/plain', status=200)
+
+
 urlpatterns = [
     path('', home),
+    path('health/', health_plain),
     path('api/health/', health),
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
