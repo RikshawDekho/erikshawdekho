@@ -1,5 +1,6 @@
 import re as _re
 from rest_framework import serializers
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import Avg
 from django.utils import timezone
@@ -9,6 +10,9 @@ from .models import (
     DealerApplication, DealerReview, UserProfile, VideoResource, BlogPost, Plan,
     FinancerProfile, FinancerDocument, CustomerProfile,
 )
+
+
+PLATFORM_NAME = getattr(settings, 'PLATFORM_NAME', 'eRickshawDekho')
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -286,7 +290,7 @@ class VideoResourceSerializer(serializers.ModelSerializer):
         extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_dealer_name(self, obj):
-        return obj.dealer.dealer_name if obj.dealer else 'eRickshawDekho'
+        return obj.dealer.dealer_name if obj.dealer else PLATFORM_NAME
 
 
 class BlogPostSerializer(serializers.ModelSerializer):
@@ -298,7 +302,7 @@ class BlogPostSerializer(serializers.ModelSerializer):
         extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_dealer_name(self, obj):
-        return obj.dealer.dealer_name if obj.dealer else 'eRickshawDekho'
+        return obj.dealer.dealer_name if obj.dealer else PLATFORM_NAME
 
 
 class PlanSerializer(serializers.ModelSerializer):

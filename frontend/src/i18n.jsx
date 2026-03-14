@@ -13,6 +13,7 @@ const translations = {
   "nav.home":          { en: "Home",              hi: "होम" },
   "nav.marketplace":   { en: "Marketplace",       hi: "मार्केटप्लेस" },
   "nav.dealers":       { en: "Dealers",           hi: "डीलर्स" },
+  "nav.learn":         { en: "Learn",             hi: "सीखें" },
   "nav.login":         { en: "Login",             hi: "लॉगिन" },
   "nav.register":      { en: "Register",          hi: "रजिस्टर" },
 
@@ -32,6 +33,7 @@ const translations = {
   "driver.find_dealer":    { en: "Find Dealers",               hi: "डीलर खोजें" },
   "driver.compare":        { en: "Compare Vehicles",           hi: "गाड़ी compare करें" },
   "driver.emi":            { en: "EMI Calculator",             hi: "EMI कैलकुलेटर" },
+  "driver.learn":          { en: "Learning Hub",               hi: "लर्निंग हब" },
   "driver.free_enquiry":   { en: "Free Enquiry",               hi: "मुफ्त एंक्वायरी" },
   "driver.cta":            { en: "Explore Now →",              hi: "अभी देखें →" },
 
@@ -104,6 +106,32 @@ const translations = {
   "dir.are_you_dealer":    { en: "Are you a dealer?",          hi: "क्या आप dealer हैं?" },
   "dir.list_free":         { en: "List your showroom for free and connect with thousands of buyers", hi: "अपनी showroom free में list करें और हजारों buyers से connect करें" },
   "dir.register":          { en: "Register Your Showroom →",   hi: "शोरूम रजिस्टर करें →" },
+
+  // ─── Driver Learn Hub ────────────────────────────────
+  "learn.title":           { en: "Driver Learning Hub",        hi: "ड्राइवर लर्निंग हब" },
+  "learn.subtitle":        { en: "Watch practical videos, read guides, and stay updated with tips for better earning and maintenance.", hi: "काम की वीडियो देखें, गाइड पढ़ें और कमाई व मेंटेनेंस के नए टिप्स जानें।" },
+  "learn.videos":          { en: "Videos",                     hi: "वीडियो" },
+  "learn.blogs":           { en: "Blogs",                      hi: "ब्लॉग" },
+  "learn.search":          { en: "Search videos or blogs...",  hi: "वीडियो या ब्लॉग खोजें..." },
+  "learn.all_categories":  { en: "All Categories",             hi: "सभी कैटेगरी" },
+  "learn.watch_video":     { en: "Watch Video",                hi: "वीडियो देखें" },
+  "learn.read_article":    { en: "Read Article",               hi: "आर्टिकल पढ़ें" },
+  "learn.open_source":     { en: "Open Source",                hi: "सोर्स खोलें" },
+  "learn.video_results":   { en: "videos",                     hi: "वीडियो" },
+  "learn.blog_results":    { en: "blogs",                      hi: "ब्लॉग" },
+  "learn.no_videos":       { en: "No videos found",            hi: "कोई वीडियो नहीं मिला" },
+  "learn.no_blogs":        { en: "No blogs found",             hi: "कोई ब्लॉग नहीं मिला" },
+  "learn.try_other_filters": { en: "Try changing filters or search keywords", hi: "फिल्टर या खोज शब्द बदलकर देखें" },
+  "learn.link_unavailable": { en: "Link unavailable",          hi: "लिंक उपलब्ध नहीं है" },
+  "learn.no_description":  { en: "No description available.",  hi: "कोई विवरण उपलब्ध नहीं है।" },
+  "learn.no_content":      { en: "Full content is not available for this post.", hi: "इस पोस्ट का पूरा कंटेंट उपलब्ध नहीं है।" },
+  "learn.category.tutorial":   { en: "How to Drive",          hi: "चलाने की ट्रेनिंग" },
+  "learn.category.maintenance":{ en: "Maintenance",           hi: "मेंटेनेंस" },
+  "learn.category.earning":    { en: "Earning Tips",          hi: "कमाई के टिप्स" },
+  "learn.category.review":     { en: "Expert Reviews",        hi: "एक्सपर्ट रिव्यू" },
+  "learn.category.news":       { en: "Industry News",         hi: "इंडस्ट्री न्यूज़" },
+  "learn.category.scheme":     { en: "Government Schemes",    hi: "सरकारी योजनाएँ" },
+  "learn.category.general":    { en: "General",               hi: "सामान्य" },
 
   // ─── How it works ──────────────────────────────────────
   "how.title":             { en: "How It Works",               hi: "यह कैसे काम करता है?" },

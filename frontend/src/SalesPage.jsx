@@ -1,6 +1,7 @@
 import html2pdf from 'html2pdf.js';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useC } from './theme';
+import { BRANDING } from './branding';
 
 function useDebounce(value, delay = 350) {
   const [debounced, setDebounced] = useState(value);
@@ -15,7 +16,7 @@ function useDebounce(value, delay = 350) {
 // Sales page — fully theme-aware (every sub-component calls useC)
 // ═══════════════════════════════════════════════════════════════
 
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
 async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem("erd_access");
   const res = await fetch(`${API}${path}`, {
@@ -107,10 +108,10 @@ function Badge({ label, color }) {
   );
 }
 
-function Field({ label, children, required }) {
+function Field({ label, children, required, style = {} }) {
   const C = useC();
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div style={{ marginBottom: 14, ...style }}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.textMid, marginBottom: 5 }}>
         {label}{required && <span style={{ color: C.danger }}> *</span>}
       </label>
@@ -230,7 +231,7 @@ function InvoicePrint({ inv, onClose }) {
       frame.contentWindow.print();
       setTimeout(() => { if (frame.parentNode) frame.parentNode.removeChild(frame); }, 1000);
     }, 400);
-    setTimeout(() => { document.title = "eRickshawDekho"; }, 1500);
+    setTimeout(() => { document.title = BRANDING.platformName; }, 1500);
   };
 
   const handleDownload = () => {
@@ -285,7 +286,7 @@ function InvoicePrint({ inv, onClose }) {
                 <div style={{ width: 34, height: 34, background: "linear-gradient(135deg,#1a7c4f,#22a866)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🛺</div>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: -0.5 }}>
-                    erikshaw<span style={{ color: "#f59e0b" }}>Dekho</span><span style={{ color: "#1a7c4f" }}>.com</span>
+                    {BRANDING.platformName}
                   </div>
                   <div style={{ fontSize: 9, color: "#94a3b8", letterSpacing: 0.5 }}>AUTHORISED eRICKSHAW DEALER</div>
                 </div>
@@ -293,7 +294,7 @@ function InvoicePrint({ inv, onClose }) {
               <div style={{ color: "#475569", fontSize: 10, lineHeight: 1.7 }}>
                 <div style={{ fontWeight: 700, color: "#1e293b" }}>{inv.dealer?.dealer_name}</div>
                 <div>{inv.dealer?.address}{inv.dealer?.address ? ", " : ""}{inv.dealer?.city}, India</div>
-                <div>📞 {inv.dealer?.phone} &nbsp;✉ info@erikshawdekho.com</div>
+                <div>📞 {inv.dealer?.phone} &nbsp;✉ {BRANDING.invoiceEmail}</div>
                 {inv.dealer?.gstin && <div style={{ marginTop: 2 }}>GSTIN: <strong style={{ color: "#1e293b" }}>{inv.dealer.gstin}</strong></div>}
               </div>
             </div>
@@ -476,9 +477,9 @@ function InvoicePrint({ inv, onClose }) {
         <div style={{ padding: "8px 22px", borderTop: "2px solid #1a7c4f", background: "#f0fdf4", textAlign: "center", fontSize: 9.5, color: "#475569", lineHeight: 1.7 }}>
           <div style={{ fontWeight: 700, color: "#1a7c4f", marginBottom: 2 }}>This is a computer-generated Tax Invoice. No signature required if digitally signed.</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 24 }}>
-            <span>🌐 www.erikshawdekho.com</span>
+            <span>🌐 {BRANDING.platformHost || BRANDING.platformUrl}</span>
             <span>📞 {inv.dealer?.phone}</span>
-            <span>✉ info@erikshawdekho.com</span>
+            <span>✉ {BRANDING.invoiceEmail}</span>
           </div>
         </div>
       </div>
@@ -496,6 +497,10 @@ export function SalesPage() {
     cash: C.success, upi: C.info, loan: C.warning,
     bank_transfer: C.primary, cheque: C.textMid,
   };
+
+  const FORM_GRID_2 = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
+  const FORM_GRID_3 = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14 };
+  const FORM_GRID_4 = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 };
 
   const [sales,      setSales]      = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -636,7 +641,7 @@ export function SalesPage() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 22 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, marginBottom: 22 }}>
         {[
           { icon: "🛺", label: "Total Sales",      value: stats.total,           color: C.primary },
           { icon: "📅", label: "This Month",        value: stats.thisMonth,       color: C.info },
@@ -808,8 +813,8 @@ export function SalesPage() {
             {/* Vehicle section */}
             <div style={{ background: `${C.primary}0a`, border: `1.5px solid ${C.primary}25`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: C.primary, marginBottom: 12 }}>🛺 Vehicle Details</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <div style={{ gridColumn: "span 2" }}>
+              <div style={FORM_GRID_2}>
+                <div style={{ gridColumn: "1 / -1" }}>
                   <Field label="Select Vehicle" required>
                     <Select
                       value={form.vehicle} onChange={handleVehicleSelect}
@@ -829,28 +834,28 @@ export function SalesPage() {
                 </Field>
               </div>
               {/* GST Rate inputs */}
-              <div style={{ gridColumn: "span 2", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginTop: 4 }}>
+              <div style={{ ...FORM_GRID_4, marginTop: 4 }}>
                 <Field label="CGST Rate (%)">
                   <Input value={form.cgst_rate} onChange={setF("cgst_rate")} type="number" placeholder="2.5" style={{ textAlign: "right" }} />
                 </Field>
                 <Field label="SGST Rate (%)">
                   <Input value={form.sgst_rate} onChange={setF("sgst_rate")} type="number" placeholder="2.5" style={{ textAlign: "right" }} />
                 </Field>
-                <div style={{ gridColumn: "span 2", display: "flex", alignItems: "flex-end", paddingBottom: 14 }}>
+                <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "flex-end", paddingBottom: 14 }}>
                   <div style={{ background: `${C.info}10`, border: `1px solid ${C.info}30`, borderRadius: 7, padding: "6px 10px", fontSize: 11, color: C.info, width: "100%" }}>
                     ℹ Electric vehicles (eRickshaw): 2.5% CGST + 2.5% SGST = 5% total GST (GST notification 12/2017)
                   </div>
                 </div>
               </div>
               {salePrice > 0 && (
-                <div style={{ gridColumn: "span 2", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, fontSize: 12 }}>
+                <div style={{ gridColumn: "1 / -1", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, fontSize: 12 }}>
                   {[
                     ["Subtotal",             fmtINR(subtotal_), C.text],
                     [`CGST ${cgstRate}%`,    fmtINR(cgst_),     C.textMid],
                     [`SGST ${sgstRate}%`,    fmtINR(sgst_),     C.textMid],
                     ["Grand Total",          fmtINR(total_),    C.primary],
                   ].map(([l, v, col]) => (
-                    <div key={l} style={{ textAlign: "center", padding: "6px 0", borderRight: `1px solid ${C.border}` }}>
+                    <div key={l} style={{ textAlign: "center", padding: "6px 8px", borderRadius: 6, background: C.surface }}>
                       <div style={{ color: C.textDim, marginBottom: 2, fontSize: 11 }}>{l}</div>
                       <div style={{ fontWeight: 700, color: col }}>{v}</div>
                     </div>
@@ -862,7 +867,7 @@ export function SalesPage() {
             {/* Vehicle Identification — for RTO & Insurance */}
             <div style={{ background: `${C.info}08`, border: `1.5px solid ${C.info}25`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: C.info, marginBottom: 4 }}>🏷️ Vehicle Identification <span style={{ fontSize: 11, fontWeight: 400, color: C.textMid }}>(required for RTO registration & insurance)</span></div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
+              <div style={{ ...FORM_GRID_2, marginTop: 12 }}>
                 <Field label="Chassis No. / Frame No." required>
                   <Input value={form.chassis_number} onChange={setF("chassis_number")} placeholder="e.g. ME4JF502DB8001234" />
                 </Field>
@@ -881,7 +886,7 @@ export function SalesPage() {
             {/* Battery & Warranty */}
             <div style={{ background: `${C.warning}08`, border: `1.5px solid ${C.warning}25`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: C.warning, marginBottom: 4 }}>🔋 Battery & Warranty Details</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 12 }}>
+              <div style={{ ...FORM_GRID_3, marginTop: 12 }}>
                 {/* Battery count selector */}
                 <Field label="No. of Battery Units *" required>
                   <Select
@@ -902,7 +907,7 @@ export function SalesPage() {
                 </Field>
               </div>
               {/* Dynamic per-battery serial number inputs */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
+              <div style={{ ...FORM_GRID_2, marginTop: 12 }}>
                 {form.battery_serials.map((serial, i) => (
                   <Field key={i} label={`Battery ${i + 1} Serial No. *`} required>
                     <Input
@@ -918,7 +923,7 @@ export function SalesPage() {
                   </Field>
                 ))}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 12 }}>
+              <div style={{ ...FORM_GRID_3, marginTop: 12 }}>
                 <Field label="Battery Warranty (months) (optional)">
                   <Input value={form.battery_warranty_months} onChange={setF("battery_warranty_months")} type="number" placeholder="e.g. 12" />
                 </Field>
@@ -934,7 +939,7 @@ export function SalesPage() {
             {/* Customer section */}
             <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 12 }}>👤 Customer Details</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div style={FORM_GRID_2}>
                 <Field label="Customer Name" required>
                   <Input value={form.customer_name} onChange={setF("customer_name")} placeholder="Ramesh Kumar" required />
                 </Field>
@@ -947,7 +952,7 @@ export function SalesPage() {
                 <Field label="Customer GSTIN">
                   <Input value={form.customer_gstin} onChange={setF("customer_gstin")} placeholder="09XYZ5678T9ZX" />
                 </Field>
-                <div style={{ gridColumn: "span 2" }}>
+                <div style={{ gridColumn: "1 / -1" }}>
                   <Field label="Full Address">
                     <Input value={form.customer_address} onChange={setF("customer_address")} placeholder="Shop No., Road, City, State - PIN" />
                   </Field>
@@ -956,7 +961,7 @@ export function SalesPage() {
             </div>
 
             {/* Payment + delivery + place of supply */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: form.payment_method === "loan" ? 0 : 18 }}>
+            <div style={{ ...FORM_GRID_2, marginBottom: form.payment_method === "loan" ? 0 : 18 }}>
               <Field label="Payment Method">
                 <Select value={form.payment_method} onChange={setF("payment_method")} options={[
                   { value: "cash",          label: "💵 Cash" },

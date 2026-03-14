@@ -182,17 +182,89 @@ FinanceLoan     → dealer, customer, vehicle, loan_amount, status
 
 ---
 
-## Environment Variables (optional)
+## Environment Profiles
 
-Create `backend/.env`:
+The platform supports three explicit environments:
+
+- `DEV` for local development
+- `DEMO` for showcases at `demo.erikshawdekho.com`
+- `PROD` for real users at `erikshawdekho.com`
+
+### Backend env templates
+
+- `backend/.env.dev.example`
+- `backend/.env.demo.example`
+- `backend/.env.prod.example`
+
+### Frontend env templates
+
+- `frontend/.env.development.example`
+- `frontend/.env.demo.example`
+- `frontend/.env.production.example`
+
+For demo-only white-label branding, use these frontend keys:
+
+- `VITE_DEMO_WHITE_LABEL=true`
+- `VITE_DEMO_BRAND_NAME`, `VITE_DEMO_BRAND_TAGLINE`, `VITE_DEMO_PLATFORM_URL`
+- `VITE_DEMO_SUPPORT_EMAIL`, `VITE_DEMO_SUPPORT_PHONE`, `VITE_DEMO_SUPPORT_WHATSAPP`, `VITE_DEMO_INVOICE_EMAIL`
+
+For backend demo branding/support messages, use:
+
+- `PLATFORM_NAME`, `PLATFORM_TAGLINE`, `PLATFORM_URL`, `PLATFORM_TEAM_NAME`, `PLATFORM_NOREPLY_EMAIL`
+- `SUPPORT_EMAIL`, `SUPPORT_PHONE`, `SUPPORT_WHATSAPP`
+
+### Database separation
+
+- `DEMO` must use `demo_database` (`DEMO_DATABASE_URL`)
+- `PROD` must use `prod_database` (`PROD_DATABASE_URL`)
+- Never point demo frontend/backend to production DB or API
+
+### Docker stacks
+
+```bash
+# Development
+docker compose up --build
+
+# Demo (seeded demo data)
+docker compose -f docker-compose.demo.yml up --build
+
+# Production
+docker compose -f docker-compose.prod.yml up --build
 ```
-DB_NAME=erickshaw_db
-DB_USER=postgres
-DB_PASSWORD=your_password
-DB_HOST=localhost
-DB_PORT=5432
-SECRET_KEY=your-secret-key-here
-```
+
+Demo stack seeds test data using `python manage.py seed_demo`.
+Production stack does not auto-seed demo data.
+
+### Standard migration strategy
+
+Use this release order for reliable deployments:
+
+1. Run `python manage.py check_env_db_consistency`
+2. Run `python manage.py migrate --noinput`
+3. Run `python manage.py collectstatic --noinput`
+4. Run `python manage.py ensure_admin`
+5. Run `python manage.py check_auth_integrity`
+6. Start web workers (gunicorn)
+
+Notes:
+
+- `seed_demo` is restricted to demo environments (`APP_ENV=demo`) unless `ALLOW_DEMO_SEED=true` is set intentionally.
+- `ensure_admin` is idempotent and will not reset an existing password unless `--update-password` is used.
+- `check_auth_integrity` verifies active admin availability and migration completeness.
+
+---
+
+## Branching and Releases
+
+This repository follows a lightweight GitFlow-style strategy aligned to the existing CI setup:
+
+- `develop` for integration
+- `release/*` for staging hardening and validation
+- `main` for production deployments
+
+Full workflow, naming conventions, hotfix process, and protection rules are documented in:
+
+- `BRANCH_STRATEGY.md`
 
 ---
 

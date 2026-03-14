@@ -24,6 +24,7 @@ env/
 ENV/
 .env
 .env.*
+!.env.*.example
 
 # Migrations cache
 *.pyo

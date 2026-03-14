@@ -9,8 +9,30 @@ load_dotenv(BASE_DIR / ".env")
 load_dotenv()
 
 # ── Environment ────────────────────────────────────────────────────
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ENVIRONMENT = os.environ.get('ENVIRONMENT', 'production' if not DEBUG else 'development')
+def _normalize_app_env(raw):
+    val = (raw or '').strip().lower()
+    aliases = {
+        'dev': 'dev',
+        'development': 'dev',
+        'demo': 'demo',
+        'staging': 'demo',
+        'prod': 'prod',
+        'production': 'prod',
+    }
+    return aliases.get(val, 'prod')
+
+_raw_env = os.environ.get('APP_ENV') or os.environ.get('ENVIRONMENT')
+if not _raw_env:
+    _raw_env = 'development' if os.environ.get('DEBUG', 'False') == 'True' else 'production'
+
+APP_ENV = _normalize_app_env(_raw_env)
+DEBUG = os.environ.get('DEBUG', 'True' if APP_ENV == 'dev' else 'False') == 'True'
+ENVIRONMENT = {
+    'dev': 'development',
+    'demo': 'demo',
+    'prod': 'production',
+}[APP_ENV]
+IS_DEMO_ENV = APP_ENV == 'demo'
 
 # ── Sentry (early init to capture startup errors) ─────────────────
 _SENTRY_DSN = os.environ.get('SENTRY_DSN', '')
@@ -39,6 +61,8 @@ ALLOWED_HOSTS = [
     "erikshawdekho.com",
     "www.erikshawdekho.com",
     "api.erikshawdekho.com",
+    "demo.erikshawdekho.com",
+    "demo-api.erikshawdekho.com",
     *[h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()],
 ]
 
@@ -84,16 +108,25 @@ TEMPLATES = [{
 WSGI_APPLICATION = 'erickshaw.wsgi.application'
 
 # ── Database ───────────────────────────────────────────────────────
-DATABASE_URL = os.environ.get("DATABASE_URL")
+def _database_url_for_env():
+    # Backward compatible precedence: env-specific URL, then generic DATABASE_URL
+    if APP_ENV == 'demo':
+        return os.environ.get("DEMO_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    if APP_ENV == 'prod':
+        return os.environ.get("PROD_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    return os.environ.get("DEV_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
+DATABASE_URL = _database_url_for_env()
 if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
 else:
+    _fallback_name = "erikshaw_demo_db" if APP_ENV == 'demo' else "erikshaw_db"
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("DB_NAME", "erikshaw_db"),
+            "NAME": os.environ.get("DB_NAME", _fallback_name),
             "USER": os.environ.get("DB_USER", "postgres"),
             "PASSWORD": os.environ.get("DB_PASSWORD", "postgres"),
             "HOST": os.environ.get("DB_HOST", "localhost"),
@@ -144,6 +177,8 @@ CSRF_TRUSTED_ORIGINS = [
     "https://erikshawdekho.com",
     "https://www.erikshawdekho.com",
     "https://erikshawdekho-production.up.railway.app",
+    "https://demo.erikshawdekho.com",
+    "https://demo-api.erikshawdekho.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -158,6 +193,7 @@ else:
         CORS_ALLOWED_ORIGINS = [
             "https://www.erikshawdekho.com",
             "https://erikshawdekho.com",
+            "https://demo.erikshawdekho.com",
             "https://erikshawdekho.vercel.app",
         ]
 
@@ -273,8 +309,12 @@ TWILIO_SMS_FROM       = os.environ.get('TWILIO_SMS_FROM', '')
 FIREBASE_CREDENTIALS_JSON = os.environ.get('FIREBASE_CREDENTIALS_JSON', '')
 
 # ── Platform branding ─────────────────────────────────────────────
-PLATFORM_NAME    = 'eRickshawDekho'
-PLATFORM_URL     = os.environ.get('PLATFORM_URL', 'https://www.erikshawdekho.com')
+PLATFORM_NAME    = os.environ.get('PLATFORM_NAME', 'eRickshawDekho')
+PLATFORM_TAGLINE = os.environ.get('PLATFORM_TAGLINE', 'Bharosemand Platform')
+_default_platform_url = 'https://demo.erikshawdekho.com' if IS_DEMO_ENV else 'https://www.erikshawdekho.com'
+PLATFORM_URL     = os.environ.get('PLATFORM_URL', _default_platform_url)
 SUPPORT_PHONE    = os.environ.get('SUPPORT_PHONE', '+91-XXXXXXXXXX')
 SUPPORT_EMAIL    = os.environ.get('SUPPORT_EMAIL', 'support@erikshawdekho.com')
 SUPPORT_WHATSAPP = os.environ.get('SUPPORT_WHATSAPP', 'https://wa.me/91XXXXXXXXXX')
+PLATFORM_TEAM_NAME = os.environ.get('PLATFORM_TEAM_NAME', f'{PLATFORM_NAME} Team')
+PLATFORM_NOREPLY_EMAIL = os.environ.get('PLATFORM_NOREPLY_EMAIL', DEFAULT_FROM_EMAIL)

@@ -6,11 +6,13 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useI18n, LanguageSwitcher } from "../i18n";
+import { ROLE_C, TYPO, RADIUS, LAYOUT, CONTROL } from "../theme";
+import { BRANDING } from "../branding";
 
-const G = "#16a34a";
-const D = "#1e3a8a";
-const P = "#7c3aed";
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
+const G = ROLE_C.driver;
+const D = ROLE_C.dealer;
+const P = ROLE_C.financer;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -57,7 +59,7 @@ export default function LandingPage() {
   ];
 
   return (
-    <div style={{ fontFamily: "'Inter', 'Nunito', sans-serif", minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: TYPO.body, minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -78,8 +80,8 @@ export default function LandingPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 28 }}>🛺</span>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 18, color: G, fontFamily: "'Poppins',sans-serif", lineHeight: 1 }}>ErikshawDekho</div>
-            <div style={{ fontSize: 10, color: "#6b7280", fontFamily: "'Noto Sans Devanagari',sans-serif" }}>भारत का ई-रिक्शा प्लेटफॉर्म</div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: G, fontFamily: TYPO.heading, lineHeight: 1 }}>{BRANDING.platformName}</div>
+            <div style={{ fontSize: 10, color: "#6b7280", fontFamily: TYPO.hindi }}>{BRANDING.platformTagline}</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -87,7 +89,7 @@ export default function LandingPage() {
           {/* Hard Refresh */}
           <button onClick={() => { if ("caches" in window) caches.keys().then(names => names.forEach(n => caches.delete(n))); window.location.reload(); }}
             title={t("action.hard_refresh")}
-            style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 14, color: "#6b7280", transition: "all 0.15s" }}>
+            style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: RADIUS.sm, padding: "6px 10px", cursor: "pointer", fontSize: 14, color: "#6b7280", transition: "all 0.15s" }}>
             🔄
           </button>
         </div>
@@ -104,14 +106,14 @@ export default function LandingPage() {
           {/* Big logo + name */}
           <div style={{ animation: "fadeUp 0.6s ease both" }}>
             <div style={{ fontSize: "clamp(56px,10vw,80px)", marginBottom: 8, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))" }}>🛺</div>
-            <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: "clamp(30px,6vw,52px)", fontWeight: 800, lineHeight: 1.15, marginBottom: 6, textShadow: "0 2px 16px rgba(0,0,0,0.25)" }}>
-              ErikshawDekho
+            <div style={{ fontFamily: TYPO.heading, fontSize: "clamp(30px,6vw,52px)", fontWeight: 800, lineHeight: 1.15, marginBottom: 6, textShadow: "0 2px 16px rgba(0,0,0,0.25)" }}>
+              {BRANDING.platformName}
             </div>
           </div>
 
           <div style={{ animation: "fadeUp 0.6s 0.15s ease both" }}>
-            <div style={{ fontFamily: "'Noto Sans Devanagari', sans-serif", fontSize: "clamp(18px,3.5vw,28px)", fontWeight: 700, color: "#bbf7d0", marginBottom: 4 }}>
-              {lang === "en" ? "India's Most Trusted E-Rickshaw Platform" : "भारत का सबसे भरोसेमंद ई-रिक्शा प्लेटफॉर्म"}
+            <div style={{ fontFamily: TYPO.hindi, fontSize: "clamp(18px,3.5vw,28px)", fontWeight: 700, color: "#bbf7d0", marginBottom: 4 }}>
+              {BRANDING.platformTagline}
             </div>
             <div style={{ fontSize: "clamp(13px,2vw,16px)", color: "#93c5fd", marginBottom: 32 }}>
               {t("landing.hero.subtitle")}
@@ -127,7 +129,7 @@ export default function LandingPage() {
               { n: "₹0", l: t("landing.hero.free") },
             ].map(({ n, l }) => (
               <div key={l} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "clamp(22px,4vw,36px)", fontWeight: 800, fontFamily: "'Poppins',sans-serif" }}>{n}</div>
+                <div style={{ fontSize: "clamp(22px,4vw,36px)", fontWeight: 800, fontFamily: TYPO.heading }}>{n}</div>
                 <div style={{ fontSize: 12, color: "#93c5fd", marginTop: 2 }}>{l}</div>
               </div>
             ))}
@@ -136,7 +138,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── 3 Ecosystem Cards ── */}
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 20px", flex: 1 }}>
+      <main style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto", padding: "48px 20px", flex: 1 }}>
         <h2 style={{ textAlign: "center", fontSize: "clamp(20px,3.5vw,30px)", fontWeight: 800, color: "#111827", marginBottom: 8 }}>
           {t("who.title")}
         </h2>
@@ -179,7 +181,7 @@ export default function LandingPage() {
               <div style={{ padding: "0 24px 24px" }}>
                 <Link to={path} className="cta-btn"
                   onClick={e => e.stopPropagation()}
-                  style={{ display: "block", background: color, color: "#fff", textAlign: "center", padding: "13px 0", borderRadius: 12, fontWeight: 700, fontSize: 15, textDecoration: "none" }}>
+                  style={{ display: "block", background: color, color: "#fff", textAlign: "center", padding: "13px 0", borderRadius: RADIUS.lg, fontWeight: 700, fontSize: 15, textDecoration: "none", minHeight: CONTROL.md }}>
                   {t(`${key}.${key === "driver" ? "cta" : "portal"}`)}
                 </Link>
               </div>
@@ -189,12 +191,12 @@ export default function LandingPage() {
 
         {/* Session restore banner */}
         {lastPage && (
-          <div style={{ marginTop: 32, background: "#fff", border: "1px solid #e5e7eb", borderLeft: `4px solid ${G}`, borderRadius: 12, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ marginTop: 32, background: "#fff", border: "1px solid #e5e7eb", borderLeft: `4px solid ${G}`, borderRadius: RADIUS.lg, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: "#111827" }}>{t("action.welcome_back")} 👋</div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>{t("action.session_saved")}</div>
             </div>
-            <Link to={lastPage} style={{ background: G, color: "#fff", padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+            <Link to={lastPage} style={{ background: G, color: "#fff", padding: "8px 20px", borderRadius: RADIUS.sm, fontSize: 13, fontWeight: 700, textDecoration: "none", minHeight: CONTROL.md, display: "inline-flex", alignItems: "center" }}>
               {t("action.continue")}
             </Link>
           </div>
@@ -225,7 +227,7 @@ export default function LandingPage() {
       {/* ── Footer ── */}
       <footer style={{ background: "#111827", color: "#9ca3af", padding: "24px", textAlign: "center", fontSize: 12 }}>
         <div style={{ marginBottom: 8 }}>
-          <span style={{ fontWeight: 700, color: "#e5e7eb" }}>ErikshawDekho</span>
+          <span style={{ fontWeight: 700, color: "#e5e7eb" }}>{BRANDING.platformName}</span>
           {" "}{lang === "en" ? "— India's Most Trusted E-Rickshaw Platform" : "— भारत का सबसे भरोसेमंद E-Rickshaw Platform"}
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: 20, flexWrap: "wrap", marginBottom: 12 }}>
@@ -235,7 +237,7 @@ export default function LandingPage() {
           <Link to="/financer" style={{ color: "#9ca3af", textDecoration: "none" }}>{t("nav.financer")}</Link>
         </div>
         <div style={{ fontSize: 11, color: "#6b7280" }}>
-          © {new Date().getFullYear()} ErikshawDekho · support@erikshawdekho.com · {t("footer.designed")}
+          © {new Date().getFullYear()} {BRANDING.platformName} · {BRANDING.support.email} · {t("footer.designed")}
         </div>
       </footer>
     </div>

@@ -1,6 +1,7 @@
 import uuid
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.conf import settings
 from django.db.models import Sum, Count, Q, F, ExpressionWrapper, DecimalField, Avg
 from django.utils import timezone
 from datetime import timedelta, date
@@ -34,6 +35,26 @@ def _jwt_response(user):
     """Return JWT access + refresh tokens as a dict."""
     refresh = RefreshToken.for_user(user)
     return {'access': str(refresh.access_token), 'refresh': str(refresh)}
+
+
+def _platform_name():
+    return getattr(settings, 'PLATFORM_NAME', 'eRickshawDekho')
+
+
+def _platform_team_name():
+    return getattr(settings, 'PLATFORM_TEAM_NAME', f'{_platform_name()} Team')
+
+
+def _support_email():
+    return getattr(settings, 'SUPPORT_EMAIL', 'support@erikshawdekho.com')
+
+
+def _platform_from_email():
+    return getattr(
+        settings,
+        'PLATFORM_NOREPLY_EMAIL',
+        getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@erikshawdekho.com')
+    )
 
 
 class AuthThrottle(AnonRateThrottle):
@@ -115,7 +136,7 @@ def login_view(request):
     if not user:
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
     if not user.is_active:
-        return Response({"error": "Your account has been deactivated. Please contact support@erikshawdekho.com"}, status=403)
+        return Response({"error": f"Your account has been deactivated. Please contact {_support_email()}"}, status=403)
     dealer = getattr(user, 'dealer_profile', None)
     profile = getattr(user, 'profile', None)
     if user.is_superuser or user.is_staff:
@@ -790,7 +811,7 @@ def public_enquiry(request):
         )
 
     # Notify dealers (fire-and-forget)
-    vehicle_name = str(vehicle) if vehicle else ('eRickshaw enquiry — ' + (brand_name or 'General'))
+    vehicle_name = str(vehicle) if vehicle else (f"{_platform_name()} enquiry — " + (brand_name or 'General'))
     for dealer in broadcast_dealers:
         try:
             from api.emails import send_public_enquiry_notification
@@ -1308,15 +1329,15 @@ def forgot_password(request):
 
     try:
         send_mail(
-            subject='eRickshawDekho — Password Reset OTP',
+            subject=f'{_platform_name()} — Password Reset OTP',
             message=(
                 f'Hello {user.first_name or user.username},\n\n'
                 f'Your OTP for password reset is:\n\n  {otp}\n\n'
                 f'This OTP is valid for 10 minutes.\n\n'
                 f'If you did not request this, please ignore this email.\n\n'
-                f'— eRickshawDekho Team'
+                f'— {_platform_team_name()}'
             ),
-            from_email='noreply@erikshawdekho.com',
+            from_email=_platform_from_email(),
             recipient_list=[user.email],
             fail_silently=True,
         )
@@ -2304,9 +2325,9 @@ def admin_financers(request, financer_id=None):
                 if fp.is_verified and fp.user.email:
                     from django.core.mail import send_mail
                     send_mail(
-                        subject='eRickshawDekho — Financer Account Approved! ✅',
-                        message=f'Congratulations {fp.company_name}!\n\nYour financer account has been approved by our team. You can now log in and start onboarding dealers.\n\n— eRickshawDekho Team',
-                        from_email='noreply@erikshawdekho.com',
+                        subject=f'{_platform_name()} — Financer Account Approved! ✅',
+                        message=f'Congratulations {fp.company_name}!\n\nYour financer account has been approved by our team. You can now log in and start onboarding dealers.\n\n— {_platform_team_name()}',
+                        from_email=_platform_from_email(),
                         recipient_list=[fp.user.email],
                         fail_silently=True,
                     )

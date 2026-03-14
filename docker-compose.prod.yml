@@ -26,10 +26,19 @@ services:
     container_name: erd_backend_prod
     restart: always
     command: >
-      sh -c "python manage.py migrate --noinput &&
+      sh -c "python manage.py check_env_db_consistency &&
+             python manage.py migrate --noinput &&
              python manage.py collectstatic --noinput &&
+             python manage.py ensure_admin &&
+             python manage.py check_auth_integrity &&
              gunicorn erickshaw.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     env_file: ./backend/.env
+    environment:
+      APP_ENV: prod
+      ENVIRONMENT: production
+      DEBUG: "False"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@erikshawdekho.com}
     volumes:
       - media_prod_data:/app/media
       - static_prod_data:/app/staticfiles

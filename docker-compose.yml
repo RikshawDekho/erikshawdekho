@@ -29,6 +29,9 @@ services:
              python manage.py seed_data &&
              python manage.py runserver 0.0.0.0:8000"
     environment:
+      APP_ENV:     dev
+      ENVIRONMENT: development
+      DEBUG:       "True"
       DB_NAME:     erickshaw_db
       DB_USER:     postgres
       DB_PASSWORD: postgres
