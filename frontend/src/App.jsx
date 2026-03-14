@@ -1063,6 +1063,7 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
               {[
                 { id: "customers",   label: "Customers", icon: "👤" },
                 { id: "finance",     label: "Finance",   icon: "🏦" },
+                { id: "marketing",   label: "Marketing", icon: "📣" },
                 { id: "reports",     label: "Reports",   icon: "📈" },
                 { id: "learn",       label: "Learn",     icon: "🎓" },
                 { id: "marketplace", label: "Market",    icon: "🛒" },
