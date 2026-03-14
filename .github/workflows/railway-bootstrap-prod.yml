@@ -1,0 +1,26 @@
+name: Railway — Bootstrap Production DB
+
+# Run ONCE after first production deploy to create Plans and PlatformSettings.
+# Safe to re-run — uses update_or_create internally.
+on:
+  workflow_dispatch:
+
+jobs:
+  bootstrap:
+    name: Seed Plans + PlatformSettings (production only)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Run seed_production on Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway run \
+            --environment production \
+            --service backend \
+            python manage.py seed_production --confirm-production
