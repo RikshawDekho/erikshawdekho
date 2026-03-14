@@ -169,6 +169,11 @@ class Vehicle(models.Model):
     def __str__(self):
         return f"{self.brand} {self.model_name}"
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'is_active', 'stock_status']),
+        ]
+
     def save(self, *args, **kwargs):
         if self.stock_quantity == 0:
             self.stock_status = 'out_of_stock'
@@ -210,6 +215,15 @@ class Lead(models.Model):
     follow_up_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete — never hard-delete CRM records
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'status']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
         return f"{self.customer_name} - {self.vehicle}"
@@ -259,6 +273,15 @@ class Sale(models.Model):
     financer_details = models.TextField(blank=True, help_text='Financer name, loan a/c, ref number, branch etc.')
     # GST compliance fields
     place_of_supply = models.CharField(max_length=100, blank=True)  # state name
+    sale_updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete — never hard-delete financial records
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'sale_date']),
+        ]
 
     @property
     def subtotal(self):
@@ -291,6 +314,15 @@ class Customer(models.Model):
     total_purchases = models.IntegerField(default=0)
     total_spent = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete — preserve customer history
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'phone']),
+        ]
 
     def __str__(self):
         return self.name
@@ -304,6 +336,7 @@ class Task(models.Model):
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
     is_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.title
@@ -322,6 +355,12 @@ class FinanceLoan(models.Model):
     bank_name = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     applied_date = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'status']),
+        ]
 
     def __str__(self):
         return f"{self.customer_name} - ₹{self.loan_amount}"
@@ -502,6 +541,9 @@ class PublicEnquiry(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Public Enquiry'
         verbose_name_plural = 'Public Enquiries'
+        indexes = [
+            models.Index(fields=['dealer', 'is_processed']),
+        ]
 
     def __str__(self):
         return f"{self.customer_name} ({self.phone}) — {self.city}"
@@ -541,6 +583,9 @@ class NotificationLog(models.Model):
 
     class Meta:
         ordering = ['-sent_at']
+        indexes = [
+            models.Index(fields=['dealer', 'sent_at']),
+        ]
 
     def __str__(self):
         status = '✓' if self.success else '✗'
@@ -801,6 +846,10 @@ class FinanceApplication(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['dealer', 'status']),
+            models.Index(fields=['financer', 'status']),
+        ]
 
     def __str__(self):
         return f"FA-{self.pk} | {self.customer_name} → {self.financer.company_name} [{self.status}]"

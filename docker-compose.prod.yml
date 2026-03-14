@@ -34,6 +34,7 @@ services:
              gunicorn erickshaw.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     env_file: ./backend/.env
     environment:
+      DJANGO_SETTINGS_MODULE: erickshaw.settings.production
       APP_ENV: prod
       ENVIRONMENT: production
       DEBUG: "False"

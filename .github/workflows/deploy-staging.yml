@@ -44,6 +44,7 @@ jobs:
       - name: Django checks + tests
         working-directory: backend
         env:
+          DJANGO_SETTINGS_MODULE: erickshaw.settings.development
           SECRET_KEY: staging-test-secret-key
           DEBUG: "True"
           DB_NAME: test_erikshaw_staging
@@ -73,8 +74,19 @@ jobs:
         working-directory: backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+        run: railway up --service backend --detach
+
+      # Seed staging DB with fixed test fixtures if empty.
+      # Uses --no-reset so live staging data is preserved between deploys.
+      - name: Seed staging DB (fixtures only if empty)
+        working-directory: backend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+          ALLOW_STAGING_SEED: "true"
+          APP_ENV: staging
+          DJANGO_SETTINGS_MODULE: erickshaw.settings.staging
         run: |
-          railway up --service backend --detach
+          railway run python manage.py seed_staging
 
 
   # ── 3. Deploy frontend preview to Vercel ────────────────────────

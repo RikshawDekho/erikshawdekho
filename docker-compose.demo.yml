@@ -34,6 +34,7 @@ services:
              python manage.py check_auth_integrity --warn-only &&
              gunicorn erickshaw.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     environment:
+      DJANGO_SETTINGS_MODULE: erickshaw.settings.demo
       APP_ENV: demo
       ENVIRONMENT: demo
       DEBUG: "False"
