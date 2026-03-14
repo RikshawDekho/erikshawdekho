@@ -53,7 +53,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # ── Security headers (moderate — not pre-loaded) ───────────────────
-SECURE_SSL_REDIRECT            = True
+SECURE_SSL_REDIRECT            = False  # Railway terminates HTTPS at LB; internal traffic is plain HTTP
 SECURE_PROXY_SSL_HEADER        = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_HSTS_SECONDS            = 3600   # 1 hour — safe for demo resets
 SECURE_HSTS_INCLUDE_SUBDOMAINS = False
