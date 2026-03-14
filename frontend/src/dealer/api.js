@@ -2,7 +2,7 @@
  * api.js — API layer for ErikshawDekho dealer portal
  * Centralized fetch with JWT auto-refresh
  */
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
 
 async function apiFetch(path, opts = {}, _retry = false) {
   const token = localStorage.getItem("erd_access");

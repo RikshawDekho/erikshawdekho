@@ -4,7 +4,10 @@ Creates realistic demo data for localhost testing.
 Usage: python manage.py seed_demo
        python manage.py seed_demo --reset   (clears existing data first)
 """
+import os
+from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta, date
@@ -73,6 +76,14 @@ class Command(BaseCommand):
         parser.add_argument("--reset", action="store_true", help="Delete existing demo data before seeding")
 
     def handle(self, *args, **options):
+        app_env = str(getattr(settings, "APP_ENV", "") or os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "").strip().lower()
+        allow_override = str(os.environ.get("ALLOW_DEMO_SEED", "")).strip().lower() in {"1", "true", "yes"}
+        if app_env not in {"demo", "staging"} and not allow_override:
+            raise CommandError(
+                "seed_demo can only run in demo environment (APP_ENV=demo). "
+                "Set ALLOW_DEMO_SEED=true to override intentionally."
+            )
+
         self.stdout.write(self.style.MIGRATE_HEADING("🌱 Seeding demo data..."))
 
         # ── Create/get superadmin ──────────────────────────────

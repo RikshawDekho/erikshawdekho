@@ -1,8 +1,10 @@
 ﻿import React, { Component, useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { SalesPage } from './SalesPage';
 import NavbarNew from './components/NavbarNew';
 import FooterNew from './components/FooterNew';
 import { LIGHT_C, DARK_C, ThemeCtx, useC } from './theme';
+import { BRANDING, buildWhatsAppLink } from './branding';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
@@ -56,7 +58,7 @@ class ErrorBoundary extends Component {
         return (
           <div style={{ fontFamily: "'Inter','Nunito',sans-serif", minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
             <div style={{ fontSize: 64, marginBottom: 20 }}>🛺</div>
-            <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1f2937", marginBottom: 8 }}>Updating ErikshawDekho...</h2>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1f2937", marginBottom: 8 }}>Updating {BRANDING.platformName}...</h2>
             <p style={{ fontSize: 14, color: "#6b7280", maxWidth: 360, lineHeight: 1.6, marginBottom: 24 }}>A new version is being deployed. The page will reload automatically.</p>
             <button onClick={() => { if ("caches" in window) caches.keys().then(n => n.forEach(k => caches.delete(k))); window.location.reload(); }}
               style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "12px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
@@ -125,7 +127,7 @@ function useSwipeNav(onSwipeLeft, onSwipeRight, threshold = 60) {
 // ═══════════════════════════════════════════════════════
 // API LAYER
 // ═══════════════════════════════════════════════════════
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
 
 async function apiFetch(path, opts = {}, _retry = false) {
   const token = localStorage.getItem("erd_access");
@@ -461,10 +463,10 @@ function Modal({ title, children, onClose, width = 560 }) {
   );
 }
 
-function Field({ label, children, required }) {
+function Field({ label, children, required, style = {} }) {
   const C = useC();
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 16, ...style }}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.textMid, marginBottom: 5 }}>{label}{required && <span style={{ color: C.danger }}> *</span>}</label>
       {children}
     </div>
@@ -476,6 +478,17 @@ function Input({ value, onChange, placeholder, type = "text", required, style = 
   return (
     <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required}
       style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", ...style }}
+      onFocus={e => e.target.style.borderColor = C.primary}
+      onBlur={e => e.target.style.borderColor = C.border}
+    />
+  );
+}
+
+function TextArea({ value, onChange, placeholder, rows = 3, required, style = {} }) {
+  const C = useC();
+  return (
+    <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={rows} required={required}
+      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface, outline: "none", ...style }}
       onFocus={e => e.target.style.borderColor = C.primary}
       onBlur={e => e.target.style.borderColor = C.border}
     />
@@ -505,7 +518,7 @@ function ScreenSaver({ onWake }) {
     <div onClick={onWake} onKeyDown={onWake} tabIndex={0}
       style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer" }}>
       <div style={{ fontSize: 64, marginBottom: 16, animation: "pulse 2s ease-in-out infinite" }}>🛺</div>
-      <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, opacity: 0.8 }}>eRickshawDekho</div>
+      <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, opacity: 0.8 }}>{BRANDING.platformName}</div>
       <div style={{ color: "#fff", fontSize: 13, opacity: 0.5, marginTop: 8 }}>Click anywhere to wake</div>
       <style>{`@keyframes pulse { 0%,100%{transform:scale(1);opacity:0.8} 50%{transform:scale(1.1);opacity:1} }`}</style>
     </div>
@@ -717,7 +730,7 @@ function AuthPage({ onAuth }) {
       if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
       setAuthStatus("success");
       const name = data.user?.dealer_name || data.user?.username || form.username;
-      toast(mode === "login" ? `Welcome back, ${name}! Signing you in...` : `Account created! Welcome to eRickshawDekho, ${name}!`, "success");
+      toast(mode === "login" ? `Welcome back, ${name}! Signing you in...` : `Account created! Welcome to ${BRANDING.platformName}, ${name}!`, "success");
       setTimeout(() => onAuth(data), 800);
     } catch (err) {
       setAuthStatus("error");
@@ -801,9 +814,9 @@ function AuthPage({ onAuth }) {
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>🛺</div>
           <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", fontFamily: "Georgia, serif" }}>
-            eRickshaw<span style={{ color: C.accent }}>Dekho</span>.com
+            {BRANDING.platformName}
           </div>
-          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, marginTop: 4 }}>SaaS & Marketplace Platform for eRickshaws</div>
+          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, marginTop: 4 }}>{BRANDING.platformTagline}</div>
         </div>
 
         {/* ── Forgot Password flow ── */}
@@ -1395,6 +1408,8 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [viewVehicle, setViewVehicle] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
 
+  const formGridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 };
+
   const debouncedSearch = useDebounce(filters.search, 350);
 
   const load = useCallback(async () => {
@@ -1578,14 +1593,23 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
       {showAdd && (
         <Modal title="Add New Vehicle" onClose={onAddClose} width={580}>
           <form onSubmit={submit}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={formGridStyle}>
               <Field label="Brand" required>
-                <select value={form.brand_id} onChange={e => { if (e.target.value === "__new__") { setShowAddBrand(true); } else { setForm_("brand_id")(e.target.value); } }}
-                  style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
-                  <option value="">Select brand</option>
-                  {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  <option value="__new__">+ Add New Brand...</option>
-                </select>
+                <Select
+                  value={form.brand_id}
+                  onChange={value => {
+                    if (value === "__new__") {
+                      setShowAddBrand(true);
+                    } else {
+                      setForm_("brand_id")(value);
+                    }
+                  }}
+                  placeholder="Select brand"
+                  options={[
+                    ...brands.map(b => ({ value: b.id, label: b.name })),
+                    { value: "__new__", label: "+ Add New Brand..." },
+                  ]}
+                />
               </Field>
               <Field label="Model Name" required><Input value={form.model_name} onChange={setForm_("model_name")} placeholder="e.g. YatriKing Pro" /></Field>
               <Field label="Vehicle Type" required>
@@ -1608,7 +1632,9 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                 )}
               </div>
             </Field>
-            <Field label="Description"><textarea value={form.description} onChange={e => setForm_("description")(e.target.value)} rows={3} style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} placeholder="Vehicle description, key specs..." /></Field>
+            <Field label="Description">
+              <TextArea value={form.description} onChange={setForm_("description")} rows={3} placeholder="Vehicle description, key specs..." />
+            </Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={onAddClose} />
               <Btn label={saving ? "Saving..." : "Add Vehicle"} color={C.primary} type="submit" disabled={saving} />
@@ -1621,7 +1647,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
       {editVehicle && (
         <Modal title={`Edit — ${editVehicle.brand_name} ${editVehicle.model_name}`} onClose={() => setEditVehicle(null)} width={580}>
           <form onSubmit={saveEdit}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={formGridStyle}>
               <Field label="Model Name" required>
                 <Input value={editForm.model_name} onChange={v => setEditForm(p => ({ ...p, model_name: v }))} />
               </Field>
@@ -1658,8 +1684,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
               </div>
             </Field>
             <Field label="Description">
-              <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={3}
-                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", color: C.text, background: C.surface }} placeholder="Vehicle description..." />
+              <TextArea value={editForm.description} onChange={v => setEditForm(p => ({ ...p, description: v }))} rows={3} placeholder="Vehicle description..." />
             </Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={() => setEditVehicle(null)} />
@@ -2468,7 +2493,7 @@ function IntegrationsSection() {
   const PROVIDER_OPTIONS = {
     whatsapp: [
       { id: "twilio", label: "Twilio", fields: ["api_key", "api_secret"], labels: { api_key: "Account SID", api_secret: "Auth Token" }, extraFields: [{ key: "from_number", label: "WhatsApp From Number", placeholder: "e.g. whatsapp:+14155238886" }] },
-      { id: "gupshup", label: "Gupshup", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "source_number", label: "Source Number", placeholder: "e.g. 919876543210" }, { key: "app_name", label: "App Name", placeholder: "e.g. ErikshawDekho" }] },
+      { id: "gupshup", label: "Gupshup", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [{ key: "source_number", label: "Source Number", placeholder: "e.g. 919876543210" }, { key: "app_name", label: "App Name", placeholder: `e.g. ${BRANDING.platformName}` }] },
       { id: "meta_cloud", label: "Meta Cloud API", fields: ["api_key"], labels: { api_key: "Access Token" }, extraFields: [{ key: "phone_number_id", label: "Phone Number ID", placeholder: "Your WABA phone number ID" }] },
       { id: "360dialog", label: "360dialog", fields: ["api_key"], labels: { api_key: "API Key" }, extraFields: [] },
       { id: "wati", label: "Wati", fields: ["api_key"], labels: { api_key: "API Token" }, extraFields: [{ key: "api_url", label: "Wati Server URL", placeholder: "e.g. https://live-server-XXXXX.wati.io" }] },
@@ -3367,7 +3392,7 @@ function VideoCard({ v, onDelete, onWatch }) {
         <div style={{ fontWeight: 700, fontSize: 13, color: C.text, lineHeight: 1.4 }}>{v.title}</div>
         {v.description && <div style={{ fontSize: 11, color: C.textDim, lineHeight: 1.5, flex: 1 }}>{v.description.slice(0, 90)}{v.description.length > 90 ? "…" : ""}</div>}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-          <div style={{ fontSize: 10, color: C.textMid }}>{v.dealer_name || "eRickshawDekho"}</div>
+          <div style={{ fontSize: 10, color: C.textMid }}>{v.dealer_name || BRANDING.platformName}</div>
           {onDelete && <button onClick={e => { e.stopPropagation(); onDelete(v.id); }} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 11, padding: "2px 6px" }}>✕ Delete</button>}
         </div>
       </div>
@@ -3430,7 +3455,7 @@ function BlogPostCard({ post, onDelete }) {
             </div>
           )}
         </div>
-        <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>By {post.dealer_name || "eRickshawDekho"}</div>
+        <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>By {post.dealer_name || BRANDING.platformName}</div>
       </div>
     </div>
   );
@@ -3443,18 +3468,25 @@ function BlogPostCard({ post, onDelete }) {
 function SupportPage() {
   const C = useC();
   const [settings, setSettings] = useState({
-    support_phone: "1800-XXX-XXXX",
-    support_email: "support@erikshawdekho.com",
-    support_whatsapp: "919876543210",
+    support_phone: BRANDING.support.phone,
+    support_email: BRANDING.support.email,
+    support_whatsapp: BRANDING.support.whatsapp,
   });
+
+  const openSupportWhatsApp = (message) => {
+    const digits = String(settings.support_whatsapp || "").replace(/\D/g, "");
+    const fallback = buildWhatsAppLink(message);
+    const href = digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : fallback;
+    if (href) window.open(href);
+  };
 
   useEffect(() => {
     apiFetch("/platform/settings/")
       .then(data => {
         setSettings({
-          support_phone: data.support_phone || "1800-XXX-XXXX",
-          support_email: data.support_email || "support@erikshawdekho.com",
-          support_whatsapp: data.support_whatsapp || "919876543210",
+          support_phone: data.support_phone || BRANDING.support.phone,
+          support_email: data.support_email || BRANDING.support.email,
+          support_whatsapp: data.support_whatsapp || BRANDING.support.whatsapp,
         });
       })
       .catch(err => {
@@ -3478,7 +3510,7 @@ function SupportPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {[
               { icon: "📞", label: "Call Us", value: settings.support_phone, action: () => window.open(`tel:${settings.support_phone}`) },
-              { icon: "💬", label: "WhatsApp", value: "Chat with us", action: () => window.open(`https://wa.me/${settings.support_whatsapp.replace(/\D/g,"")}?text=Hi+I+need+help+with+my+dealer+account`) },
+              { icon: "💬", label: "WhatsApp", value: "Chat with us", action: () => openSupportWhatsApp("Hi I need help with my dealer account") },
               { icon: "✉️", label: "Email", value: settings.support_email, action: () => window.open(`mailto:${settings.support_email}?subject=Dealer Support`) },
             ].map(({ icon, label, value, action }) => (
               <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
@@ -3503,7 +3535,7 @@ function SupportPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {[
               { icon: "📞", label: "Driver Helpline", value: settings.support_phone, action: () => window.open(`tel:${settings.support_phone}`) },
-              { icon: "💬", label: "WhatsApp Help", value: "Get vehicle advice", action: () => window.open(`https://wa.me/${settings.support_whatsapp.replace(/\D/g,"")}?text=Hi+I+need+help+finding+an+eRickshaw`) },
+              { icon: "💬", label: "WhatsApp Help", value: "Get vehicle advice", action: () => openSupportWhatsApp("Hi I need help finding a vehicle") },
               { icon: "✉️", label: "Email Support", value: settings.support_email, action: () => window.open(`mailto:${settings.support_email}?subject=Driver Support`) },
             ].map(({ icon, label, value, action }) => (
               <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
@@ -4313,7 +4345,7 @@ function PlansPage({ onUpgrade }) {
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {SUPPORT_PHONE && <Btn label={`📞 Call ${SUPPORT_PHONE}`} color={C.primary} outline size="sm" onClick={() => window.open(`tel:${SUPPORT_PHONE}`)} />}
-              {SUPPORT_WA    && <Btn label="💬 WhatsApp Us" color={C.success} size="sm" onClick={() => window.open(`https://wa.me/${SUPPORT_WA.replace(/\D/g,"")}?text=Hi+I+need+help+with+eRickshawDekho`, "_blank")} />}
+              {SUPPORT_WA    && <Btn label="💬 WhatsApp Us" color={C.success} size="sm" onClick={() => window.open(buildWhatsAppLink(`Hi I need help with ${BRANDING.platformName}`), "_blank")} />}
               <Btn label={`✉️ Email ${SUPPORT_EMAIL}`} color={C.info} outline size="sm" onClick={() => window.open(`mailto:${SUPPORT_EMAIL}`)} />
               {!SUPPORT_PHONE && !SUPPORT_WA && <Btn label="📬 Contact Support" color={C.primary} size="sm" onClick={onUpgrade} />}
             </div>
@@ -4366,7 +4398,7 @@ function PWAInstallPrompt() {
     }}>
       <div style={{ fontSize: 28, flexShrink: 0 }}>🛺</div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>Install eRickshawDekho App</div>
+        <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>Install {BRANDING.platformName} App</div>
         <div style={{ fontSize: 11, color: C.textMid, marginTop: 2 }}>
           {showIOS ? "Tap Share → Add to Home Screen for faster access." : "Get faster access and offline support."}
         </div>
@@ -4378,9 +4410,9 @@ function PWAInstallPrompt() {
 }
 
 // Support contact — set VITE_SUPPORT_PHONE / VITE_SUPPORT_WA in .env.local
-const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "";
-const SUPPORT_WA    = import.meta.env.VITE_SUPPORT_WA    || "";
-const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || "support@erikshawdekho.com";
+const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || BRANDING.support.phone || "";
+const SUPPORT_WA    = import.meta.env.VITE_SUPPORT_WA    || BRANDING.support.whatsapp || "";
+const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || BRANDING.support.email || "";
 
 function ContactSupportModal({ onClose, onNavigate }) {
   const C = useC();
@@ -4463,8 +4495,8 @@ function AdminSettingsPanel({ toast }) {
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: C.text }}>⚙️ Platform Settings</div>
         <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>These contact details appear in dealer verification banners and support pages.</div>
         {[
-          { key: "support_name",      label: "Support Team Name",    placeholder: "eRickshawDekho Support" },
-          { key: "support_email",     label: "Support Email",        placeholder: "support@erikshawdekho.com" },
+          { key: "support_name",      label: "Support Team Name",    placeholder: `${BRANDING.platformName} Support` },
+          { key: "support_email",     label: "Support Email",        placeholder: BRANDING.support.email },
           { key: "support_phone",     label: "Support Phone",        placeholder: "+91 99999 99999" },
           { key: "support_whatsapp",  label: "WhatsApp Number (with country code, no +)", placeholder: "919999999999" },
         ].map(f => (
@@ -5175,6 +5207,7 @@ function PublicMarketplacePage({ onDealerPortal, onBack }) {
 const SWIPE_PAGES = ["dashboard", "inventory", "leads", "sales", "customers", "finance", "reports", "support", "account"];
 
 export default function App({ skipLanding = false }) {
+  const navigate = useNavigate();
   const [isDark, setIsDark] = useState(() => localStorage.getItem("erd_theme") === "dark");
   const toggleTheme = () => setIsDark(d => { const next = !d; localStorage.setItem("erd_theme", next ? "dark" : "light"); return next; });
 
@@ -5203,7 +5236,11 @@ export default function App({ skipLanding = false }) {
     const d = JSON.parse(localStorage.getItem("erd_dealer") || "null");
     return d?.is_verified ?? true;
   });
-  const [platformSettings, setPlatformSettings] = useState({ support_whatsapp: "919876543210", support_email: "support@erikshawdekho.com", support_phone: "1800-XXX-XXXX" });
+  const [platformSettings, setPlatformSettings] = useState({
+    support_whatsapp: BRANDING.support.whatsapp,
+    support_email: BRANDING.support.email,
+    support_phone: BRANDING.support.phone,
+  });
   const [freeTier, setFreeTier] = useState(null); // free tier usage data
 
   // Fetch platform settings once on mount
@@ -5213,9 +5250,9 @@ export default function App({ skipLanding = false }) {
       .then(data => {
         if (isMounted) {
           setPlatformSettings({
-            support_whatsapp: data.support_whatsapp || "919876543210",
-            support_email: data.support_email || "support@erikshawdekho.com",
-            support_phone: data.support_phone || "1800-XXX-XXXX"
+            support_whatsapp: data.support_whatsapp || BRANDING.support.whatsapp,
+            support_email: data.support_email || BRANDING.support.email,
+            support_phone: data.support_phone || BRANDING.support.phone,
           });
         }
       })
@@ -5273,7 +5310,7 @@ export default function App({ skipLanding = false }) {
     localStorage.clear();
     setAuth(null);
     setPlan(null);
-    setAppMode(null);
+    setAppMode(skipLanding ? "dealer" : null);
   };
 
   const C_LIVE = isDark ? DARK_C : LIGHT_C;
@@ -5320,7 +5357,7 @@ export default function App({ skipLanding = false }) {
           <div style={{ paddingTop: 60 }}>
             <AuthPage onAuth={handleAuth} />
             <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
-              <button onClick={() => setAppMode(null)} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
+              <button onClick={() => navigate("/", { replace: true })} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
                 ← Back to home
               </button>
             </div>
@@ -5428,8 +5465,8 @@ export default function App({ skipLanding = false }) {
                 <div style={{ background: `${C_LIVE.warning}15`, borderBottom: `1px solid ${C_LIVE.warning}33`, padding: "10px 24px", fontSize: 13, color: C_LIVE.warning, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                   <span>⏳ <b>Your showroom is under verification</b> by platform admin. Your profile will become visible to buyers after approval.</span>
                   <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
-                    <a href="mailto:support@erikshawdekho.com" style={{ fontSize: 11, color: C_LIVE.textMid, textDecoration: "none" }}>✉ support@erikshawdekho.com</a>
-                    <a href={`https://wa.me/${platformSettings.support_whatsapp.replace(/\D/g,"")}?text=Hi+my+dealer+account+is+pending+verification`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#25D366", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>
+                    <a href={`mailto:${platformSettings.support_email}`} style={{ fontSize: 11, color: C_LIVE.textMid, textDecoration: "none" }}>✉ {platformSettings.support_email}</a>
+                    <a href={`https://wa.me/${platformSettings.support_whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent("Hi my dealer account is pending verification")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#25D366", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>
                   </div>
                 </div>
               )}
@@ -5439,7 +5476,7 @@ export default function App({ skipLanding = false }) {
             </div>
 
             {/* Floating WhatsApp Support */}
-            <a href={`https://wa.me/${platformSettings.support_whatsapp.replace(/\D/g,"")}?text=Hi+I+need+help+with+my+dealer+account+on+eRickshawDekho`} target="_blank" rel="noreferrer"
+            <a href={`https://wa.me/${platformSettings.support_whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent(`Hi I need help with my dealer account on ${BRANDING.platformName}`)}`} target="_blank" rel="noreferrer"
               style={{ position: "fixed", bottom: 80, right: 16, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(37,211,102,0.4)", textDecoration: "none", fontSize: 26 }}>
               💬
             </a>

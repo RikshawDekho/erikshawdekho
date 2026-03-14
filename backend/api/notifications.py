@@ -15,6 +15,16 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+PLATFORM_NAME = getattr(settings, 'PLATFORM_NAME', 'eRickshawDekho')
+PLATFORM_TAGLINE = getattr(settings, 'PLATFORM_TAGLINE', 'Bharosemand Platform')
+PLATFORM_URL = getattr(settings, 'PLATFORM_URL', 'https://www.erikshawdekho.com')
+PLATFORM_TEAM_NAME = getattr(settings, 'PLATFORM_TEAM_NAME', f'{PLATFORM_NAME} Team')
+PLATFORM_FROM_EMAIL = getattr(
+    settings,
+    'PLATFORM_NOREPLY_EMAIL',
+    getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@erikshawdekho.com')
+)
+
 
 # ─── WhatsApp via Twilio ──────────────────────────────────────────
 
@@ -71,38 +81,38 @@ def send_whatsapp(to_phone: str, message: str) -> bool:
 
 def wa_dealer_welcome(dealer_name: str, username: str, platform_url: str) -> str:
     return (
-        f"🛺 *Welcome to eRickshawDekho!*\n\n"
+        f"🛺 *Welcome to {PLATFORM_NAME}!*\n\n"
         f"Namaste {dealer_name} ji! 🙏\n\n"
         f"Your dealer account is now active.\n"
         f"*Username:* {username}\n"
         f"*Login:* {platform_url}\n\n"
         f"Manage your inventory, leads & sales — all from one dashboard.\n\n"
-        f"_Team eRickshawDekho_ ✅"
+        f"_{PLATFORM_TEAM_NAME}_ ✅"
     )
 
 
 def wa_plan_expiry_warning(dealer_name: str, days_left: int, support_phone: str) -> str:
     urgency = 'TODAY ⚠️' if days_left == 0 else f'in *{days_left} day{"s" if days_left > 1 else ""}* ⏳'
     return (
-        f"⚠️ *eRickshawDekho — Trial Expiry Alert*\n\n"
+        f"⚠️ *{PLATFORM_NAME} — Trial Expiry Alert*\n\n"
         f"Namaste {dealer_name} ji,\n\n"
         f"Your free trial expires {urgency}.\n\n"
         f"Don't lose access to your leads, inventory & sales data!\n\n"
         f"📞 Call/WhatsApp us to upgrade: *{support_phone}*\n\n"
-        f"_Team eRickshawDekho_"
+        f"_{PLATFORM_TEAM_NAME}_"
     )
 
 
 def wa_new_lead(dealer_name: str, customer_name: str,
                 customer_phone: str, vehicle_name: str) -> str:
     return (
-        f"🎯 *New Lead Alert — eRickshawDekho*\n\n"
+        f"🎯 *New Lead Alert — {PLATFORM_NAME}*\n\n"
         f"Namaste {dealer_name} ji!\n\n"
         f"*Customer:* {customer_name}\n"
         f"*Phone:* {customer_phone}\n"
         f"*Interest:* {vehicle_name}\n\n"
         f"⚡ Follow up within 1 hour for best results!\n\n"
-        f"_Team eRickshawDekho_"
+        f"_{PLATFORM_TEAM_NAME}_"
     )
 
 
@@ -115,7 +125,7 @@ def wa_emi_due_reminder(customer_name: str, emi_amount: str,
         f"Your EMI payment of *₹{emi_amount}* is due for your *{vehicle_name}*.\n\n"
         f"Please contact your dealer to avoid any penalty:\n"
         f"*{dealer_name}*: {dealer_phone}\n\n"
-        f"_eRickshawDekho — Bharosemand Platform_ 🛺"
+        f"_{PLATFORM_NAME} — {PLATFORM_TAGLINE}_ 🛺"
     )
 
 
@@ -123,13 +133,13 @@ def wa_delivery_reminder(customer_name: str, vehicle_name: str,
                           delivery_date: str, dealer_name: str,
                           dealer_phone: str) -> str:
     return (
-        f"🚚 *Delivery Reminder — eRickshawDekho*\n\n"
+        f"🚚 *Delivery Reminder — {PLATFORM_NAME}*\n\n"
         f"Namaste {customer_name} ji,\n\n"
         f"Your *{vehicle_name}* is scheduled for delivery on *{delivery_date}*.\n\n"
         f"Contact your dealer for details:\n"
         f"*{dealer_name}*: {dealer_phone}\n\n"
         f"Congratulations on your new vehicle! 🎉\n"
-        f"_Team eRickshawDekho_"
+        f"_{PLATFORM_TEAM_NAME}_"
     )
 
 
@@ -141,15 +151,14 @@ def wa_offer_broadcast(dealer_name: str, offer_title: str,
         f"{offer_details}\n\n"
         f"⏰ Valid till: *{validity}*\n\n"
         f"Visit {dealer_name} showroom or call for details.\n\n"
-        f"_Powered by eRickshawDekho_ 🛺"
+        f"_Powered by {PLATFORM_NAME}_ 🛺"
     )
 
 
 # ─── Convenience notification functions ──────────────────────────
 
 def notify_dealer_welcome(dealer_name: str, phone: str, username: str):
-    platform_url = getattr(settings, 'PLATFORM_URL', 'https://www.erikshawdekho.com')
-    msg = wa_dealer_welcome(dealer_name, username, platform_url)
+    msg = wa_dealer_welcome(dealer_name, username, PLATFORM_URL)
     return send_whatsapp(phone, msg)
 
 
@@ -316,7 +325,7 @@ def send_whatsapp_message(to: str, message: str, api_key: str = '', api_secret: 
             'source': source,
             'destination': dest,
             'message': json.dumps({'type': 'text', 'text': message}),
-            'src.name': extra_config.get('app_name', 'ErikshawDekho'),
+            'src.name': extra_config.get('app_name', PLATFORM_NAME),
         }
         headers = {'apikey': api_key, 'Content-Type': 'application/x-www-form-urlencoded'}
         resp = _req.post(url, data=payload, headers=headers, timeout=15)
@@ -348,7 +357,7 @@ def send_whatsapp_message(to: str, message: str, api_key: str = '', api_secret: 
             'apiKey': api_key,
             'campaignName': extra_config.get('campaign_name', 'marketing'),
             'destination': phone.lstrip('+'),
-            'userName': extra_config.get('user_name', 'ErikshawDekho'),
+            'userName': extra_config.get('user_name', PLATFORM_NAME),
             'message': message,
         }
         resp = _req.post(url, json=payload, headers=headers, timeout=15)
@@ -426,7 +435,7 @@ def send_marketing_email(to: str, subject: str, body: str, api_key: str = '', **
         smtp_pass = api_key
         if not smtp_pass:
             from django.core.mail import send_mail
-            send_mail(subject, body, 'noreply@erikshawdekho.com', [to], fail_silently=True)
+            send_mail(subject, body, PLATFORM_FROM_EMAIL, [to], fail_silently=True)
             return
         msg = MIMEMultipart()
         msg['From'] = smtp_user

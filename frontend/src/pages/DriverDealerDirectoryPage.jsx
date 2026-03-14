@@ -8,10 +8,11 @@ import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
 import { useI18n } from "../i18n";
 import { CardSkeleton } from "../components/PageSkeleton";
+import { ROLE_C, TYPO, RADIUS, CONTROL, LAYOUT } from "../theme";
 
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
-const G = "#16a34a";
-const D = "#1e3a8a";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
+const G = ROLE_C.driver;
+const D = ROLE_C.dealer;
 
 function StarRating({ rating, size = 14, t }) {
   if (!rating) return <span style={{ fontSize: size - 2, color: "#9ca3af" }}>{t("spec.no_reviews")}</span>;
@@ -67,7 +68,7 @@ function ContactModal({ dealer, onClose, t, lang }) {
   const [form, setForm] = useState({ name: "", phone: "", city: "", model: "" });
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
-  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 15, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 10, minHeight: 46 };
+  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: RADIUS.md, fontSize: 15, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 10, minHeight: CONTROL.md };
 
   const submit = async (e) => {
     e.preventDefault(); setErr("");
@@ -142,15 +143,15 @@ export default function DriverDealerDirectoryPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const inp = { padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 15, fontFamily: "inherit", outline: "none", minHeight: 46 };
+  const inp = { padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: RADIUS.md, fontSize: 15, fontFamily: "inherit", outline: "none", minHeight: CONTROL.md };
 
   return (
-    <div style={{ fontFamily: "'Inter', 'Nunito', sans-serif", background: "#f9fafb", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: TYPO.body, background: "#f9fafb", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <style>{`* { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
       <Navbar />
 
       <div style={{ background: `linear-gradient(135deg, ${D}, #2563eb)`, color: "#fff", padding: "24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto" }}>
           <h1 style={{ fontSize: "clamp(20px,3vw,28px)", fontWeight: 800, marginBottom: 4 }}>{t("dir.title")}</h1>
           <p style={{ color: "#bfdbfe", fontSize: 14 }}>{t("dir.subtitle")}</p>
         </div>
@@ -158,7 +159,7 @@ export default function DriverDealerDirectoryPage() {
 
       {/* Filters */}
       <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "12px 24px", position: "sticky", top: 60, zIndex: 50 }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input style={{ ...inp, flex: 1, minWidth: 180 }} placeholder={`🔍 ${t("dir.search")}`} value={search}
             onChange={e => setSearch(e.target.value)} />
           <input style={{ ...inp, width: 160 }} placeholder={t("form.city")} value={city}
@@ -173,7 +174,7 @@ export default function DriverDealerDirectoryPage() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px", width: "100%", flex: 1 }}>
+      <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto", padding: "24px", width: "100%", flex: 1 }}>
         {loading ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
             <CardSkeleton count={6} />
