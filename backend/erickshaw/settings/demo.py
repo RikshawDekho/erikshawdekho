@@ -17,11 +17,18 @@ SECRET_KEY = _raw_secret
 # ── Hosts ─────────────────────────────────────────────────────────
 ALLOWED_HOSTS = ['*']  # Demo env — open to all hosts, not a security concern
 
-# ── Database: DEMO_DATABASE_URL or DATABASE_URL ───────────────────
+# ── Database: DEMO_DATABASE_URL or DATABASE_URL (SQLite fallback) ──
 _db_url = os.environ.get('DEMO_DATABASE_URL') or os.environ.get('DATABASE_URL')
-if not _db_url:
-    raise RuntimeError("DEMO_DATABASE_URL or DATABASE_URL must be set in demo environment")
-DATABASES = {'default': dj_database_url.parse(_db_url, conn_max_age=600)}
+if _db_url:
+    DATABASES = {'default': dj_database_url.parse(_db_url, conn_max_age=600)}
+else:
+    # SQLite fallback — fine for Railway demo (resets on each deploy = fresh demo)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.path.join(BASE_DIR, 'db_demo.sqlite3'),
+        }
+    }
 
 # ── Email: SMTP ────────────────────────────────────────────────────
 EMAIL_BACKEND       = 'django.core.mail.backends.smtp.EmailBackend'
@@ -35,11 +42,13 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '') or os.environ.ge
 CORS_ALLOW_ALL_ORIGINS = False
 _cors = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors.split(',') if o.strip()] or [
+    'https://erikshawdekho-demo.up.railway.app',
     'https://demo.erikshawdekho.com',
 ]
 
 # ── CSRF ───────────────────────────────────────────────────────────
 CSRF_TRUSTED_ORIGINS = [
+    'https://erikshawdekho-demo.up.railway.app',
     'https://demo.erikshawdekho.com',
     'https://demo-api.erikshawdekho.com',
     *[h.strip() for h in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if h.strip()],

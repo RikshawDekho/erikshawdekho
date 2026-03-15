@@ -8,19 +8,19 @@ restartPolicyMaxRetries = 3
 healthcheckPath = "/health/"
 healthcheckTimeout = 120
 
-# ── Non-secret defaults (production) ──────────────────────────────
-# These are committed to the repo and applied automatically by Railway.
-# Secrets (SECRET_KEY, DATABASE_URL, email passwords) are set by the
-# railway-env-setup.yml GitHub Actions workflow — never committed.
-# Railway injects DATABASE_URL automatically when Postgres service is linked.
+# ── Non-secret defaults (demo Railway service) ─────────────────────
+# This railway.toml targets the erikshawdekho-demo Railway service.
+# For a production service, override DJANGO_SETTINGS_MODULE, APP_ENV,
+# ENVIRONMENT, and DATABASE_URL in Railway's environment variables UI.
+# SECRET_KEY must always be set as a secret in Railway's UI.
 [variables]
-DJANGO_SETTINGS_MODULE = "erickshaw.settings.production"
-APP_ENV                = "prod"
-ENVIRONMENT            = "production"
+DJANGO_SETTINGS_MODULE = "erickshaw.settings.demo"
+APP_ENV                = "demo"
+ENVIRONMENT            = "demo"
 DEBUG                  = "False"
-ALLOWED_HOSTS          = "erikshawdekho.com,www.erikshawdekho.com,api.erikshawdekho.com,*.up.railway.app"
-CORS_ALLOWED_ORIGINS   = "https://erikshawdekho.com,https://www.erikshawdekho.com,https://erikshawdekho.vercel.app"
-PLATFORM_URL           = "https://www.erikshawdekho.com"
+CORS_ALLOWED_ORIGINS   = "https://erikshawdekho-demo.up.railway.app"
+CSRF_TRUSTED_ORIGINS   = "https://erikshawdekho-demo.up.railway.app"
+PLATFORM_URL           = "https://erikshawdekho-demo.up.railway.app"
 PLATFORM_NAME          = "eRickshawDekho"
 PLATFORM_TAGLINE       = "Bharosemand Platform"
 SUPPORT_EMAIL          = "support@erikshawdekho.com"
