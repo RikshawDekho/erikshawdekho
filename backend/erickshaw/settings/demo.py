@@ -45,6 +45,10 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors.split(',') if o.strip()] or [
     'https://erikshawdekho-demo.up.railway.app',
     'https://demo.erikshawdekho.com',
 ]
+# Allow any Vercel preview/demo deployment (e.g. erikshawdekho-demo.vercel.app)
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^https://erikshawdekho.*\.vercel\.app$',
+]
 
 # ── CSRF ───────────────────────────────────────────────────────────
 CSRF_TRUSTED_ORIGINS = [
