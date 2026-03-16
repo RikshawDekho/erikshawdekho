@@ -48,8 +48,9 @@ class DealerProfile(models.Model):
     plan            = models.ForeignKey('Plan', on_delete=models.SET_NULL, null=True, blank=True, related_name='dealers')
     listing_count   = models.IntegerField(default=0, help_text='Cached count of active listings')
     # ── Free Tier Tracking ────────────────────────────────
-    lifetime_lead_count   = models.IntegerField(default=0, help_text='Lifetime leads received (free tier limit: 50)')
+    lifetime_lead_count   = models.IntegerField(default=0, help_text='Lifetime leads received (free tier limit: 20)')
     invoice_count         = models.IntegerField(default=0, help_text='Invoices generated (free tier limit: 20)')
+    lifetime_enquiry_count = models.IntegerField(default=0, help_text='Lifetime public enquiries received (free tier limit: 20)')
     # ── Notification Preferences ──────────────────────────
     notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
     notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')

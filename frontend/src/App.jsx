@@ -247,8 +247,9 @@ const api = {
     financeApps:        (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
   },
   auth: {
-    forgotPassword:  (d) => apiFetch("/auth/forgot-password/",  { method: "POST", body: JSON.stringify(d) }),
-    resetPassword:   (d) => apiFetch("/auth/reset-password/",   { method: "POST", body: JSON.stringify(d) }),
+    forgotPassword:    (d) => apiFetch("/auth/forgot-password/",       { method: "POST", body: JSON.stringify(d) }),
+    resetPassword:     (d) => apiFetch("/auth/reset-password/",        { method: "POST", body: JSON.stringify(d) }),
+    resetPasswordPhone:(d) => apiFetch("/auth/reset-password-phone/",  { method: "POST", body: JSON.stringify(d) }),
   },
   dealer: {
     plans:           ()       => apiFetch("/plans/"),
@@ -263,6 +264,22 @@ const api = {
     createFinApp:    (d)      => apiFetch("/dealer/finance-applications/", { method: "POST", body: JSON.stringify(d) }),
     finAppDocs:      (id)     => apiFetch(`/dealer/finance-applications/${id}/documents/`),
     uploadFinAppDoc: (id,d)   => apiFetch(`/dealer/finance-applications/${id}/documents/`, { method: "POST", body: d }),
+    freeTierUsage:   ()       => apiFetch("/dealer/free-tier-usage/"),
+  },
+  financer: {
+    profile:        ()       => apiFetch("/financer/profile/"),
+    updateProfile:  (d)      => apiFetch("/financer/profile/", { method: "PATCH", body: JSON.stringify(d) }),
+    documents:      ()       => apiFetch("/financer/documents/"),
+    uploadDoc:      (d)      => apiFetch("/financer/documents/", { method: "POST", body: d }),
+    dealers:        (p="")   => apiFetch(`/financer/dealers/${p}`),
+    approveDealer:  (id,d)   => apiFetch(`/financer/dealers/${id}/approve/`, { method: "POST", body: JSON.stringify(d) }),
+    requiredDocs:   ()       => apiFetch("/financer/required-documents/"),
+    addRequiredDoc: (d)      => apiFetch("/financer/required-documents/", { method: "POST", body: JSON.stringify(d) }),
+    deleteRequiredDoc:(id)   => apiFetch(`/financer/required-documents/${id}/`, { method: "DELETE" }),
+    applications:   (p="")   => apiFetch(`/financer/applications/${p}`),
+    updateAppStatus:(id,d)   => apiFetch(`/financer/applications/${id}/update-status/`, { method: "PATCH", body: JSON.stringify(d) }),
+    plans:          ()       => apiFetch("/financer/plans/"),
+    subscription:   ()       => apiFetch("/financer/subscription/"),
   },
   dealers: {
     detail:  (id) => apiFetch(`/dealers/${id}/`),
@@ -643,6 +660,10 @@ function AuthPage({ onAuth }) {
   const [fpConfirmPass, setFpConfirmPass] = useState("");
   const [fpStatus, setFpStatus] = useState(null); // null | "sent" | "done"
   const [fpError, setFpError] = useState("");
+  const [fpMethod, setFpMethod] = useState("email");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [firebaseConfirmation, setFirebaseConfirmation] = useState(null);
+  const [firebaseOtp, setFirebaseOtp] = useState("");
 
   const MAJOR_CITIES = [
     "Agra","Ahmedabad","Allahabad","Amritsar","Bengaluru","Bhopal","Chandigarh",
@@ -822,7 +843,7 @@ function AuthPage({ onAuth }) {
         {/* ── Forgot Password flow ── */}
         {(mode === "forgot" || mode === "otp") && (
           <Card padding={32}>
-            <button onClick={() => { setMode("login"); setFpStatus(null); setFpError(""); }} style={{ background: "none", border: "none", color: C.primary, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 18, display: "flex", alignItems: "center", gap: 5 }}>
+            <button onClick={() => { setMode("login"); setFpStatus(null); setFpError(""); setFirebaseConfirmation(null); setFirebaseOtp(""); }} style={{ background: "none", border: "none", color: C.primary, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 18, display: "flex", alignItems: "center", gap: 5 }}>
               ← Back to Sign In
             </button>
             <div style={{ fontWeight: 800, fontSize: 18, color: C.text, marginBottom: 4 }}>
@@ -831,11 +852,22 @@ function AuthPage({ onAuth }) {
             <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>
               {fpStatus === "done" ? "Your password has been reset. Redirecting to sign in..." :
                fpStatus === "sent" ? `We sent a 6-digit OTP to ${fpEmail}. Enter it below along with your new password.` :
-               "Enter your registered email address to receive a password reset OTP."}
+               "Enter your registered email address or mobile number to receive a password reset OTP."}
             </div>
+            {/* Method tabs: Email vs Phone */}
+            {!fpStatus && (
+              <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.bg, borderRadius: 8, padding: 4 }}>
+                {[["email","📧 Email OTP"],["phone","📱 Mobile OTP"]].map(([m, lbl]) => (
+                  <button key={m} onClick={() => setFpMethod(m)} style={{ flex: 1, padding: "8px 0", border: "none", borderRadius: 6, background: fpMethod === m ? C.primary : "transparent", color: fpMethod === m ? "#fff" : C.textMid, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            )}
             {fpError && <div style={{ background: `${C.danger}12`, border: `1.5px solid ${C.danger}44`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.danger, marginBottom: 14 }}>⚠ {fpError}</div>}
             {fpStatus === "done" && <div style={{ background: `${C.success}12`, border: `1.5px solid ${C.success}44`, borderRadius: 10, padding: 16, textAlign: "center", color: C.success, fontWeight: 700 }}>✓ Password changed successfully!</div>}
-            {!fpStatus && (
+            {/* ── Email OTP flow ── */}
+            {fpMethod === "email" && !fpStatus && (
               <form onSubmit={submitForgotRequest}>
                 <Field label="Registered Email Address" required>
                   <Input value={fpEmail} onChange={v => { setFpEmail(v); setFpError(""); }} type="email" placeholder="your@email.com" />
@@ -843,7 +875,7 @@ function AuthPage({ onAuth }) {
                 <Btn label={loading ? "Sending OTP..." : "Send OTP"} type="submit" color={C.primary} fullWidth size="lg" disabled={loading} />
               </form>
             )}
-            {fpStatus === "sent" && (
+            {fpMethod === "email" && fpStatus === "sent" && (
               <form onSubmit={submitForgotConfirm}>
                 <Field label="6-digit OTP" required>
                   <Input value={fpOtp} onChange={v => { setFpOtp(v.replace(/\D/g, "").slice(0, 6)); setFpError(""); }} placeholder="e.g. 123456" style={{ letterSpacing: 4, fontSize: 18, fontWeight: 700, textAlign: "center" }} />
@@ -859,6 +891,68 @@ function AuthPage({ onAuth }) {
                   <Btn label={loading ? "Resetting..." : "Reset Password"} type="submit" color={C.primary} disabled={loading} style={{ flex: 1 }} />
                 </div>
               </form>
+            )}
+            {/* ── Phone OTP (Firebase) flow ── */}
+            {fpMethod === "phone" && !firebaseConfirmation && (
+              <div>
+                <Field label="Mobile Number (with country code)">
+                  <Input value={phoneNumber} onChange={setPhoneNumber} placeholder="+919876543210" type="tel" />
+                </Field>
+                <div id="recaptcha-container" style={{ marginBottom: 12 }}></div>
+                <Btn label="Send OTP to Mobile" color={C.primary} fullWidth onClick={async () => {
+                  if (!phoneNumber || !phoneNumber.startsWith("+")) { toast("Enter number with country code e.g. +919876543210", "warning"); return; }
+                  try {
+                    const { initializeApp, getApp } = await import("firebase/app");
+                    const { getAuth, RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
+                    const firebaseConfig = {
+                      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+                      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+                      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+                    };
+                    let app;
+                    try { app = getApp(); } catch { app = initializeApp(firebaseConfig); }
+                    const auth = getAuth(app);
+                    if (!window._recaptchaVerifier) {
+                      window._recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+                    }
+                    const confirmation = await signInWithPhoneNumber(auth, phoneNumber, window._recaptchaVerifier);
+                    setFirebaseConfirmation(confirmation);
+                    toast("OTP sent to your mobile!", "success");
+                  } catch (err) {
+                    toast(err?.message || "Failed to send OTP. Check Firebase config.", "error");
+                  }
+                }} />
+              </div>
+            )}
+            {fpMethod === "phone" && firebaseConfirmation && (
+              <div>
+                <Field label="Enter OTP from SMS">
+                  <Input value={firebaseOtp} onChange={setFirebaseOtp} placeholder="6-digit OTP" type="number" />
+                </Field>
+                <Field label="New Password *">
+                  <Input value={fpNewPass} onChange={v => { setFpNewPass(v); setFpError(""); }} type="password" placeholder="Min 8 chars, must have a number" />
+                </Field>
+                <Field label="Confirm Password *">
+                  <Input value={fpConfirmPass} onChange={v => { setFpConfirmPass(v); setFpError(""); }} type="password" placeholder="Re-enter new password" />
+                </Field>
+                <Btn label={loading ? "Resetting..." : "Reset Password"} color={C.primary} fullWidth disabled={loading} onClick={async () => {
+                  if (fpNewPass !== fpConfirmPass) { toast("Passwords do not match.", "warning"); return; }
+                  setLoading(true);
+                  try {
+                    const result = await firebaseConfirmation.confirm(firebaseOtp);
+                    const idToken = await result.user.getIdToken();
+                    await api.auth.resetPasswordPhone({ firebase_id_token: idToken, new_password: fpNewPass, phone: phoneNumber });
+                    toast("Password reset successfully! Please login.", "success");
+                    setMode("login");
+                    setFirebaseConfirmation(null);
+                    setFirebaseOtp("");
+                  } catch (err) {
+                    toast(err?.message || err?.error || "Failed to reset password.", "error");
+                  }
+                  setLoading(false);
+                }} />
+                <button onClick={() => setFirebaseConfirmation(null)} style={{ marginTop: 8, background: "none", border: "none", color: C.textDim, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>← Change number</button>
+              </div>
             )}
           </Card>
         )}
@@ -1373,7 +1467,12 @@ function PlanListingBanner() {
         </div>
         {atLimit && (
           <div style={{ fontSize: 12, color: C.danger, marginTop: 6 }}>
-            You have reached the Free Plan limit of {count.limit} listings. Upgrade for unlimited listings.
+            You have reached the Free Plan limit of {count.limit} vehicle listings. Upgrade to Pro for unlimited listings.
+          </div>
+        )}
+        {!atLimit && count.limit > 0 && (
+          <div style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>
+            Free plan: {count.limit} vehicle listings. {count.limit - count.current} slot{count.limit - count.current !== 1 ? "s" : ""} remaining.
           </div>
         )}
       </div>
@@ -2216,8 +2315,11 @@ function Customers() {
 function Finance() {
   const C = useC();
   const toast = useToast();
+  const [activeTab, setActiveTab] = useState("loans");
+  // ── EMI Calculator ──
   const [emiForm, setEmiForm] = useState({ principal: 150000, rate: 12, tenure: 36 });
   const [emiResult, setEmiResult] = useState(null);
+  // ── Loans ──
   const [loans, setLoans] = useState([]);
   const [loanSearch, setLoanSearch] = useState("");
   const debouncedLoanSearch = useDebounce(loanSearch, 350);
@@ -2227,28 +2329,54 @@ function Finance() {
   const [newLoan, setNewLoan] = useState({ customer_name: "", loan_amount: "", interest_rate: "12.0", tenure_months: "36", bank_name: "", status: "pending" });
   const [savingLoan, setSavingLoan] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState(null);
+  // ── Financers ──
+  const [financers, setFinancers] = useState([]);
+  const [financerSearch, setFinancerSearch] = useState("");
+  const dFinancerSearch = useDebounce(financerSearch, 350);
+  const [selectedFinancer, setSelectedFinancer] = useState(null);
+  const [applyingFinancer, setApplyingFinancer] = useState(null);
+  const [finReqs, setFinReqs] = useState([]);
+  // ── Finance Applications ──
+  const [finApps, setFinApps] = useState([]);
+  const [showNewFinApp, setShowNewFinApp] = useState(false);
+  const [newFinApp, setNewFinApp] = useState({ financer: "", vehicle: "", customer_name: "", customer_phone: "", customer_email: "", customer_aadhaar: "", customer_pan: "", loan_amount: "", down_payment: "", tenure_months: "36", notes: "" });
+  const [savingFinApp, setSavingFinApp] = useState(false);
+  const [vehicles, setVehicles] = useState([]);
+  const [finAppDetail, setFinAppDetail] = useState(null);
+
   const setF = k => v => setEmiForm(p => ({ ...p, [k]: v }));
   const setNL = k => v => setNewLoan(p => ({ ...p, [k]: v }));
+  const setNFA = k => v => setNewFinApp(p => ({ ...p, [k]: v }));
 
-  const STATUS_COLORS = { pending: C.warning, approved: C.success, rejected: C.danger, disbursed: C.info };
+  const STATUS_COLORS = { pending: C.warning, approved: C.success, rejected: C.danger, disbursed: C.info, submitted: C.warning, under_review: C.info, docs_required: C.warning };
   const STATUS_NEXT = { pending: ["approved","rejected"], approved: ["disbursed","rejected"], rejected: [], disbursed: [] };
 
   const loadLoans = useCallback(() => {
     const p = new URLSearchParams();
     if (debouncedLoanSearch) p.set("search", debouncedLoanSearch);
-    if (loanDateFrom)        p.set("date_from", loanDateFrom);
-    if (loanDateTo)          p.set("date_to", loanDateTo);
+    if (loanDateFrom) p.set("date_from", loanDateFrom);
+    if (loanDateTo)   p.set("date_to", loanDateTo);
     const qs = p.toString() ? `?${p}` : "";
-    api.finance.loans(qs).then(d => setLoans(d.results || d));
+    api.finance.loans(qs).then(d => setLoans(d.results || d)).catch(() => {});
   }, [debouncedLoanSearch, loanDateFrom, loanDateTo]);
 
+  const loadFinancers = useCallback(() => {
+    const p = new URLSearchParams();
+    if (dFinancerSearch) p.set("search", dFinancerSearch);
+    api.dealer.financers(`?${p}`).then(d => setFinancers(d.results || d || [])).catch(() => {});
+  }, [dFinancerSearch]);
+
+  const loadFinApps = useCallback(() => {
+    api.dealer.finApps().then(d => setFinApps(d.results || d || [])).catch(() => {});
+  }, []);
+
   useEffect(() => { loadLoans(); }, [loadLoans]);
+  useEffect(() => { if (activeTab === "financers") loadFinancers(); }, [activeTab, loadFinancers]);
+  useEffect(() => { if (activeTab === "applications") { loadFinApps(); api.vehicles.list().then(d => setVehicles(d.results || d || [])).catch(() => {}); } }, [activeTab, loadFinApps]);
 
   const calcEMI = async () => {
-    try {
-      const r = await api.finance.emi({ ...emiForm });
-      setEmiResult(r);
-    } catch { toast("EMI calculation failed.", "error"); }
+    try { const r = await api.finance.emi({ ...emiForm }); setEmiResult(r); }
+    catch { toast("EMI calculation failed.", "error"); }
   };
 
   const handleNewLoan = async (e) => {
@@ -2257,12 +2385,8 @@ function Finance() {
     if (!newLoan.loan_amount || parseFloat(newLoan.loan_amount) <= 0) { toast("Valid loan amount required.", "warning"); return; }
     setSavingLoan(true);
     try {
-      // Auto-calculate EMI before saving
       let emi_amount = null;
-      try {
-        const r = await api.finance.emi({ principal: newLoan.loan_amount, rate: newLoan.interest_rate, tenure: newLoan.tenure_months });
-        emi_amount = r.emi;
-      } catch { /* ignore EMI calc failure */ }
+      try { const r = await api.finance.emi({ principal: newLoan.loan_amount, rate: newLoan.interest_rate, tenure: newLoan.tenure_months }); emi_amount = r.emi; } catch { /* ignore */ }
       await api.finance.create({ ...newLoan, emi_amount });
       toast("Loan application created!", "success");
       setShowNewLoan(false);
@@ -2280,115 +2404,344 @@ function Finance() {
     } catch { toast("Failed to update status.", "error"); }
   };
 
-  return (
-    <div className="erd-page-pad erd-finance-layout" style={{ padding: 24, display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
-      {/* Left: EMI Calculator */}
-      <div>
-        <Card>
-          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: C.text }}>💰 EMI Calculator</div>
-          <Field label="Loan Amount (₹)"><Input value={emiForm.principal} onChange={setF("principal")} type="number" /></Field>
-          <Field label="Interest Rate (% p.a.)"><Input value={emiForm.rate} onChange={setF("rate")} type="number" step="0.1" /></Field>
-          <Field label="Tenure (months)"><Input value={emiForm.tenure} onChange={setF("tenure")} type="number" /></Field>
-          <Btn label="Calculate EMI" color={C.primary} onClick={calcEMI} fullWidth />
-          {emiResult && (
-            <div style={{ marginTop: 18, background: `${C.primary}08`, border: `1.5px solid ${C.primary}33`, borderRadius: 10, padding: 16 }}>
-              {[
-                ["Monthly EMI",    fmtINR(emiResult.emi),           C.primary],
-                ["Total Payment",  fmtINR(emiResult.total_payment), C.text],
-                ["Total Interest", fmtINR(emiResult.total_interest),C.danger],
-                ["Principal",      fmtINR(emiResult.principal),     C.text],
-              ].map(([l, v, c]) => (
-                <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13 }}>
-                  <span style={{ color: C.textMid }}>{l}</span>
-                  <span style={{ fontWeight: 700, color: c }}>{v}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+  const handleApplyFinancer = async (financerId) => {
+    setApplyingFinancer(financerId);
+    try {
+      await api.dealer.applyFinancer(financerId);
+      loadFinancers();
+      toast("Application sent! Awaiting financer approval.", "success");
+    } catch (err) {
+      const msg = err?.detail || err?.error || "Failed to apply.";
+      toast(msg, "error");
+    }
+    setApplyingFinancer(null);
+  };
 
-        {/* Quick stats */}
-        <Card style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: C.text }}>📊 Loan Summary</div>
-          {[
-            ["Total Loans", loans.length, C.text],
-            ["Pending",  loans.filter(l => l.status === "pending").length,  C.warning],
-            ["Approved", loans.filter(l => l.status === "approved").length, C.success],
-            ["Disbursed",loans.filter(l => l.status === "disbursed").length,C.info],
-            ["Rejected", loans.filter(l => l.status === "rejected").length, C.danger],
-          ].map(([l, v, c]) => (
-            <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
-              <span style={{ color: C.textMid }}>{l}</span>
-              <span style={{ fontWeight: 700, color: c }}>{v}</span>
-            </div>
-          ))}
-        </Card>
+  const openFinancerReqs = async (f) => {
+    setSelectedFinancer(f);
+    try { const r = await api.dealer.financerReqs(f.id); setFinReqs(r.results || r || []); } catch { setFinReqs([]); }
+  };
+
+  const handleCreateFinApp = async (e) => {
+    e.preventDefault();
+    if (!newFinApp.financer) { toast("Select a financer", "warning"); return; }
+    if (!newFinApp.customer_name || !newFinApp.customer_phone) { toast("Customer name and phone required", "warning"); return; }
+    setSavingFinApp(true);
+    try {
+      await api.dealer.createFinApp({ ...newFinApp });
+      toast("Finance application created!", "success");
+      setShowNewFinApp(false);
+      setNewFinApp({ financer: "", vehicle: "", customer_name: "", customer_phone: "", customer_email: "", customer_aadhaar: "", customer_pan: "", loan_amount: "", down_payment: "", tenure_months: "36", notes: "" });
+      loadFinApps();
+    } catch (err) {
+      const msg = err?.detail || err?.error || Object.values(err || {}).flat().join(" ") || "Failed to create.";
+      toast(msg, "error");
+    }
+    setSavingFinApp(false);
+  };
+
+  const TABS = [
+    { id: "loans",        label: "Internal Loans",   icon: "🏦" },
+    { id: "financers",    label: "NBFC Financers",   icon: "🤝" },
+    { id: "applications", label: "Finance Apps",     icon: "📄" },
+    { id: "emi",          label: "EMI Calculator",   icon: "🔢" },
+  ];
+
+  return (
+    <div style={{ padding: 24 }}>
+      {/* Tab bar */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `2px solid ${C.border}`, paddingBottom: 0, flexWrap: "wrap" }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+            padding: "10px 18px", border: "none", background: "transparent",
+            borderBottom: activeTab === t.id ? `2px solid ${C.primary}` : "2px solid transparent",
+            color: activeTab === t.id ? C.primary : C.textMid,
+            fontWeight: activeTab === t.id ? 700 : 500, fontSize: 13, cursor: "pointer",
+            fontFamily: "inherit", marginBottom: -2, display: "flex", alignItems: "center", gap: 6,
+          }}>
+            {t.icon} {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Right: Loans table */}
-      <div>
-        <Card style={{ marginBottom: 14, padding: 14 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <input value={loanSearch} onChange={e => setLoanSearch(e.target.value)} placeholder="Search customer / bank..."
-              style={{ flex: 1, minWidth: 160, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
-            <DateFilter from={loanDateFrom} to={loanDateTo} onChange={(f,t) => { setLoanDateFrom(f); setLoanDateTo(t); }} />
-            <Btn label="↺" size="sm" outline onClick={loadLoans} />
-            <Btn label="+ New Loan" color={C.primary} size="sm" onClick={() => setShowNewLoan(true)} />
+      {/* ── EMI Calculator ── */}
+      {activeTab === "emi" && (
+        <div className="erd-finance-layout" style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
+          <Card>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: C.text }}>💰 EMI Calculator</div>
+            <Field label="Loan Amount (₹)"><Input value={emiForm.principal} onChange={setF("principal")} type="number" /></Field>
+            <Field label="Interest Rate (% p.a.)"><Input value={emiForm.rate} onChange={setF("rate")} type="number" step="0.1" /></Field>
+            <Field label="Tenure (months)"><Input value={emiForm.tenure} onChange={setF("tenure")} type="number" /></Field>
+            <Btn label="Calculate EMI" color={C.primary} onClick={calcEMI} fullWidth />
+            {emiResult && (
+              <div style={{ marginTop: 18, background: `${C.primary}08`, border: `1.5px solid ${C.primary}33`, borderRadius: 10, padding: 16 }}>
+                {[
+                  ["Monthly EMI",    fmtINR(emiResult.emi),           C.primary],
+                  ["Total Payment",  fmtINR(emiResult.total_payment), C.text],
+                  ["Total Interest", fmtINR(emiResult.total_interest),C.danger],
+                  ["Principal",      fmtINR(emiResult.principal),     C.text],
+                ].map(([l, v, c]) => (
+                  <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13 }}>
+                    <span style={{ color: C.textMid }}>{l}</span>
+                    <span style={{ fontWeight: 700, color: c }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+          <div style={{ color: C.textDim, fontSize: 13, paddingTop: 40, textAlign: "center" }}>
+            Enter loan details on the left to calculate EMI instantly.
           </div>
-        </Card>
+        </div>
+      )}
 
-        <Card padding={0}>
-          <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Loan Applications</span>
-            <span style={{ fontSize: 12, color: C.textDim }}>{loans.length} total</span>
+      {/* ── Internal Loans ── */}
+      {activeTab === "loans" && (
+        <div className="erd-finance-layout" style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20 }}>
+          <Card>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: C.text }}>📊 Loan Summary</div>
+            {[
+              ["Total Loans", loans.length, C.text],
+              ["Pending",  loans.filter(l => l.status === "pending").length,  C.warning],
+              ["Approved", loans.filter(l => l.status === "approved").length, C.success],
+              ["Disbursed",loans.filter(l => l.status === "disbursed").length,C.info],
+              ["Rejected", loans.filter(l => l.status === "rejected").length, C.danger],
+            ].map(([l, v, c]) => (
+              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+                <span style={{ color: C.textMid }}>{l}</span>
+                <span style={{ fontWeight: 700, color: c }}>{v}</span>
+              </div>
+            ))}
+          </Card>
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={loanSearch} onChange={e => setLoanSearch(e.target.value)} placeholder="Search customer / bank..."
+                  style={{ flex: 1, minWidth: 160, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <DateFilter from={loanDateFrom} to={loanDateTo} onChange={(f,t) => { setLoanDateFrom(f); setLoanDateTo(t); }} />
+                <Btn label="↺" size="sm" outline onClick={loadLoans} />
+                <Btn label="+ New Loan" color={C.primary} size="sm" onClick={() => setShowNewLoan(true)} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Loan Applications</span>
+                <span style={{ fontSize: 12, color: C.textDim }}>{loans.length} total</span>
+              </div>
+              <div className="erd-table-wrap" style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Customer","Amount","EMI","Tenure","Bank","Status","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.textMid, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loans.length === 0 ? (
+                      <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No loan applications. Click "+ New Loan" to add one.</td></tr>
+                    ) : loans.map((loan, i) => (
+                      <tr key={loan.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 === 0 ? "transparent" : `${C.bg}80` }}>
+                        <td style={{ padding: "10px 14px", fontWeight: 600, color: C.text }}>{loan.customer_name}</td>
+                        <td style={{ padding: "10px 14px", color: C.primary, fontWeight: 700 }}>{fmtINR(loan.loan_amount)}</td>
+                        <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.emi_amount ? fmtINR(loan.emi_amount) : "—"}</td>
+                        <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.tenure_months}m</td>
+                        <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.bank_name || "—"}</td>
+                        <td style={{ padding: "10px 14px" }}><Badge label={loan.status} color={STATUS_COLORS[loan.status] || C.textMid} /></td>
+                        <td style={{ padding: "10px 14px" }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
+                            {(STATUS_NEXT[loan.status] || []).map(s => (
+                              <button key={s} onClick={() => updateStatus(loan, s)} style={{ padding: "3px 10px", borderRadius: 6, border: `1.5px solid ${STATUS_COLORS[s]}`, background: `${STATUS_COLORS[s]}12`, color: STATUS_COLORS[s], fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{s.charAt(0).toUpperCase()+s.slice(1)}</button>
+                            ))}
+                            <button onClick={() => setSelectedLoan(loan)} style={{ padding: "3px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, background: "transparent", color: C.textMid, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>View</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           </div>
-          <div className="erd-table-wrap" style={{ overflowX: "auto" }}>
+        </div>
+      )}
+
+      {/* ── NBFC Financers ── */}
+      {activeTab === "financers" && (
+        <div>
+          <Card style={{ marginBottom: 14, padding: 14 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <input value={financerSearch} onChange={e => setFinancerSearch(e.target.value)} placeholder="Search financer / city..."
+                style={{ flex: 1, minWidth: 160, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+              <Btn label="↺ Refresh" size="sm" outline onClick={loadFinancers} />
+            </div>
+          </Card>
+          <div style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>
+            Only admin-verified dealers can apply to NBFCs. <b>Your dealer account must be verified</b> by admin first.
+          </div>
+          <Card padding={0}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: C.bg }}>
-                  {["Customer","Amount","EMI","Tenure","Bank","Status","Actions"].map(h => (
-                    <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.textMid, whiteSpace: "nowrap", letterSpacing: 0.3 }}>{h}</th>
+                  {["Financer / NBFC","City","Interest Rate","Max Loan","Association","Actions"].map(h => (
+                    <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {loans.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No loan applications. Click "+ New Loan" to add one.</td></tr>
-                ) : loans.map((loan, i) => (
-                  <tr key={loan.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 === 0 ? "transparent" : `${C.bg}80` }}>
-                    <td style={{ padding: "10px 14px", fontWeight: 600, color: C.text }}>{loan.customer_name}</td>
-                    <td style={{ padding: "10px 14px", color: C.primary, fontWeight: 700 }}>{fmtINR(loan.loan_amount)}</td>
-                    <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.emi_amount ? fmtINR(loan.emi_amount) : "—"}</td>
-                    <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.tenure_months}m</td>
-                    <td style={{ padding: "10px 14px", color: C.textMid }}>{loan.bank_name || "—"}</td>
-                    <td style={{ padding: "10px 14px" }}>
-                      <Badge label={loan.status} color={STATUS_COLORS[loan.status] || C.textMid} />
+                {financers.map(f => (
+                  <tr key={f.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "12px 14px" }}>
+                      <div style={{ fontWeight: 600, color: C.text }}>{f.company_name || f.username}</div>
+                      <div style={{ fontSize: 11, color: C.textDim }}>{f.city}</div>
                     </td>
-                    <td style={{ padding: "10px 14px" }}>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
-                        {(STATUS_NEXT[loan.status] || []).map(s => (
-                          <button key={s} onClick={() => updateStatus(loan, s)} style={{
-                            padding: "3px 10px", borderRadius: 6, border: `1.5px solid ${STATUS_COLORS[s]}`,
-                            background: `${STATUS_COLORS[s]}12`, color: STATUS_COLORS[s],
-                            fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                          }}>{s.charAt(0).toUpperCase() + s.slice(1)}</button>
-                        ))}
-                        <button onClick={() => setSelectedLoan(loan)} style={{
-                          padding: "3px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`,
-                          background: "transparent", color: C.textMid,
-                          fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                        }}>View</button>
+                    <td style={{ padding: "12px 14px", color: C.textMid }}>{f.city || "—"}</td>
+                    <td style={{ padding: "12px 14px", color: C.textMid }}>
+                      {f.min_interest_rate && f.max_interest_rate ? `${f.min_interest_rate}%–${f.max_interest_rate}%` : "—"}
+                    </td>
+                    <td style={{ padding: "12px 14px", color: C.textMid }}>
+                      {f.max_loan_amount ? fmtINR(f.max_loan_amount) : "—"}
+                    </td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <Badge label={f.association_status || "Not Applied"} color={f.association_status === "approved" ? C.success : f.association_status === "pending" ? C.warning : f.association_status === "rejected" ? C.danger : C.textDim} />
+                    </td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Btn label="Details" size="sm" outline color={C.info} onClick={() => openFinancerReqs(f)} />
+                        {(!f.association_status || f.association_status === "rejected") && (
+                          <Btn label={applyingFinancer === f.id ? "Applying..." : "Apply"} size="sm" color={C.primary} disabled={applyingFinancer === f.id} onClick={() => handleApplyFinancer(f.id)} />
+                        )}
                       </div>
                     </td>
                   </tr>
                 ))}
+                {financers.length === 0 && (
+                  <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No verified financers available yet. Check back later.</td></tr>
+                )}
               </tbody>
             </table>
-          </div>
-        </Card>
-      </div>
+          </Card>
+        </div>
+      )}
 
-      {/* New Loan Modal */}
+      {/* ── Finance Applications ── */}
+      {activeTab === "applications" && (
+        <div>
+          <Card style={{ marginBottom: 14, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>Finance Applications to NBFCs</div>
+              <Btn label="+ New Application" color={C.primary} size="sm" onClick={() => setShowNewFinApp(true)} />
+            </div>
+          </Card>
+          <Card padding={0}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: C.bg }}>
+                  {["Customer","Phone","Financer","Vehicle","Loan Amount","Status","Notes","Date"].map(h => (
+                    <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {finApps.map(a => (
+                  <tr key={a.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{a.customer_name}</td>
+                    <td style={{ padding: "12px 14px", color: C.primary }}>{a.customer_phone}</td>
+                    <td style={{ padding: "12px 14px", color: C.textMid }}>{a.financer_name || "—"}</td>
+                    <td style={{ padding: "12px 14px", fontSize: 12 }}>{a.vehicle_name || "—"}</td>
+                    <td style={{ padding: "12px 14px", color: C.success, fontWeight: 700 }}>{fmtINR(a.loan_amount)}</td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <Badge label={a.status} color={STATUS_COLORS[a.status] || C.textMid} />
+                    </td>
+                    <td style={{ padding: "12px 14px", fontSize: 11, color: C.textDim, maxWidth: 160 }}>{a.status_notes || "—"}</td>
+                    <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString("en-IN") : "Draft"}</td>
+                  </tr>
+                ))}
+                {finApps.length === 0 && (
+                  <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No finance applications yet. Apply to an NBFC financer first, then create an application.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Financer Detail Modal ── */}
+      {selectedFinancer && (
+        <Modal title={`🏦 ${selectedFinancer.company_name || selectedFinancer.username}`} onClose={() => { setSelectedFinancer(null); setFinReqs([]); }}>
+          <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+            {[
+              ["City", selectedFinancer.city],
+              ["Interest Rate", selectedFinancer.min_interest_rate && selectedFinancer.max_interest_rate ? `${selectedFinancer.min_interest_rate}% – ${selectedFinancer.max_interest_rate}%` : "—"],
+              ["Max Loan Amount", selectedFinancer.max_loan_amount ? fmtINR(selectedFinancer.max_loan_amount) : "—"],
+              ["Processing Fee", selectedFinancer.processing_fee_pct ? `${selectedFinancer.processing_fee_pct}%` : "—"],
+            ].map(([l, v]) => (
+              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+                <span style={{ color: C.textMid }}>{l}</span>
+                <span style={{ fontWeight: 600 }}>{v || "—"}</span>
+              </div>
+            ))}
+          </div>
+          {finReqs.length > 0 && (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: C.text }}>Documents Required from Customer:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {finReqs.map(r => (
+                  <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                    <span style={{ color: r.is_mandatory ? C.danger : C.textDim }}>{r.is_mandatory ? "●" : "○"}</span>
+                    <span>{r.label}</span>
+                    {r.is_mandatory && <Badge label="Required" color={C.danger} />}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {finReqs.length === 0 && <div style={{ fontSize: 13, color: C.textDim }}>No specific document requirements listed.</div>}
+          <div style={{ marginTop: 16, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Btn label="Close" outline color={C.textMid} onClick={() => { setSelectedFinancer(null); setFinReqs([]); }} />
+            {(!selectedFinancer.association_status || selectedFinancer.association_status === "rejected") && (
+              <Btn label={applyingFinancer === selectedFinancer.id ? "Applying..." : "Apply to This Financer"} color={C.primary} disabled={applyingFinancer === selectedFinancer.id} onClick={() => { handleApplyFinancer(selectedFinancer.id); setSelectedFinancer(null); }} />
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* ── New Finance Application Modal ── */}
+      {showNewFinApp && (
+        <Modal title="New Finance Application" onClose={() => setShowNewFinApp(false)} width={600}>
+          <form onSubmit={handleCreateFinApp}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <Field label="Financer / NBFC *">
+                  <Select value={newFinApp.financer} onChange={setNFA("financer")} placeholder="Select financer..."
+                    options={financers.filter(f => f.association_status === "approved").map(f => ({ value: f.id, label: f.company_name || f.username }))} />
+                </Field>
+              </div>
+              <Field label="Vehicle (optional)">
+                <Select value={newFinApp.vehicle} onChange={setNFA("vehicle")} placeholder="Select vehicle..."
+                  options={[{ value: "", label: "None" }, ...vehicles.map(v => ({ value: v.id, label: `${v.brand_name} ${v.model_name}` }))]} />
+              </Field>
+              <Field label="Customer Name *"><Input value={newFinApp.customer_name} onChange={setNFA("customer_name")} placeholder="Full name" /></Field>
+              <Field label="Customer Phone *"><Input value={newFinApp.customer_phone} onChange={setNFA("customer_phone")} placeholder="9876543210" /></Field>
+              <Field label="Customer Email"><Input value={newFinApp.customer_email} onChange={setNFA("customer_email")} type="email" placeholder="customer@email.com" /></Field>
+              <Field label="Aadhaar Number"><Input value={newFinApp.customer_aadhaar} onChange={setNFA("customer_aadhaar")} placeholder="XXXX XXXX XXXX" /></Field>
+              <Field label="PAN Number"><Input value={newFinApp.customer_pan} onChange={setNFA("customer_pan")} placeholder="ABCDE1234F" /></Field>
+              <Field label="Loan Amount (₹) *"><Input value={newFinApp.loan_amount} onChange={setNFA("loan_amount")} type="number" placeholder="150000" /></Field>
+              <Field label="Down Payment (₹)"><Input value={newFinApp.down_payment} onChange={setNFA("down_payment")} type="number" placeholder="30000" /></Field>
+              <Field label="Tenure (months)"><Input value={newFinApp.tenure_months} onChange={setNFA("tenure_months")} type="number" placeholder="36" /></Field>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <Field label="Notes"><TextArea value={newFinApp.notes} onChange={setNFA("notes")} placeholder="Additional notes for financer..." /></Field>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowNewFinApp(false)} />
+              <Btn label={savingFinApp ? "Submitting..." : "Submit Application"} color={C.primary} type="submit" disabled={savingFinApp} />
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ── New Loan Modal ── */}
       {showNewLoan && (
         <Modal title="New Loan Application" onClose={() => setShowNewLoan(false)}>
           <form onSubmit={handleNewLoan}>
@@ -2398,18 +2751,10 @@ function Finance() {
                   <Input value={newLoan.customer_name} onChange={setNL("customer_name")} placeholder="Full name" />
                 </Field>
               </div>
-              <Field label="Loan Amount (₹) *">
-                <Input value={newLoan.loan_amount} onChange={setNL("loan_amount")} type="number" placeholder="150000" />
-              </Field>
-              <Field label="Interest Rate (% p.a.)">
-                <Input value={newLoan.interest_rate} onChange={setNL("interest_rate")} type="number" step="0.1" placeholder="12.0" />
-              </Field>
-              <Field label="Tenure (months)">
-                <Input value={newLoan.tenure_months} onChange={setNL("tenure_months")} type="number" placeholder="36" />
-              </Field>
-              <Field label="Bank / Financer">
-                <Input value={newLoan.bank_name} onChange={setNL("bank_name")} placeholder="HDFC Bank, SBI, etc." />
-              </Field>
+              <Field label="Loan Amount (₹) *"><Input value={newLoan.loan_amount} onChange={setNL("loan_amount")} type="number" placeholder="150000" /></Field>
+              <Field label="Interest Rate (% p.a.)"><Input value={newLoan.interest_rate} onChange={setNL("interest_rate")} type="number" step="0.1" placeholder="12.0" /></Field>
+              <Field label="Tenure (months)"><Input value={newLoan.tenure_months} onChange={setNL("tenure_months")} type="number" placeholder="36" /></Field>
+              <Field label="Bank / Financer"><Input value={newLoan.bank_name} onChange={setNL("bank_name")} placeholder="HDFC Bank, SBI, etc." /></Field>
               <div style={{ gridColumn: "1 / -1" }}>
                 <Field label="Status">
                   <Select value={newLoan.status} onChange={setNL("status")}
@@ -2425,7 +2770,7 @@ function Finance() {
         </Modal>
       )}
 
-      {/* Loan Detail Modal */}
+      {/* ── Loan Detail Modal ── */}
       {selectedLoan && (
         <Modal title={`Loan — ${selectedLoan.customer_name}`} onClose={() => setSelectedLoan(null)}>
           <div style={{ display: "grid", gap: 12 }}>
@@ -3562,7 +3907,7 @@ function SupportPage() {
           { q: "My account is under verification. How long does it take?", a: "Admin verification typically takes 24-48 hours on business days. You'll receive an email once approved." },
           { q: "How do I upgrade to Early Dealer Plan?", a: "Go to Plans & Pricing from the left navigation and click 'Upgrade Now'. ₹5000/year gets you unlimited listings + priority ranking." },
           { q: "I forgot my password. How do I reset it?", a: "On the login screen, click 'Forgot password?' and enter your registered email address. You'll receive a 6-digit OTP." },
-          { q: "How do I add more than 3 vehicles?", a: "The Free Plan allows 3 vehicle listings. Upgrade to Early Dealer Plan for unlimited listings." },
+          { q: "How do I add more than 5 vehicles?", a: "The Free Trial allows 5 vehicle listings. Upgrade to the Pro Plan for unlimited listings. Contact our team to activate instantly." },
           { q: "How are leads distributed to dealers?", a: "When a buyer submits an enquiry, leads go to dealers matching the vehicle type and location. Priority dealers appear first." },
           { q: "Can I use the platform on mobile?", a: "Yes! Install our app from your browser — tap 'Add to Home Screen' on Chrome/Safari. Fully works as PWA." },
         ].map(({ q, a }, i) => (
@@ -4184,9 +4529,10 @@ function Marketplace() {
 // PLANS PAGE
 // ═══════════════════════════════════════════════════════
 const PLAN_FEATURES = [
-  { label: "Vehicle Listings",              free: "3 vehicles only",      pro: "Unlimited" },
-  { label: "Lead Management",               free: true,                   pro: true },
-  { label: "Sales & Invoicing (GST)",       free: true,                   pro: true },
+  { label: "Vehicle Listings",              free: "5 vehicles",           pro: "Unlimited" },
+  { label: "Lifetime Leads",                free: "20 leads",             pro: "Unlimited" },
+  { label: "Lifetime Invoices (GST)",       free: "20 invoices",          pro: "Unlimited" },
+  { label: "Lifetime Enquiries",            free: "20 enquiries",         pro: "Unlimited" },
   { label: "Customer Database",             free: true,                   pro: true },
   { label: "Finance & EMI Calculator",      free: true,                   pro: true },
   { label: "Reports & Analytics",           free: "Basic",                pro: "Advanced + Export" },
@@ -4194,8 +4540,10 @@ const PLAN_FEATURES = [
   { label: "Featured Dealer Badge",         free: false,                  pro: true },
   { label: "Email Notifications",           free: true,                   pro: true },
   { label: "WhatsApp Lead Alerts",          free: false,                  pro: true },
-  { label: "Future Marketing Tools",        free: false,                  pro: true },
+  { label: "Marketing Campaign Tools",      free: false,                  pro: true },
+  { label: "Financer / NBFC Integration",   free: false,                  pro: true },
   { label: "Priority Support",              free: false,                  pro: true },
+  { label: "Validity",                      free: "30 days free trial",   pro: "1 Year" },
 ];
 
 function PlanFeatureRow({ label, free, pro }) {
@@ -4217,18 +4565,27 @@ function PlansPage({ onUpgrade }) {
   const C = useC();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [platformContact, setPlatformContact] = useState({ support_phone: "", support_whatsapp: "", support_email: "", support_name: "" });
 
   useEffect(() => {
     api.dashboard().then(setData).finally(() => setLoading(false));
+    fetch(`${API}/platform/settings/`).then(r => r.json()).then(d => setPlatformContact(d)).catch(() => {});
   }, []);
 
   const plan = data?.plan;
-  const isPro = plan?.type === "pro" && plan?.is_active;
+  const isPro = plan?.is_active && plan?.type !== "free";
   const isFreeActive = plan?.type === "free" && plan?.is_active;
 
+  const phone    = platformContact.support_phone    || SUPPORT_PHONE;
+  const wa       = platformContact.support_whatsapp || SUPPORT_WA;
+  const email    = platformContact.support_email    || SUPPORT_EMAIL;
+  const teamName = platformContact.support_name     || `${BRANDING.platformName} Team`;
+
+  const handleGetPro = () => setShowContactModal(true);
+
   return (
-    <div style={{ padding: 24, maxWidth: 860 }}>
+    <div style={{ padding: 24, maxWidth: 900 }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ fontSize: 26, fontWeight: 800, color: C.text, marginBottom: 6 }}>Plans & Pricing</div>
@@ -4248,12 +4605,12 @@ function PlansPage({ onUpgrade }) {
             }}>
               {plan.is_active
                 ? `✅ You are on the ${plan.type.toUpperCase()} plan — ${plan.days_remaining} day${plan.days_remaining !== 1 ? "s" : ""} remaining`
-                : `⚠️ Your ${plan.type.toUpperCase()} plan has expired. Upgrade to continue accessing all features.`}
+                : `⚠️ Your plan has expired. Contact our team to renew and continue accessing all features.`}
             </div>
           )}
 
           {/* Plan cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 32 }}>
+          <div className="erd-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 32 }}>
             {/* Free Plan */}
             <Card style={{ border: isFreeActive ? `2px solid ${C.primary}` : `1px solid ${C.border}`, position: "relative" }}>
               {isFreeActive && (
@@ -4262,72 +4619,94 @@ function PlansPage({ onUpgrade }) {
                 </div>
               )}
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, letterSpacing: "1px", marginBottom: 6 }}>FREE PLAN</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, letterSpacing: "1px", marginBottom: 6 }}>FREE TRIAL</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: C.text }}>₹0</div>
-                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>Forever free</div>
+                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>30-day free trial</div>
               </div>
               <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20, lineHeight: 1.7 }}>
-                Get started and explore the platform. Perfect for new dealerships.
+                Explore the platform at no cost. Perfect for new dealerships getting started.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                {["3 vehicle listings", "Leads visible in dashboard", "Invoice generation", "EMI calculator", "Basic dashboard"].map(f => (
+                {[
+                  "5 vehicle listings",
+                  "20 lifetime leads",
+                  "20 lifetime invoices",
+                  "20 lifetime enquiries",
+                  "EMI calculator",
+                  "Basic dashboard",
+                ].map(f => (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.textMid }}>
-                    <span style={{ color: C.success }}>✓</span> {f}
+                    <span style={{ color: C.success, fontWeight: 700 }}>✓</span> {f}
                   </div>
                 ))}
-                {["Priority marketplace ranking", "Featured dealer badge", "WhatsApp lead alerts", "Advanced analytics"].map(f => (
+                {["Priority marketplace ranking", "Featured dealer badge", "WhatsApp lead alerts", "Advanced analytics", "Financer integration"].map(f => (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.textDim }}>
-                    <span style={{ color: C.textDim }}>—</span> {f}
+                    <span>—</span> {f}
                   </div>
                 ))}
               </div>
               <Btn label={isFreeActive ? "Current Plan" : "Get Started Free"} color={C.primary} outline fullWidth disabled={isFreeActive} />
             </Card>
 
-            {/* Early Dealer Plan */}
+            {/* Early Dealer / Pro Plan */}
             <Card style={{ border: `2px solid ${C.primary}`, background: `linear-gradient(180deg,${C.primary}08 0%,transparent 100%)`, position: "relative" }}>
-              <div style={{ position: "absolute", top: -12, right: 20, background: `linear-gradient(90deg,${C.accent},${C.primary})`, color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 11, fontWeight: 700 }}>
-                {isPro ? "CURRENT PLAN" : "ONLY 100 DEALERS"}
+              <div style={{ position: "absolute", top: -12, right: 20, background: `linear-gradient(90deg,${C.accent || "#6366f1"},${C.primary})`, color: "#fff", borderRadius: 20, padding: "3px 14px", fontSize: 11, fontWeight: 700 }}>
+                {isPro ? "CURRENT PLAN" : "FIRST 100 DEALERS"}
               </div>
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: "1px", marginBottom: 6 }}>EARLY DEALER PLAN</div>
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: C.primary }}>₹5,000</div>
-                  <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>/year</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.primary, letterSpacing: "1px", marginBottom: 6 }}>PRO PLAN — EARLY DEALER</div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 6 }}>
+                  <div style={{ fontSize: 34, fontWeight: 800, color: C.primary }}>₹5,000</div>
+                  <div style={{ fontSize: 13, color: C.textMid, marginBottom: 7 }}>/year</div>
                 </div>
-                <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>Limited to first 100 dealers • Lock in forever</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <span style={{ fontSize: 12, color: C.textDim, textDecoration: "line-through" }}>₹9,000/yr</span>
+                  <span style={{ background: `${C.success}20`, color: C.success, fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "2px 8px" }}>SAVE ₹4,000</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>For first 100 dealers only • Regular price ₹9,000/yr after</div>
               </div>
               <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20, lineHeight: 1.7 }}>
-                Everything unlimited. Priority ranking in search. Featured badge. All future tools included.
+                Everything unlimited for 1 full year. Priority search ranking, featured badge, WhatsApp alerts, financer integration, and all future tools.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                {["Unlimited vehicle listings", "Priority marketplace ranking", "Featured dealer badge", "WhatsApp lead alerts", "Advanced analytics", "All future marketing tools", "Priority support"].map(f => (
+                {[
+                  "Unlimited vehicle listings",
+                  "Unlimited leads & invoices",
+                  "Priority marketplace ranking",
+                  "Featured dealer badge",
+                  "WhatsApp lead alerts",
+                  "Advanced analytics & reports",
+                  "Financer / NBFC integration",
+                  "All future marketing tools",
+                  "Priority support",
+                  "1 year validity",
+                ].map(f => (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text }}>
-                    <span style={{ color: C.success }}>✓</span> {f}
+                    <span style={{ color: C.success, fontWeight: 700 }}>✓</span> {f}
                   </div>
                 ))}
               </div>
               {isPro ? (
-                <Btn label="Current Plan ✓" color={C.success} fullWidth disabled />
+                <Btn label="Active Plan ✓" color={C.success} fullWidth disabled />
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <Btn label="⭐ Get Early Dealer Plan — ₹5000/yr" color={C.primary} fullWidth onClick={onUpgrade} />
-                  <div style={{ textAlign: "center", fontSize: 11, color: C.textDim }}>Contact our team to activate instantly • Limited spots</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <Btn label="⭐ Get Pro Plan — Contact Team" color={C.primary} fullWidth onClick={handleGetPro} />
+                  <div style={{ textAlign: "center", fontSize: 11, color: C.textDim }}>Our team activates your account instantly • Limited early spots</div>
                 </div>
               )}
             </Card>
           </div>
 
           {/* Feature comparison table */}
-          <Card padding={0}>
-            <div style={{ padding: "16px 16px 0", fontWeight: 700, fontSize: 15, color: C.text }}>Feature Comparison</div>
+          <Card padding={0} style={{ marginBottom: 28 }}>
+            <div style={{ padding: "16px 16px 0", fontWeight: 700, fontSize: 15, color: C.text }}>Full Feature Comparison</div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: C.bg }}>
                     <th style={{ padding: "10px 16px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}` }}>FEATURE</th>
-                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, width: 160 }}>FREE TRIAL</th>
-                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.primary, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, background: `${C.primary}08`, width: 160 }}>EARLY DEALER ⭐</th>
+                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.textMid, fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, width: 150 }}>FREE TRIAL</th>
+                    <th style={{ padding: "10px 16px", textAlign: "center", color: C.primary, fontWeight: 700, fontSize: 11, letterSpacing: "0.5px", borderBottom: `1px solid ${C.border}`, background: `${C.primary}08`, width: 150 }}>PRO ⭐</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4337,21 +4716,70 @@ function PlansPage({ onUpgrade }) {
             </div>
           </Card>
 
-          {/* FAQ / support */}
-          <div style={{ marginTop: 28, padding: "20px 24px", background: `linear-gradient(135deg,${C.primary}10,${C.accent}08)`, borderRadius: 12, border: `1px solid ${C.primary}22` }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8, color: C.text }}>Need help choosing?</div>
-            <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.8, marginBottom: 14 }}>
-              Our team will help you pick the right plan and get you set up quickly.
-              All plans include onboarding support and data migration.
+          {/* Contact / upgrade CTA */}
+          <div style={{ padding: "24px", background: `linear-gradient(135deg,${C.primary}10,${C.primary}05)`, borderRadius: 14, border: `1.5px solid ${C.primary}22`, textAlign: "center" }}>
+            <div style={{ fontSize: 20, marginBottom: 8 }}>🚀</div>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 8, color: C.text }}>Ready to go Pro?</div>
+            <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.8, marginBottom: 20, maxWidth: 480, margin: "0 auto 20px" }}>
+              Call or WhatsApp our team — we'll activate your Pro account within minutes.<br />
+              <b>First 100 dealers get lifetime early-bird pricing at ₹5,000/yr.</b>
             </div>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {SUPPORT_PHONE && <Btn label={`📞 Call ${SUPPORT_PHONE}`} color={C.primary} outline size="sm" onClick={() => window.open(`tel:${SUPPORT_PHONE}`)} />}
-              {SUPPORT_WA    && <Btn label="💬 WhatsApp Us" color={C.success} size="sm" onClick={() => window.open(buildWhatsAppLink(`Hi I need help with ${BRANDING.platformName}`), "_blank")} />}
-              <Btn label={`✉️ Email ${SUPPORT_EMAIL}`} color={C.info} outline size="sm" onClick={() => window.open(`mailto:${SUPPORT_EMAIL}`)} />
-              {!SUPPORT_PHONE && !SUPPORT_WA && <Btn label="📬 Contact Support" color={C.primary} size="sm" onClick={onUpgrade} />}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+              {phone && <Btn label={`📞 Call ${phone}`} color={C.primary} size="lg" onClick={() => window.open(`tel:${phone.replace(/\s/g, "")}`)} />}
+              {wa    && <Btn label="💬 WhatsApp Team" color={C.success} size="lg" onClick={() => window.open(buildWhatsAppLink(`Hi! I want to upgrade to the Pro Plan on ${BRANDING.platformName}`), "_blank")} />}
+              {email && <Btn label={`✉️ Email Us`} color={C.info} outline size="lg" onClick={() => window.open(`mailto:${email}?subject=Pro Plan Upgrade — ${BRANDING.platformName}`)} />}
             </div>
           </div>
         </>
+      )}
+
+      {/* Pro plan contact modal */}
+      {showContactModal && (
+        <Modal title="⭐ Upgrade to Pro — Contact Our Team" onClose={() => setShowContactModal(false)} width={500}>
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>🚀</div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 6 }}>Get Pro for ₹5,000/year</div>
+            <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.7 }}>
+              Contact our team to activate your Pro plan instantly.<br />
+              <b style={{ color: C.primary }}>First 100 dealers only</b> — regular price ₹9,000/yr after.
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+            {phone && (
+              <button onClick={() => window.open(`tel:${phone.replace(/\s/g, "")}`)}
+                style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 10, border: `1.5px solid ${C.primary}44`, background: `${C.primary}08`, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                <span style={{ fontSize: 24 }}>📞</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>Call Us</div>
+                  <div style={{ fontSize: 13, color: C.primary }}>{phone}</div>
+                </div>
+              </button>
+            )}
+            {wa && (
+              <button onClick={() => window.open(buildWhatsAppLink(`Hi! I want to upgrade to the Pro Plan on ${BRANDING.platformName}. Please activate my account.`), "_blank")}
+                style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 10, border: `1.5px solid #25D36644`, background: "#25D36608", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                <span style={{ fontSize: 24 }}>💬</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>WhatsApp</div>
+                  <div style={{ fontSize: 13, color: "#25D366" }}>+{wa}</div>
+                </div>
+              </button>
+            )}
+            {email && (
+              <button onClick={() => window.open(`mailto:${email}?subject=Pro Plan Upgrade — ${BRANDING.platformName}`, "_blank")}
+                style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 10, border: `1.5px solid ${C.info}44`, background: `${C.info}08`, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                <span style={{ fontSize: 24 }}>✉️</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>Email</div>
+                  <div style={{ fontSize: 13, color: C.info }}>{email}</div>
+                </div>
+              </button>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: C.textDim, textAlign: "center" }}>
+            Our team is available Mon–Sat, 10am–7pm IST
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -4458,14 +4886,24 @@ function ContactSupportModal({ onClose, onNavigate }) {
   );
 }
 
+const FINANCER_NAV = [
+  { id: "overview",      label: "Dashboard",    icon: "📊" },
+  { id: "dealers",       label: "Dealers",      icon: "🏪" },
+  { id: "applications",  label: "Applications", icon: "📄" },
+  { id: "documents",     label: "My Documents", icon: "📁" },
+  { id: "req_docs",      label: "Doc Templates",icon: "📋" },
+];
+
 // ═══════════════════════════════════════════════════════
 // ADMIN PORTAL
 // ═══════════════════════════════════════════════════════
 const ADMIN_NAV = [
   { id: "overview",      label: "Overview",     icon: "📊" },
   { id: "dealers",       label: "Dealers",      icon: "🏪" },
+  { id: "financers",     label: "Financers",    icon: "🏦" },
   { id: "users",         label: "Users",        icon: "👥" },
   { id: "applications",  label: "Applications", icon: "📋" },
+  { id: "fin_apps",      label: "Finance Apps", icon: "💳" },
   { id: "enquiries",     label: "Enquiries",    icon: "💬" },
   { id: "settings",      label: "Settings",     icon: "⚙️" },
 ];
@@ -4539,6 +4977,9 @@ function AdminPortal({ user, onLogout }) {
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [createUserForm, setCreateUserForm] = useState({ name: "", email: "", phone: "", password: "", user_type: "dealer", city: "", state: "" });
   const [createUserLoading, setCreateUserLoading] = useState(false);
+  const [financers, setFinancers] = useState([]);
+  const [finApps, setFinApps] = useState([]);
+  const [finAppFilter, setFinAppFilter] = useState("");
 
   useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
 
@@ -4552,8 +4993,10 @@ function AdminPortal({ user, onLogout }) {
     const qs = `?${p}`;
     const calls = {
       dealers:      () => api.admin.dealers(qs).then(d => { setDealers(d.results || []); setTotalPages(d.total_pages || 1); }),
+      financers:    () => api.admin.financers(qs).then(d => { setFinancers(d.results || d || []); setTotalPages(d.total_pages || 1); }),
       users:        () => api.admin.users(qs).then(d => { setUsers(d.results || []); setTotalPages(d.total_pages || 1); }),
       applications: () => api.admin.applications(qs).then(d => { setApplications(d.results || []); setTotalPages(d.total_pages || 1); }),
+      fin_apps:     () => api.admin.financeApps(qs).then(d => { setFinApps(d.results || d || []); setTotalPages(d.total_pages || 1); }),
       enquiries:    () => api.admin.enquiries(qs).then(d => { setEnquiries(d.results || []); setTotalPages(d.total_pages || 1); }),
     };
     (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
@@ -4565,6 +5008,12 @@ function AdminPortal({ user, onLogout }) {
     await api.admin.verifyDealer(id, { is_verified: verified });
     setDealers(p => p.map(d => d.id === id ? { ...d, is_verified: verified } : d));
     toast(verified ? "Dealer verified!" : "Verification removed.", "success");
+  };
+
+  const verifyFinancer = async (id, verified) => {
+    await api.admin.verifyFinancer(id, { is_verified: verified });
+    setFinancers(p => p.map(f => f.id === id ? { ...f, is_verified: verified } : f));
+    toast(verified ? "Financer verified!" : "Verification removed.", "success");
   };
 
   const handleApp = async (id, status) => {
@@ -4628,14 +5077,15 @@ function AdminPortal({ user, onLogout }) {
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14, marginBottom: 24 }}>
               {[
-                ["🏪","Total Dealers",        stats.total_dealers,       C.primary],
-                ["✅","Verified Dealers",      stats.verified_dealers,    C.success],
-                ["🚗","Active Vehicles",       stats.total_vehicles,      C.info],
-                ["👥","Pipeline Leads",        stats.total_leads,         C.warning],
-                ["💰","Total Sales",           stats.total_sales,         C.success],
-                ["💬","Total Enquiries",       stats.total_enquiries,     C.info],
-                ["📋","Pending Applications",  stats.pending_applications,C.danger],
-                ["👤","Total Users",           stats.total_users,         C.primary],
+                ["🏪","Total Dealers",        stats.total_dealers,            C.primary],
+                ["✅","Verified Dealers",      stats.verified_dealers,         C.success],
+                ["🔄","Free Trial Dealers",    stats.free_trial_dealers ?? (stats.total_dealers - stats.verified_dealers), C.warning],
+                ["🚗","Active Vehicles",       stats.total_vehicles,           C.info],
+                ["👥","Pipeline Leads",        stats.total_leads,              C.warning],
+                ["💰","Total Sales",           stats.total_sales,              C.success],
+                ["🏦","Financers",             stats.total_financers ?? "—",   C.info],
+                ["📋","Pending Applications",  stats.pending_applications,     C.danger],
+                ["👤","Total Users",           stats.total_users,              C.primary],
               ].map(([icon,label,value,color]) => (
                 <StatCard key={label} icon={icon} label={label} value={value ?? "—"} color={color} />
               ))}
@@ -4898,6 +5348,99 @@ function AdminPortal({ user, onLogout }) {
           </div>
         )}
 
+        {/* Financers */}
+        {page === "financers" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search financer / company..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Financer","Contact","City","Plan","Verified","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {financers.map(f => (
+                      <tr key={f.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{f.company_name || f.username}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{f.username} · {f.email}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{f.phone || "—"}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{f.city || "—"}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={f.plan_type || "free"} color={f.plan_type === "paid" ? C.success : C.warning} /></td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {f.is_verified ? <span style={{ color: C.success, fontWeight: 700 }}>✓ Verified</span> : <span style={{ color: C.textDim }}>Pending</span>}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <Btn label={f.is_verified ? "Revoke" : "Verify"} size="sm" color={f.is_verified ? C.danger : C.success} onClick={() => verifyFinancer(f.id, !f.is_verified)} />
+                        </td>
+                      </tr>
+                    ))}
+                    {financers.length === 0 && <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No financers found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
+        {/* Finance Apps */}
+        {page === "fin_apps" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => { setSearch(e.target.value); setPg(1); }} placeholder="Search customer / dealer..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                {["","submitted","under_review","approved","rejected","disbursed"].map(s => (
+                  <button key={s} onClick={() => { setFinAppFilter(s); setPg(1); }} style={{ padding: "5px 12px", borderRadius: 14, border: `1.5px solid ${finAppFilter === s ? C.primary : C.border}`, background: finAppFilter === s ? C.primary : "transparent", color: finAppFilter === s ? "#fff" : C.textMid, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>
+                    {s || "All"}
+                  </button>
+                ))}
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Customer","Dealer","Financer","Vehicle","Amount","Status","Submitted"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {finApps.map(a => (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{a.customer_name}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{a.dealer_name || "—"}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{a.financer_name || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12 }}>{a.vehicle_name || "—"}</td>
+                        <td style={{ padding: "12px 14px", color: C.primary, fontWeight: 700 }}>₹{Number(a.loan_amount || 0).toLocaleString("en-IN")}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={a.status} color={a.status==="approved"||a.status==="disbursed" ? C.success : a.status==="rejected" ? C.danger : C.warning} /></td>
+                        <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString("en-IN") : "Draft"}</td>
+                      </tr>
+                    ))}
+                    {finApps.length === 0 && <tr><td colSpan={7} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No finance applications found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
+          </div>
+        )}
+
         {/* Settings */}
         {page === "settings" && <AdminSettingsPanel toast={toast} />}
       </div>
@@ -4936,6 +5479,409 @@ function AdminPortal({ user, onLogout }) {
           )}
         </Modal>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// FINANCER PORTAL
+// ═══════════════════════════════════════════════════════
+function FinancerPortal({ user, onLogout }) {
+  const C = useC();
+  const { isDark, toggle } = useContext(ThemeCtx);
+  const toast = useToast();
+  const [page, setPage] = useState("overview");
+  const [profile, setProfile] = useState(null);
+  const [dealers, setDealers] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [reqDocs, setReqDocs] = useState([]);
+  const [subscription, setSubscription] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const dSearch = useDebounce(search, 350);
+  const [dealerFilter, setDealerFilter] = useState("");
+  const [appFilter, setAppFilter] = useState("");
+  const [showAddReqDoc, setShowAddReqDoc] = useState(false);
+  const [newReqDoc, setNewReqDoc] = useState({ doc_type: "", label: "", is_mandatory: true });
+  const [selectedApp, setSelectedApp] = useState(null);
+  const [appStatusNote, setAppStatusNote] = useState("");
+  const [appNewStatus, setAppNewStatus] = useState("");
+
+  useEffect(() => {
+    api.financer.profile().then(setProfile).catch(() => {});
+    api.financer.subscription().then(setSubscription).catch(() => {});
+  }, []);
+
+  const loadPage = useCallback(() => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (dSearch) p.set("search", dSearch);
+    if (dealerFilter) p.set("status", dealerFilter);
+    if (appFilter) p.set("status", appFilter);
+    const qs = p.toString() ? `?${p}` : "";
+    const calls = {
+      dealers:      () => api.financer.dealers(qs).then(d => setDealers(d.results || d || [])),
+      applications: () => api.financer.applications(qs).then(d => setApplications(d.results || d || [])),
+      documents:    () => api.financer.documents().then(d => setDocuments(d.results || d || [])),
+      req_docs:     () => api.financer.requiredDocs().then(d => setReqDocs(d.results || d || [])),
+    };
+    (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
+  }, [page, dSearch, dealerFilter, appFilter]);
+
+  useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
+
+  const handleApproveDealer = async (dealerId, action) => {
+    try {
+      await api.financer.approveDealer(dealerId, { action });
+      loadPage();
+      toast(`Dealer ${action}d`, action === "approve" ? "success" : "warning");
+    } catch { toast("Action failed", "error"); }
+  };
+
+  const handleUpdateAppStatus = async () => {
+    if (!selectedApp || !appNewStatus) { toast("Select a status", "warning"); return; }
+    try {
+      await api.financer.updateAppStatus(selectedApp.id, { status: appNewStatus, status_notes: appStatusNote });
+      setApplications(p => p.map(a => a.id === selectedApp.id ? { ...a, status: appNewStatus } : a));
+      setSelectedApp(null);
+      setAppStatusNote(""); setAppNewStatus("");
+      toast("Application status updated", "success");
+    } catch { toast("Failed to update", "error"); }
+  };
+
+  const handleAddReqDoc = async () => {
+    if (!newReqDoc.doc_type || !newReqDoc.label) { toast("Fill in all fields", "warning"); return; }
+    try {
+      await api.financer.addRequiredDoc(newReqDoc);
+      loadPage();
+      setShowAddReqDoc(false);
+      setNewReqDoc({ doc_type: "", label: "", is_mandatory: true });
+      toast("Document template added", "success");
+    } catch { toast("Failed to add", "error"); }
+  };
+
+  const sidebarStyle = { width: 200, minWidth: 200, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 };
+  const APP_STATUS_COLORS = { draft: C.textDim, submitted: C.warning, under_review: C.info, approved: C.success, rejected: C.danger, docs_required: C.warning, disbursed: C.success };
+
+  return (
+    <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
+      {/* Sidebar */}
+      <div style={sidebarStyle}>
+        <div style={{ padding: "16px 14px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 34, height: 34, background: `linear-gradient(135deg,${C.info},#1e40af)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>🏦</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Financer Portal</div>
+              <div style={{ fontSize: 10, color: C.textDim }}>{profile?.company_name || user?.username}</div>
+            </div>
+          </div>
+        </div>
+        <nav style={{ flex: 1, padding: "10px 8px" }}>
+          {FINANCER_NAV.map(n => (
+            <button key={n.id} onClick={() => { setPage(n.id); setSearch(""); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: page === n.id ? `${C.info}15` : "transparent", border: "none", borderRadius: 8, color: page === n.id ? C.info : C.textMid, fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 2, borderLeft: page === n.id ? `3px solid ${C.info}` : "3px solid transparent" }}>
+              <span>{n.icon}</span>{n.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
+          <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            {isDark ? "☀️" : "🌙"} {isDark ? "Light" : "Dark"}
+          </button>
+          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            🚪 Logout
+          </button>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
+              {FINANCER_NAV.find(n => n.id === page)?.icon} {FINANCER_NAV.find(n => n.id === page)?.label || "Dashboard"}
+            </div>
+            <div style={{ fontSize: 12, color: C.textDim }}>Logged in as: <b>{user?.username}</b></div>
+          </div>
+          {!profile?.is_verified && (
+            <div style={{ background: `${C.warning}15`, border: `1.5px solid ${C.warning}44`, borderRadius: 10, padding: "8px 16px", fontSize: 12, color: C.warning, fontWeight: 600 }}>
+              ⏳ Pending Admin Verification
+            </div>
+          )}
+        </div>
+
+        {/* Overview */}
+        {page === "overview" && (
+          <div>
+            {subscription && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14, marginBottom: 24 }}>
+                {[
+                  ["📄","Applications Used", subscription.applications_used, C.info],
+                  ["📊","Monthly Limit", subscription.monthly_limit ?? "Unlimited", C.primary],
+                  ["✅","Plan", subscription.plan_name || "Free", subscription.plan_name === "Free" ? C.warning : C.success],
+                ].map(([icon,label,value,color]) => (
+                  <StatCard key={label} icon={icon} label={label} value={value ?? "—"} color={color} />
+                ))}
+              </div>
+            )}
+            {profile && (
+              <Card style={{ marginBottom: 20 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: C.text }}>🏦 Your Profile</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 13 }}>
+                  {[
+                    ["Company",    profile.company_name],
+                    ["City",       profile.city],
+                    ["Phone",      profile.phone],
+                    ["Min Rate",   profile.min_interest_rate ? `${profile.min_interest_rate}%` : "—"],
+                    ["Max Rate",   profile.max_interest_rate ? `${profile.max_interest_rate}%` : "—"],
+                    ["Max Loan",   profile.max_loan_amount ? `₹${Number(profile.max_loan_amount).toLocaleString("en-IN")}` : "—"],
+                  ].map(([l,v]) => (
+                    <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <span style={{ color: C.textMid }}>{l}</span>
+                      <span style={{ fontWeight: 600, color: C.text }}>{v || "—"}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <Badge label={profile.is_verified ? "Verified" : "Pending Verification"} color={profile.is_verified ? C.success : C.warning} />
+                </div>
+              </Card>
+            )}
+            <Card>
+              <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.7 }}>
+                <b>How it works:</b><br/>
+                1. Admin verifies your account after document review.<br/>
+                2. Once verified, dealers can apply to associate with you.<br/>
+                3. Approve/reject dealer applications from the <b>Dealers</b> tab.<br/>
+                4. Approved dealers submit customer loan applications.<br/>
+                5. Review and update application status from the <b>Applications</b> tab.
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Dealers */}
+        {page === "dealers" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search dealer / city..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                {["", "pending", "approved", "rejected"].map(s => (
+                  <button key={s} onClick={() => { setDealerFilter(s); }} style={{ padding: "5px 12px", borderRadius: 14, border: `1.5px solid ${dealerFilter === s ? C.info : C.border}`, background: dealerFilter === s ? C.info : "transparent", color: dealerFilter === s ? "#fff" : C.textMid, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>
+                    {s || "All"}
+                  </button>
+                ))}
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Dealer","City","Association","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dealers.map(d => (
+                      <tr key={d.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: 600, color: C.text }}>{d.dealer_name}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{d.city}</div>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.city}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <Badge label={d.association_status || "none"} color={d.association_status === "approved" ? C.success : d.association_status === "rejected" ? C.danger : d.association_status === "pending" ? C.warning : C.textDim} />
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {d.association_status === "pending" && (
+                              <>
+                                <Btn label="Approve" size="sm" color={C.success} onClick={() => handleApproveDealer(d.id, "approve")} />
+                                <Btn label="Reject" size="sm" color={C.danger} onClick={() => handleApproveDealer(d.id, "reject")} />
+                              </>
+                            )}
+                            {d.association_status === "approved" && (
+                              <Btn label="Suspend" size="sm" color={C.warning} onClick={() => handleApproveDealer(d.id, "suspend")} />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {dealers.length === 0 && <tr><td colSpan={4} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No dealers found</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Applications */}
+        {page === "applications" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                {["", "submitted", "under_review", "docs_required", "approved", "rejected", "disbursed"].map(s => (
+                  <button key={s} onClick={() => setAppFilter(s)} style={{ padding: "5px 12px", borderRadius: 14, border: `1.5px solid ${appFilter === s ? C.info : C.border}`, background: appFilter === s ? C.info : "transparent", color: appFilter === s ? "#fff" : C.textMid, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>
+                    {s || "All"}
+                  </button>
+                ))}
+                <Btn label="↺ Refresh" size="sm" outline onClick={loadPage} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Customer","Phone","Vehicle","Loan Amount","Dealer","Status","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {applications.map(a => (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{a.customer_name}</td>
+                        <td style={{ padding: "12px 14px", color: C.primary }}>{a.customer_phone}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12 }}>{a.vehicle_name || "—"}</td>
+                        <td style={{ padding: "12px 14px", color: C.success, fontWeight: 700 }}>₹{Number(a.loan_amount || 0).toLocaleString("en-IN")}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{a.dealer_name || "—"}</td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <Badge label={a.status} color={APP_STATUS_COLORS[a.status] || C.textMid} />
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <Btn label="Update" size="sm" outline color={C.info} onClick={() => { setSelectedApp(a); setAppNewStatus(a.status); setAppStatusNote(a.status_notes || ""); }} />
+                        </td>
+                      </tr>
+                    ))}
+                    {applications.length === 0 && <tr><td colSpan={7} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No applications yet</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Documents */}
+        {page === "documents" && (
+          <div>
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: C.text, marginBottom: 12 }}>📁 KYC Documents</div>
+              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 16 }}>Upload your company registration, PAN, GST, and RBI license for admin verification.</div>
+              {loading ? <Spinner /> : documents.length === 0 ? (
+                <div style={{ color: C.textDim, fontSize: 13 }}>No documents uploaded yet.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {documents.map(d => (
+                    <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{d.doc_type_display || d.doc_type}</div>
+                        <div style={{ fontSize: 11, color: C.textDim }}>{new Date(d.uploaded_at).toLocaleDateString("en-IN")}</div>
+                      </div>
+                      <Badge label={d.status || "uploaded"} color={d.status === "approved" ? C.success : d.status === "rejected" ? C.danger : C.warning} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Required Document Templates */}
+        {page === "req_docs" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 700, color: C.text }}>Document Templates Required from Dealers</div>
+                <Btn label="+ Add Template" size="sm" color={C.info} onClick={() => setShowAddReqDoc(true)} />
+              </div>
+            </Card>
+            <Card padding={0}>
+              {loading ? <Spinner /> : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bg }}>
+                      {["Document Type","Label","Mandatory","Actions"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reqDocs.map(d => (
+                      <tr key={d.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{d.doc_type}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.label}</td>
+                        <td style={{ padding: "12px 14px" }}><Badge label={d.is_mandatory ? "Required" : "Optional"} color={d.is_mandatory ? C.danger : C.textDim} /></td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <Btn label="Delete" size="sm" color={C.danger} onClick={async () => {
+                            if (!confirm("Delete this template?")) return;
+                            await api.financer.deleteRequiredDoc(d.id);
+                            loadPage();
+                            toast("Deleted", "success");
+                          }} />
+                        </td>
+                      </tr>
+                    ))}
+                    {reqDocs.length === 0 && <tr><td colSpan={4} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No document templates yet. Add templates dealers must submit.</td></tr>}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Add Req Doc Modal */}
+        {showAddReqDoc && (
+          <Modal title="Add Document Template" onClose={() => setShowAddReqDoc(false)} width={460}>
+            <Field label="Document Type (slug e.g. aadhaar, pan, bank_statement)">
+              <Input value={newReqDoc.doc_type} onChange={v => setNewReqDoc(p => ({ ...p, doc_type: v }))} placeholder="aadhaar" />
+            </Field>
+            <Field label="Label (shown to dealer)">
+              <Input value={newReqDoc.label} onChange={v => setNewReqDoc(p => ({ ...p, label: v }))} placeholder="Aadhaar Card" />
+            </Field>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 0" }}>
+              <input type="checkbox" checked={newReqDoc.is_mandatory} onChange={e => setNewReqDoc(p => ({ ...p, is_mandatory: e.target.checked }))} id="mand" />
+              <label htmlFor="mand" style={{ fontSize: 13, color: C.textMid }}>Mandatory document</label>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowAddReqDoc(false)} />
+              <Btn label="Add Template" color={C.info} onClick={handleAddReqDoc} />
+            </div>
+          </Modal>
+        )}
+
+        {/* Update Application Status Modal */}
+        {selectedApp && (
+          <Modal title={`Update Application — ${selectedApp.customer_name}`} onClose={() => setSelectedApp(null)}>
+            <div style={{ marginBottom: 14, fontSize: 13 }}>
+              <div style={{ color: C.textMid }}>Vehicle: <b>{selectedApp.vehicle_name || "—"}</b></div>
+              <div style={{ color: C.textMid }}>Loan Amount: <b>₹{Number(selectedApp.loan_amount || 0).toLocaleString("en-IN")}</b></div>
+            </div>
+            <Field label="New Status">
+              <Select value={appNewStatus} onChange={setAppNewStatus} options={[
+                { value: "under_review",  label: "Under Review" },
+                { value: "docs_required", label: "Documents Required" },
+                { value: "approved",      label: "Approved" },
+                { value: "rejected",      label: "Rejected" },
+                { value: "disbursed",     label: "Disbursed" },
+              ]} />
+            </Field>
+            <Field label="Note to Dealer (optional)">
+              <TextArea value={appStatusNote} onChange={setAppStatusNote} placeholder="Reason or instructions for the dealer..." rows={3} />
+            </Field>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
+              <Btn label="Cancel" outline color={C.textMid} onClick={() => setSelectedApp(null)} />
+              <Btn label="Update Status" color={C.info} onClick={handleUpdateAppStatus} />
+            </div>
+          </Modal>
+        )}
+      </div>
     </div>
   );
 }
@@ -5304,7 +6250,8 @@ export default function App({ skipLanding = false }) {
     localStorage.setItem("erd_dealer", JSON.stringify(data.dealer));
     localStorage.setItem("erd_user",   JSON.stringify(data.user));
     setAuth(data);
-    setAppMode(data.user?.user_type === "admin" ? "admin" : "dealer");
+    const utype = data.user?.user_type;
+    setAppMode(utype === "admin" ? "admin" : utype === "financer" ? "financer" : "dealer");
   };
 
   const handleLogout = () => {
@@ -5375,6 +6322,17 @@ export default function App({ skipLanding = false }) {
       <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
         <ToastProvider>
           <AdminPortal user={auth.user} onLogout={handleLogout} />
+        </ToastProvider>
+      </ThemeCtx.Provider>
+    );
+  }
+
+  // 4b. Financer portal
+  if (auth && (appMode === "financer" || auth.user?.user_type === "financer")) {
+    return (
+      <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
+        <ToastProvider>
+          <FinancerPortal user={auth.user} onLogout={handleLogout} />
         </ToastProvider>
       </ThemeCtx.Provider>
     );

@@ -24,6 +24,7 @@ urlpatterns = [
     path('auth/me/',                views.me,                name='me'),
     path('auth/forgot-password/',              views.forgot_password,              name='forgot-password'),
     path('auth/reset-password/',               views.reset_password_confirm,       name='reset-password'),
+    path('auth/reset-password-phone/',         views.reset_password_phone,         name='reset-password-phone'),
     path('admin-portal/dealers/<int:dealer_id>/reset-password/', views.admin_reset_dealer_password, name='admin-reset-dealer-password'),
     path('auth/token/refresh/',     TokenRefreshView.as_view(), name='token-refresh'),
 

@@ -297,7 +297,7 @@ def dashboard(request):
                 'days_remaining': dealer.plan_days_remaining,
                 'expires_at': dealer.plan_expires_at.isoformat() if dealer.plan_expires_at else None,
                 'is_verified': dealer.is_verified,
-                'listing_limit': dealer.plan.listing_limit if dealer.plan else 3,
+                'listing_limit': dealer.plan.listing_limit if dealer.plan else 5,
                 'listing_count': Vehicle.objects.filter(dealer=dealer, is_active=True).count(),
             },
         })
@@ -399,7 +399,19 @@ class LeadViewSet(viewsets.ModelViewSet):
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(dealer=self.request.user.dealer_profile)
+        dealer = self.request.user.dealer_profile
+        # Enforce free tier lead limit (20 lifetime leads)
+        FREE_LEAD_LIMIT = 20
+        if dealer.plan_type == 'free' and dealer.lifetime_lead_count >= FREE_LEAD_LIMIT:
+            raise ValidationError({
+                'limit': f'Free tier limit reached ({FREE_LEAD_LIMIT} lifetime leads). Upgrade to Pro for unlimited leads.'
+            })
+        lead = serializer.save(dealer=dealer)
+        # Increment lifetime counter
+        DealerProfile.objects.filter(pk=dealer.pk).update(
+            lifetime_lead_count=F('lifetime_lead_count') + 1
+        )
+        return lead
 
     @action(detail=True, methods=['patch'])
     def update_status(self, request, pk=None):
@@ -429,12 +441,23 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         dealer = self.request.user.dealer_profile
+        # Enforce free tier invoice limit (20 lifetime invoices)
+        FREE_INVOICE_LIMIT = 20
+        if dealer.plan_type == 'free' and dealer.invoice_count >= FREE_INVOICE_LIMIT:
+            raise ValidationError({
+                'limit': f'Free tier limit reached ({FREE_INVOICE_LIMIT} invoices). Upgrade to Pro for unlimited invoices.'
+            })
         vehicle = serializer.validated_data['vehicle']
         quantity = serializer.validated_data.get('quantity', 1)
         if vehicle.stock_quantity < quantity:
             raise ValidationError({'vehicle': f'Insufficient stock. Available: {vehicle.stock_quantity}'})
         inv_no = 'INV-' + uuid.uuid4().hex[:8].upper()
         sale = serializer.save(dealer=dealer, invoice_number=inv_no)
+
+        # Increment invoice counter
+        DealerProfile.objects.filter(pk=dealer.pk).update(
+            invoice_count=F('invoice_count') + 1
+        )
 
         # Auto-mark linked lead as converted
         if sale.lead:
@@ -789,15 +812,20 @@ def public_enquiry(request):
     )
 
     # Create a Lead in every matching dealer's CRM
+    FREE_ENQUIRY_LIMIT = 20
     vehicle_label = str(vehicle) if vehicle else ''
     for dealer in broadcast_dealers:
+        # Skip free-tier dealers who have hit their lifetime enquiry limit
+        if dealer.plan_type == 'free' and dealer.lifetime_enquiry_count >= FREE_ENQUIRY_LIMIT:
+            continue
+
         lead_notes = notes or ''
         if vehicle_label:
             lead_notes = f"Enquired about {vehicle_label}. {lead_notes}".strip()
         elif city:
             lead_notes = f"General enquiry from {city}. {lead_notes}".strip()
 
-        Lead.objects.get_or_create(
+        _, created = Lead.objects.get_or_create(
             dealer=dealer,
             customer_name=customer_name,
             phone=phone,
@@ -809,6 +837,12 @@ def public_enquiry(request):
                 'email': email,
             }
         )
+        if created:
+            # Track enquiry count for free tier limit
+            DealerProfile.objects.filter(pk=dealer.pk).update(
+                lifetime_enquiry_count=F('lifetime_enquiry_count') + 1,
+                lifetime_lead_count=F('lifetime_lead_count') + 1,
+            )
 
     # Notify dealers (fire-and-forget)
     vehicle_name = str(vehicle) if vehicle else (f"{_platform_name()} enquiry — " + (brand_name or 'General'))
@@ -1378,6 +1412,85 @@ def reset_password_confirm(request):
         return Response({'error': 'User not found'}, status=404)
 
 
+# ─── FIREBASE PHONE OTP — PASSWORD RESET ──────────────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_phone(request):
+    """
+    Verify a Firebase phone-auth ID token and reset the user's password.
+    Flow:
+      1. Frontend uses Firebase JS SDK to send SMS OTP to user's phone.
+      2. User enters OTP → Firebase returns an ID token.
+      3. Frontend POSTs {firebase_id_token, new_password, phone} here.
+      4. We verify the token with Firebase Admin SDK and look up the user by phone.
+    """
+    import os
+    firebase_id_token = request.data.get('firebase_id_token', '').strip()
+    new_password      = request.data.get('new_password', '').strip()
+    phone             = request.data.get('phone', '').strip()
+
+    if not firebase_id_token or not new_password:
+        return Response({'error': 'firebase_id_token and new_password are required'}, status=400)
+    if len(new_password) < 8:
+        return Response({'error': 'Password must be at least 8 characters'}, status=400)
+    if not any(c.isdigit() for c in new_password):
+        return Response({'error': 'Password must contain at least one number'}, status=400)
+
+    # Verify the Firebase ID token
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, auth as fb_auth
+
+        firebase_app = None
+        try:
+            firebase_app = firebase_admin.get_app()
+        except ValueError:
+            # Initialize from service account JSON path or credentials JSON in env
+            cred_path = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+            cred_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON_CONTENT')
+            if cred_path and os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+            elif cred_json:
+                import json as _json
+                cred = credentials.Certificate(_json.loads(cred_json))
+            else:
+                return Response({'error': 'Firebase not configured on server. Contact support.'}, status=503)
+            firebase_app = firebase_admin.initialize_app(cred)
+
+        decoded_token = fb_auth.verify_id_token(firebase_id_token, app=firebase_app)
+        verified_phone = decoded_token.get('phone_number', '')
+    except Exception as e:
+        return Response({'error': f'Firebase token verification failed: {str(e)}'}, status=400)
+
+    # Look up user by phone number (check both UserProfile.phone and User.username)
+    lookup_phone = phone or verified_phone
+    if not lookup_phone:
+        return Response({'error': 'Phone number could not be determined from token.'}, status=400)
+
+    # Normalise: strip +91 prefix for comparison
+    def norm_phone(p):
+        p = p.strip()
+        if p.startswith('+91'): p = p[3:]
+        if p.startswith('91') and len(p) == 12: p = p[2:]
+        return p.lstrip('+')
+
+    norm = norm_phone(lookup_phone)
+    from .models import UserProfile as _UP
+    profile = (
+        _UP.objects.filter(phone=lookup_phone).first()
+        or _UP.objects.filter(phone=norm).first()
+        or _UP.objects.filter(phone=f'+91{norm}').first()
+    )
+    if not profile:
+        return Response({'error': 'No account found for this phone number. Please register first.'}, status=404)
+
+    user = profile.user
+    user.set_password(new_password)
+    user.save()
+    return Response({'success': True, 'message': 'Password reset successfully. Please sign in with your new password.'})
+
+
 # ─── ADMIN TOGGLE USER ACTIVE ──────────────────────────────────────
 
 @api_view(["PATCH"])
@@ -1740,9 +1853,10 @@ def free_tier_usage(request):
     return Response({
         'plan_type': dealer.plan_type,
         'is_free': is_free,
-        'listings': {'used': dealer.vehicles.filter(is_active=True).count(), 'limit': 3 if is_free else None},
-        'leads': {'used': dealer.lifetime_lead_count, 'limit': 50 if is_free else None},
+        'listings': {'used': dealer.vehicles.filter(is_active=True).count(), 'limit': 5 if is_free else None},
+        'leads': {'used': dealer.lifetime_lead_count, 'limit': 20 if is_free else None},
         'invoices': {'used': dealer.invoice_count, 'limit': 20 if is_free else None},
+        'enquiries': {'used': dealer.lifetime_enquiry_count, 'limit': 20 if is_free else None},
         'marketing': {'allowed': not is_free},
         'analytics': {'allowed': not is_free},
         'financer_tab': {'allowed': not is_free},

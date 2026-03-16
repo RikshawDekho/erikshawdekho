@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = "Ensure an admin account exists. Idempotent; does not reset password unless requested."
+    help = "Ensure an admin account exists. Idempotent; syncs password from env on every run when FORCE_ADMIN_PASSWORD_UPDATE=true."
 
     def add_arguments(self, parser):
         parser.add_argument("--username", default=None, help="Admin username (default from env or 'admin').")
@@ -35,7 +35,12 @@ class Command(BaseCommand):
             or os.environ.get("ADMIN_PASSWORD")
             or os.environ.get("DJANGO_SUPERUSER_PASSWORD")
         )
-        update_password = options.get("update_password", False)
+        # FORCE_ADMIN_PASSWORD_UPDATE=true in env means always sync password on deploy.
+        # This fixes the "can't login after deploy" issue when env var is set.
+        force_update = (
+            options.get("update_password", False)
+            or os.environ.get("FORCE_ADMIN_PASSWORD_UPDATE", "").lower() in ("true", "1", "yes")
+        )
 
         User = get_user_model()
         user = User.objects.filter(username=username).first()
@@ -66,19 +71,18 @@ class Command(BaseCommand):
             user.is_active = True
             updated_fields.append("is_active")
 
-        if update_password:
-            if not password:
-                raise CommandError("--update-password was set but no password value was provided.")
+        if password and force_update:
+            # Always sync password from env — fixes stale password after redeploy
             if not user.check_password(password):
                 user.set_password(password)
                 updated_fields.append("password")
+                self.stdout.write(self.style.WARNING(f"Admin password updated from env var."))
         elif not user.has_usable_password() and password:
             user.set_password(password)
             updated_fields.append("password")
 
         if updated_fields:
             if "password" in updated_fields:
-                # Password hash update requires full save.
                 user.save()
             else:
                 user.save(update_fields=updated_fields)
