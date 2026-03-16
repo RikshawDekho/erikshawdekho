@@ -25,3 +25,6 @@ PLATFORM_NAME          = "eRickshawDekho"
 PLATFORM_TAGLINE       = "Bharosemand Platform"
 SUPPORT_EMAIL          = "support@erikshawdekho.com"
 DEFAULT_FROM_EMAIL     = "noreply@erikshawdekho.com"
+# ── Admin auto-creation: set ADMIN_USERNAME + ADMIN_PASSWORD as Railway secrets
+# FORCE_ADMIN_PASSWORD_UPDATE=true ensures password is always synced from env on redeploy
+FORCE_ADMIN_PASSWORD_UPDATE = "true"

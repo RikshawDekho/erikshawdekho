@@ -20,4 +20,4 @@ ENV DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["sh", "-c", "python manage.py check_env_db_consistency && python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py ensure_admin && python manage.py check_auth_integrity --warn-only && gunicorn erickshaw.wsgi:application --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120"]
+CMD ["sh", "-c", "python manage.py check_env_db_consistency && python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py ensure_plans && python manage.py ensure_admin && python manage.py check_auth_integrity --warn-only && gunicorn erickshaw.wsgi:application --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120"]
