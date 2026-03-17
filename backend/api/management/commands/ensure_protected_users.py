@@ -1,12 +1,16 @@
 """
-ensure_protected_users — idempotent command to guarantee platform test/admin accounts exist.
+ensure_protected_users — idempotent command to guarantee platform accounts exist.
 
-Protected accounts (NEVER deleted by any reset/seed operation):
-  1. admin           / password from ADMIN_PASSWORD env (default: admin1234 in demo)
-  2. demo            / password from DEMO_DEALER_PASSWORD env (default: demo1234)
-  3. codingmaniac007 / password from DEMO_FINANCER_PASSWORD env (default: demo@1234)
+ALL environments (including production):
+  superadmin  / SUPERADMIN_PASSWORD env (no default — must be set as Railway secret)
+  admin       / ADMIN_PASSWORD env (default: admin1234 for demo)
 
-Run on every deploy via Dockerfile CMD (same pattern as ensure_admin).
+Demo/staging ONLY (APP_ENV != production):
+  demo            / DEMO_DEALER_PASSWORD env (default: demo1234)
+  codingmaniac007 / DEMO_FINANCER_PASSWORD env (default: demo@1234)
+
+These test accounts are NEVER created in production to keep prod data clean.
+Run on every deploy via Dockerfile CMD.
 """
 import os
 from django.contrib.auth.models import User
@@ -14,7 +18,19 @@ from django.core.management.base import BaseCommand
 from api.models import DealerProfile, FinancerProfile, UserProfile
 
 
-PROTECTED = [
+APP_ENV = os.environ.get('APP_ENV', 'production').lower()
+IS_PROD = APP_ENV == 'production'
+
+# Always created (every environment including production)
+PROTECTED_ALWAYS = [
+    {
+        'username': 'superadmin',
+        'email': 'superadmin@erikshawdekho.com',
+        'password_env': 'SUPERADMIN_PASSWORD',
+        'password_default': None,   # No default — must be set via env var in production
+        'is_staff': True, 'is_superuser': True,
+        'role': 'admin',
+    },
     {
         'username': 'admin',
         'email': 'admin@erikshawdekho.com',
@@ -23,6 +39,10 @@ PROTECTED = [
         'is_staff': True, 'is_superuser': True,
         'role': 'admin',
     },
+]
+
+# Only created in demo/staging — never in production
+PROTECTED_DEMO_ONLY = [
     {
         'username': 'demo',
         'email': 'demo@erikshawdekho.com',
@@ -57,6 +77,8 @@ PROTECTED = [
         },
     },
 ]
+
+PROTECTED = PROTECTED_ALWAYS + ([] if IS_PROD else PROTECTED_DEMO_ONLY)
 
 FORCE_UPDATE = os.environ.get('FORCE_PROTECTED_PASSWORD_UPDATE', 'false').lower() == 'true'
 
