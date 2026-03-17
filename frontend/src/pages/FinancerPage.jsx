@@ -729,6 +729,67 @@ function MyDocsTab({ authFetch }) {
 }
 
 
+/* ─── Support / Contact Tab ─────────────────────────────── */
+function SupportTab() {
+  const [s, setS] = useState({ support_name: "", support_phone: "", support_whatsapp: "", support_email: "" });
+
+  useEffect(() => {
+    fetch(`${API}/platform/settings/`).then(r => r.ok ? r.json() : null).then(d => d && setS(d)).catch(() => {});
+  }, []);
+
+  const wa = (msg) => {
+    const digits = (s.support_whatsapp || "").replace(/\D/g, "");
+    if (digits) window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`);
+  };
+
+  const row = (icon, label, value, onClick) => (
+    <button key={label} onClick={onClick}
+      style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", background: "#f9fafb", border: "1.5px solid #e5e7eb", borderRadius: 10, cursor: onClick ? "pointer" : "default", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
+      <span style={{ fontSize: 22 }}>{icon}</span>
+      <div>
+        <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</div>
+        <div style={{ fontSize: 14, color: "#111827", fontWeight: 700 }}>{value || "—"}</div>
+      </div>
+    </button>
+  );
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <div style={{ fontWeight: 800, fontSize: 20, color: "#111827", marginBottom: 4 }}>🛟 Support &amp; Contact</div>
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 24 }}>Reach our team for onboarding help, verification queries, or any platform issue.</div>
+
+      {/* Admin contact card */}
+      <div style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 14, padding: "22px 20px", marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: P, marginBottom: 16 }}>🏦 Platform Admin</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {s.support_name && row("👤", "Contact Person", s.support_name, null)}
+          {row("📞", "Phone", s.support_phone, s.support_phone ? () => window.open(`tel:${s.support_phone}`) : null)}
+          {row("💬", "WhatsApp", s.support_whatsapp ? "Chat with us" : "—", s.support_whatsapp ? () => wa("Hi, I need help with my financer account on eRickshawDekho") : null)}
+          {row("✉️", "Email", s.support_email, s.support_email ? () => window.open(`mailto:${s.support_email}?subject=Financer%20Support`) : null)}
+        </div>
+      </div>
+
+      {/* Help topics */}
+      <div style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 14, padding: "22px 20px" }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: "#111827", marginBottom: 14 }}>📋 Common Topics</div>
+        {[
+          ["🔍 Profile Verification", "Our team reviews your business documents within 1–2 business days. Contact us if pending beyond that."],
+          ["🤝 Dealer Associations", "Dealers must apply to join your network. You can also proactively add verified dealers from the Dealers tab."],
+          ["📨 Loan Applications", "Applications from dealers appear under the Applications tab. Update status and add remarks to guide the dealer."],
+          ["💎 Plan & Billing", "Upgrade or downgrade your subscription from the Plans tab. Contact support for custom enterprise pricing."],
+        ].map(([title, desc]) => (
+          <div key={title} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid #f3f4f6" }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#374151", marginBottom: 3 }}>{title}</div>
+            <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.6 }}>{desc}</div>
+          </div>
+        ))}
+        <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>Response time: typically within 24 hours on business days.</div>
+      </div>
+    </div>
+  );
+}
+
+
 /* ═══════════════════════════════════════════════════════════
    MAIN PAGE
    ═══════════════════════════════════════════════════════════ */
@@ -796,6 +857,7 @@ export default function FinancerPage() {
     { id: "applications", label: "📨 Applications" },
     { id: "documents", label: "📄 My Docs" },
     { id: "subscription", label: "💎 Plans" },
+    { id: "support", label: "🛟 Support" },
   ];
 
   return (
@@ -879,6 +941,7 @@ export default function FinancerPage() {
             {dashTab === "applications" && <ApplicationsTab authFetch={authFetch} />}
             {dashTab === "documents" && <MyDocsTab authFetch={authFetch} />}
             {dashTab === "subscription" && <SubscriptionTab authFetch={authFetch} />}
+            {dashTab === "support" && <SupportTab />}
           </div>
         )}
         {mode === "dashboard" && !token && (
