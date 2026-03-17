@@ -609,6 +609,11 @@ function SubscriptionTab({ authFetch }) {
   const [sub, setSub] = useState(null);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [contact, setContact] = useState({ support_phone: '', support_whatsapp: '', support_email: '' });
+
+  useEffect(() => {
+    fetch(`${API}/platform/settings/`).then(r => r.ok ? r.json() : null).then(d => d && setContact(d)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -660,6 +665,23 @@ function SubscriptionTab({ authFetch }) {
         </div>
       )}
 
+      {/* Expiry warning banner */}
+      {sub && sub.expires_at && (() => {
+        const days = Math.ceil((new Date(sub.expires_at) - Date.now()) / 86400000);
+        if (days > 30) return null;
+        return (
+          <div style={{ background: days <= 7 ? '#fef2f2' : '#fef3c7', border: `1px solid ${days <= 7 ? '#fca5a5' : '#fcd34d'}`, borderRadius: 10, padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>{days <= 7 ? '🚨' : '⚠️'}</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: days <= 7 ? '#dc2626' : '#92400e' }}>
+                {days <= 0 ? 'Subscription expired!' : `Subscription expires in ${days} day${days !== 1 ? 's' : ''}`}
+              </div>
+              <div style={{ fontSize: 12, color: days <= 7 ? '#dc2626' : '#92400e', opacity: 0.8 }}>Contact admin to renew your plan.</div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Available plans */}
       <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: "#111827" }}>Available Plans</div>
       {plans.length === 0 ? (
@@ -674,8 +696,10 @@ function SubscriptionTab({ authFetch }) {
                 background: isCurrent ? "#faf5ff" : "#fff", borderRadius: 14, padding: 24,
                 border: isCurrent ? `2px solid ${P}` : "1px solid #e5e7eb", textAlign: "center",
               }}>
-                {isCurrent && <div style={{ background: P, color: "#fff", fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 20, display: "inline-block", marginBottom: 10 }}>✓ Current Plan</div>}
-                <div style={{ fontWeight: 800, fontSize: 18, color: "#111827", marginBottom: 4 }}>{plan.name}</div>
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: "#111827" }}>{plan.name}</div>
+                  {isCurrent && <span style={{ background: P, color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, marginLeft: 8 }}>✓ Current Plan</span>}
+                </div>
                 <div style={{ fontSize: 28, fontWeight: 800, color: P, marginBottom: 4 }}>
                   {plan.price_per_year > 0 ? `${fmtINR(plan.price_per_year)}/yr` : "Free"}
                 </div>
@@ -684,8 +708,35 @@ function SubscriptionTab({ authFetch }) {
                   {plan.max_finance_applications === 0 ? "Unlimited applications" : `${plan.max_finance_applications} applications`}<br />
                   {plan.commission_per_lead && `${fmtINR(plan.commission_per_lead)} commission/lead`}
                 </div>
+                {Array.isArray(plan.features) && plan.features.length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: '1px solid #f3f4f6', paddingTop: 10 }}>
+                    {plan.features.map((f, i) => (
+                      <div key={i} style={{ fontSize: 12, color: '#374151', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span> {f}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {!isCurrent && (
-                  <div style={{ fontSize: 12, color: "#9ca3af" }}>Contact admin to upgrade</div>
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {contact.support_whatsapp && (
+                      <button onClick={() => {
+                        const digits = contact.support_whatsapp.replace(/\D/g, '');
+                        window.open(`https://wa.me/${digits}?text=${encodeURIComponent(`Hi, I want to upgrade my financer plan to ${plan.name}`)}`);
+                      }} style={{ background: '#25D366', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        💬 WhatsApp to Upgrade
+                      </button>
+                    )}
+                    {contact.support_email && (
+                      <button onClick={() => window.open(`mailto:${contact.support_email}?subject=Financer Plan Upgrade — ${plan.name}`)}
+                        style={{ background: 'none', border: `1.5px solid ${P}`, borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, color: P, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        ✉️ Email to Upgrade
+                      </button>
+                    )}
+                    {!contact.support_whatsapp && !contact.support_email && (
+                      <div style={{ fontSize: 12, color: '#6b7280', textAlign: 'center' }}>Contact admin to upgrade to this plan.</div>
+                    )}
+                  </div>
                 )}
               </div>
             );

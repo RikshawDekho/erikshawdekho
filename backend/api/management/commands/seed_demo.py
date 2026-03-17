@@ -15,7 +15,8 @@ import random, uuid
 
 from api.models import (
     DealerProfile, Brand, Vehicle, Lead, Sale, Customer,
-    Task, FinanceLoan, DealerReview, PublicEnquiry, VideoResource, BlogPost, Plan
+    Task, FinanceLoan, DealerReview, PublicEnquiry, VideoResource, BlogPost, Plan,
+    FinancerProfile, FinancerSubscription, FinancerPlan,
 )
 
 
@@ -114,6 +115,7 @@ class Command(BaseCommand):
             "gstin":               "07AAACZ1234A1Z5",
             "pincode":             "110085",
             "is_verified":         True,
+            "is_demo":             True,
             "plan_type":           "pro",
             "plan_started_at":     timezone.now(),
             "plan_expires_at":     timezone.now() + timedelta(days=365),
@@ -131,6 +133,37 @@ class Command(BaseCommand):
             dealer.save(update_fields=['plan_expires_at'])
 
         self.stdout.write(f"  ✓ Demo dealer: username=demo  password=demo1234")
+
+        # ── Protected test financer (codingmaniac007) ──────────────────
+        _financer_user, _fu_created = User.objects.get_or_create(
+            username='codingmaniac007',
+            defaults={'email': 'codingmaniac007@gmail.com', 'is_active': True}
+        )
+        if _fu_created:
+            _financer_user.set_password(os.environ.get('DEMO_FINANCER_PASSWORD', 'demo@1234'))
+            _financer_user.save()
+        _fp, _fp_created = FinancerProfile.objects.get_or_create(
+            user=_financer_user,
+            defaults={
+                'company_name': 'Demo Finance Co.',
+                'contact_person': 'Demo Financer',
+                'phone': '8888888888',
+                'city': 'Lucknow',
+                'state': 'Uttar Pradesh',
+                'is_verified': True,
+                'is_demo': True,
+                'interest_rate_min': 8.0,
+                'interest_rate_max': 18.0,
+                'min_loan_amount': 50000,
+                'max_loan_amount': 500000,
+                'max_tenure_months': 48,
+                'processing_fee_pct': 2.0,
+            }
+        )
+        if not _fp.is_demo:
+            _fp.is_demo = True
+            _fp.save(update_fields=['is_demo'])
+        self.stdout.write(f"  ✓ Demo financer: username=codingmaniac007  password=demo@1234")
 
         # ── Plans ─────────────────────────────────────────────────────
         free_plan, _ = Plan.objects.update_or_create(

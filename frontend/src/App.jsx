@@ -249,6 +249,8 @@ const api = {
     manageDealer:           (id,d)     => apiFetch(`/admin-portal/dealers/${id}/manage/`, { method: "POST", body: JSON.stringify(d) }),
     leadsAnalytics:         (p="")     => apiFetch(`/admin-portal/leads-analytics/${p}`),
     financeApps:            (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
+    financerDocs:           (id)       => apiFetch(`/admin-portal/financers/${id}/documents/`),
+    reviewFinancerDoc:      (id,did,d) => apiFetch(`/admin-portal/financers/${id}/documents/${did}/`, { method: "PATCH", body: JSON.stringify(d) }),
   },
   auth: {
     forgotPassword:    (d) => apiFetch("/auth/forgot-password/",       { method: "POST", body: JSON.stringify(d) }),
@@ -2487,9 +2489,29 @@ function Finance() {
     setPostingFinAppRemark(false);
   };
 
+  const detectDocType = (filename) => {
+    const n = filename.toLowerCase();
+    if (n.includes('aadhaar') || n.includes('aadhar')) return 'aadhaar';
+    if (n.includes('pan')) return 'pan';
+    if (n.includes('bank') || n.includes('statement')) return 'bank_statement';
+    if (n.includes('income') || n.includes('salary')) return 'income_proof';
+    if (n.includes('address') || n.includes('utility')) return 'address_proof';
+    if (n.includes('photo') || n.includes('passport')) return 'passport_photo';
+    if (n.includes('quotation') || n.includes('quote')) return 'vehicle_quotation';
+    if (n.includes('license') || n.includes('driving')) return 'driving_license';
+    if (n.includes('voter')) return 'voter_id';
+    return 'other';
+  };
+
   const handleUploadFinAppDocs = async () => {
     if (!finAppDetail || finAppDocFiles.length === 0) return;
     setUploadingFinAppDoc(true);
+    const oversized = finAppDocFiles.filter(df => df.file.size > 5 * 1024 * 1024);
+    if (oversized.length > 0) {
+      toast(`File too large (max 5MB): ${oversized.map(f => f.file.name).join(', ')}`, 'error');
+      setUploadingFinAppDoc(false);
+      return;
+    }
     let uploaded = 0;
     for (const { file, label, doc_type } of finAppDocFiles) {
       const fd = new FormData();
@@ -2530,7 +2552,7 @@ function Finance() {
 
   const TABS = [
     { id: "loans",        label: "Internal Loans",   icon: "🏦" },
-    { id: "financers",    label: "NBFC Financers",   icon: "🤝" },
+    { id: "financers",    label: "Loan Partners",    icon: "🤝" },
     { id: "applications", label: "Finance Apps",     icon: "📄" },
     { id: "emi",          label: "EMI Calculator",   icon: "🔢" },
   ];
@@ -2654,7 +2676,7 @@ function Finance() {
         </div>
       )}
 
-      {/* ── NBFC Financers ── */}
+      {/* ── Loan Partners ── */}
       {activeTab === "financers" && (
         <div>
           <Card style={{ marginBottom: 14, padding: 14 }}>
@@ -2665,13 +2687,13 @@ function Finance() {
             </div>
           </Card>
           <div style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>
-            Only admin-verified dealers can apply to NBFCs. <b>Your dealer account must be verified</b> by admin first.
+            These are verified financers on the platform. Apply to partner with them and submit loan applications for your customers.
           </div>
           <Card padding={0}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: C.bg }}>
-                  {["Financer / NBFC","City","Interest Rate","Max Loan","Association","Actions"].map(h => (
+                  {["Financer","City","Interest Rate","Max Loan","Association","Actions"].map(h => (
                     <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
                   ))}
                 </tr>
@@ -2717,7 +2739,7 @@ function Finance() {
         <div>
           <Card style={{ marginBottom: 14, padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>Finance Applications to NBFCs</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>Finance Applications to Loan Partners</div>
               <Btn label="+ New Application" color={C.primary} size="sm" onClick={() => setShowNewFinApp(true)} />
             </div>
           </Card>
@@ -2754,7 +2776,7 @@ function Finance() {
                   </tr>
                 ))}
                 {finApps.length === 0 && (
-                  <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No finance applications yet. Apply to an NBFC financer first, then create an application.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No finance applications yet. Apply to a Loan Partner first, then create an application.</td></tr>
                 )}
               </tbody>
             </table>
@@ -2811,7 +2833,7 @@ function Finance() {
           <form onSubmit={e => e.preventDefault()}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div style={{ gridColumn: "1 / -1" }}>
-                <Field label="Financer / NBFC *">
+                <Field label="Loan Partner *">
                   <Select value={newFinApp.financer} onChange={setNFA("financer")} placeholder="Select financer..."
                     options={financers.filter(f => f.association_status === "approved").map(f => ({ value: f.id, label: f.company_name || f.username }))} />
                 </Field>
@@ -2902,15 +2924,18 @@ function Finance() {
                 <input type="text" value={df.label} placeholder="Notes (optional)"
                   onChange={e => setFinAppDocFiles(p => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
                   style={{ flex: 1, minWidth: 100, padding: "6px 10px", border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.bg, color: C.text, fontFamily: "inherit" }} />
-                <span style={{ fontSize: 12, color: C.textDim, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{df.file.name}</span>
+                <span style={{ fontSize: 12, color: C.textDim, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{df.file.name} ({(df.file.size / 1024).toFixed(0)} KB)</span>
                 <button onClick={() => setFinAppDocFiles(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
               </div>
             ))}
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>
+              Accepted: PDF, JPG, PNG, DOC · Max 5 MB per file. Select doc type from the dropdown for each file.
+            </div>
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <label style={{ padding: "7px 14px", border: `1.5px dashed ${C.border}`, borderRadius: 7, cursor: "pointer", fontSize: 12, color: C.textMid, fontFamily: "inherit" }}>
                 + Add File
-                <input type="file" multiple style={{ display: "none" }} onChange={e => {
-                  const files = Array.from(e.target.files).map(f => ({ file: f, label: f.name.replace(/\.[^.]+$/, ""), doc_type: "other" }));
+                <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style={{ display: "none" }} onChange={e => {
+                  const files = Array.from(e.target.files).map(f => ({ file: f, label: '', doc_type: detectDocType(f.name) }));
                   setFinAppDocFiles(p => [...p, ...files]);
                   e.target.value = "";
                 }} />
@@ -4760,7 +4785,7 @@ const PLAN_FEATURES = [
   { label: "Email Notifications",           free: true,                   pro: true },
   { label: "WhatsApp Lead Alerts",          free: false,                  pro: true },
   { label: "Marketing Campaign Tools",      free: false,                  pro: true },
-  { label: "Financer / NBFC Integration",   free: false,                  pro: true },
+  { label: "Loan Partner Integration",      free: false,                  pro: true },
   { label: "Priority Support",              free: false,                  pro: true },
   { label: "Validity",                      free: "30 days free trial",   pro: "1 Year" },
 ];
@@ -4895,7 +4920,7 @@ function PlansPage({ onUpgrade }) {
                   "Featured dealer badge",
                   "WhatsApp lead alerts",
                   "Advanced analytics & reports",
-                  "Financer / NBFC integration",
+                  "Loan Partner integration",
                   "All future marketing tools",
                   "Priority support",
                   "1 year validity",
@@ -5207,6 +5232,9 @@ function AdminPortal({ user, onLogout }) {
   const [resetPwdFinancer, setResetPwdFinancer] = useState(null);
   const [managePlanTarget, setManagePlanTarget] = useState(null); // { type: 'dealer'|'financer', item }
   const [managePlanLoading, setManagePlanLoading] = useState(false);
+  const [selectedFinancerDocs, setSelectedFinancerDocs] = useState(null);
+  const [financerDocList, setFinancerDocList] = useState([]);
+  const [loadingFinancerDocs, setLoadingFinancerDocs] = useState(false);
 
   useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
 
@@ -5247,6 +5275,25 @@ function AdminPortal({ user, onLogout }) {
     await api.admin.verifyFinancer(id, { is_verified: verified });
     setFinancers(p => p.map(f => f.id === id ? { ...f, is_verified: verified } : f));
     toast(verified ? "Financer verified!" : "Verification removed.", "success");
+  };
+
+  const loadFinancerDocs = async (f) => {
+    setSelectedFinancerDocs(f);
+    setLoadingFinancerDocs(true);
+    try {
+      const r = await api.admin.financerDocs(f.id);
+      setFinancerDocList(r.docs || []);
+    } catch { setFinancerDocList([]); }
+    setLoadingFinancerDocs(false);
+  };
+
+  const reviewFinancerDoc = async (financer, doc, status) => {
+    try {
+      await api.admin.reviewFinancerDoc(financer.id, doc.id, { status });
+      const r = await api.admin.financerDocs(financer.id);
+      setFinancerDocList(r.docs || []);
+      toast(`Document ${status}`, status === 'approved' ? 'success' : 'error');
+    } catch { toast('Failed to update', 'error'); }
   };
 
   const handleApp = async (id, status) => {
@@ -5655,6 +5702,7 @@ function AdminPortal({ user, onLogout }) {
                             <Btn label={f.is_verified ? "Revoke" : "Verify"} size="sm" color={f.is_verified ? C.danger : C.success} onClick={() => verifyFinancer(f.id, !f.is_verified)} />
                             <Btn label="🔑 Pwd" size="sm" outline color={C.warning} onClick={() => setResetPwdFinancer(f)} />
                             <Btn label="📦 Plan" size="sm" outline color={C.info} onClick={() => setManagePlanTarget({ type: "financer", item: f })} />
+                            <Btn label={`📄 Docs${f.doc_count ? ` (${f.doc_count})` : ''}`} size="sm" outline color={C.info} onClick={() => loadFinancerDocs(f)} />
                             <Btn label={f.is_active === false ? "✅ Activate" : "🚫 Deactivate"} size="sm" outline color={f.is_active === false ? C.success : C.danger} onClick={() => handleToggleActive("financer", f)} />
                           </div>
                         </td>
@@ -5891,6 +5939,42 @@ function AdminPortal({ user, onLogout }) {
               </div>
             </>
           )}
+        </Modal>
+      )}
+
+      {/* Admin: Financer Documents Review Modal */}
+      {selectedFinancerDocs && (
+        <Modal title={`📄 ${selectedFinancerDocs.company_name} — Documents`} onClose={() => { setSelectedFinancerDocs(null); setFinancerDocList([]); }} width={620}>
+          {loadingFinancerDocs ? <Spinner /> : financerDocList.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 32, color: C.textDim }}>No documents uploaded by this financer yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {financerDocList.map(doc => (
+                <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: C.bg, borderRadius: 10, border: `1.5px solid ${C.border}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>
+                      {doc.doc_type_display || doc.doc_type?.replace(/_/g, ' ').toUpperCase()}
+                      {doc.title && <span style={{ fontWeight: 400, color: C.textMid }}> — {doc.title}</span>}
+                    </div>
+                    {doc.notes && <div style={{ fontSize: 11, color: C.textDim }}>{doc.notes}</div>}
+                    <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>
+                      Uploaded: {new Date(doc.uploaded_at).toLocaleDateString('en-IN')}
+                      {doc.reviewed_at && ` · Reviewed: ${new Date(doc.reviewed_at).toLocaleDateString('en-IN')}`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <Badge label={doc.status} color={doc.status === 'approved' ? C.success : doc.status === 'rejected' ? C.danger : C.warning} />
+                    {doc.file && <a href={doc.file} target="_blank" rel="noreferrer" style={{ color: C.primary, fontWeight: 700, fontSize: 12, textDecoration: 'none' }}>View ↗</a>}
+                    {doc.status !== 'approved' && <Btn label="✅ Approve" size="sm" color={C.success} onClick={() => reviewFinancerDoc(selectedFinancerDocs, doc, 'approved')} />}
+                    {doc.status !== 'rejected' && <Btn label="❌ Reject" size="sm" outline color={C.danger} onClick={() => reviewFinancerDoc(selectedFinancerDocs, doc, 'rejected')} />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+            <Btn label="Close" outline color={C.textMid} onClick={() => { setSelectedFinancerDocs(null); setFinancerDocList([]); }} />
+          </div>
         </Modal>
       )}
 

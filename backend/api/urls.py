@@ -122,6 +122,8 @@ urlpatterns = [
     path('admin-portal/financers/<int:financer_id>/',                  views.admin_financers,                   name='admin-financer-detail'),
     path('admin-portal/financers/<int:financer_id>/reset-password/',   views.admin_reset_financer_password,     name='admin-reset-financer-password'),
     path('admin-portal/financers/<int:financer_id>/manage/',           views.admin_manage_financer,             name='admin-manage-financer'),
+    path('admin-portal/financers/<int:financer_id>/documents/',        views.admin_financer_documents,          name='admin-financer-docs'),
+    path('admin-portal/financers/<int:financer_id>/documents/<int:doc_id>/', views.admin_financer_documents,   name='admin-financer-doc-detail'),
     path('admin-portal/finance-applications/',                         views.admin_finance_applications,        name='admin-finance-applications'),
 
     # Admin: dealer management (plan + deactivate)

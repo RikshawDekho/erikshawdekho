@@ -62,6 +62,7 @@ class DealerProfile(models.Model):
     bank_ifsc            = models.CharField(max_length=20,  blank=True, default='HDFC000123')
     bank_upi             = models.CharField(max_length=100, blank=True, default='erikshawdekho@hdfc')
     invoice_footer_note  = models.TextField(blank=True, default='')
+    is_demo              = models.BooleanField(default=False)
 
     @property
     def plan_is_active(self):
@@ -620,6 +621,7 @@ class FinancerProfile(models.Model):
     max_tenure_months = models.IntegerField(default=60)
     processing_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=2.0)
     created_at     = models.DateTimeField(auto_now_add=True)
+    is_demo        = models.BooleanField(default=False)
 
     def __str__(self):
         return self.company_name

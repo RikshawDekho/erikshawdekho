@@ -388,7 +388,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def marketplace_vehicles(request):
-    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock']).select_related('brand','dealer')
+    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_demo=False).select_related('brand','dealer')
     fuel = request.query_params.get('fuel_type')
     search = request.query_params.get('search')
     featured = request.query_params.get('featured')
@@ -714,7 +714,7 @@ def reports(request):
 def dealer_list(request):
     """Public listing of verified dealers, searchable by city/state."""
     from django.db.models import Avg as _Avg, Count as _Count
-    qs = DealerProfile.objects.filter(is_verified=True).annotate(
+    qs = DealerProfile.objects.filter(is_verified=True, is_demo=False).annotate(
         _avg_rating=_Avg('reviews__rating'),
         _review_count=_Count('reviews', distinct=True),
         _vehicle_count=_Count('vehicles', filter=Q(vehicles__is_active=True, vehicles__stock_status__in=['in_stock','low_stock']), distinct=True),
@@ -1852,7 +1852,7 @@ def financer_documents(request):
 @permission_classes([AllowAny])
 def public_financers(request):
     """Public list of verified financers for the ecosystem page."""
-    qs = FinancerProfile.objects.filter(is_verified=True).order_by('-created_at')
+    qs = FinancerProfile.objects.filter(is_verified=True, is_demo=False).order_by('-created_at')
     city = request.query_params.get('city', '')
     if city:
         qs = qs.filter(city__icontains=city)
@@ -2706,6 +2706,50 @@ def admin_finance_applications(request):
     return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
 
 
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_financer_documents(request, financer_id, doc_id=None):
+    """Admin views and approves/rejects individual financer onboarding documents."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin only'}, status=403)
+    try:
+        fp = FinancerProfile.objects.get(pk=financer_id)
+    except FinancerProfile.DoesNotExist:
+        return Response({'error': 'Financer not found'}, status=404)
+
+    if request.method == 'PATCH':
+        if not doc_id:
+            return Response({'error': 'doc_id required for PATCH'}, status=400)
+        try:
+            doc = FinancerDocument.objects.get(pk=doc_id, financer=fp)
+        except FinancerDocument.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=404)
+        new_status = request.data.get('status')
+        if new_status not in ('approved', 'rejected', 'pending'):
+            return Response({'error': 'status must be approved, rejected, or pending'}, status=400)
+        doc.status = new_status
+        if 'notes' in request.data:
+            doc.notes = request.data['notes']
+        doc.reviewed_at = timezone.now()
+        doc.save(update_fields=['status', 'notes', 'reviewed_at'])
+        return Response({'id': doc.id, 'status': doc.status, 'reviewed_at': doc.reviewed_at.isoformat()})
+
+    # GET — list all docs for this financer
+    docs = fp.documents.all()
+    data = [{
+        'id': d.id,
+        'doc_type': d.doc_type,
+        'doc_type_display': d.get_doc_type_display(),
+        'title': d.title or '',
+        'file': request.build_absolute_uri(d.file.url) if d.file else None,
+        'status': d.status,
+        'notes': d.notes or '',
+        'uploaded_at': d.uploaded_at.isoformat(),
+        'reviewed_at': d.reviewed_at.isoformat() if d.reviewed_at else None,
+    } for d in docs]
+    return Response({'financer': fp.company_name, 'is_verified': fp.is_verified, 'docs': data, 'count': len(data)})
+
+
 # ═══════════════════════════════════════════════════════════════════
 # ADMIN — RESET FINANCER PASSWORD
 # ═══════════════════════════════════════════════════════════════════
@@ -2851,11 +2895,11 @@ def admin_leads_analytics(request):
 
     if date_from:
         lead_qs = lead_qs.filter(created_at__date__gte=date_from)
-        sale_qs = sale_qs.filter(created_at__date__gte=date_from)
+        sale_qs = sale_qs.filter(sale_date__gte=date_from)
         app_qs  = app_qs.filter(created_at__date__gte=date_from)
     if date_to:
         lead_qs = lead_qs.filter(created_at__date__lte=date_to)
-        sale_qs = sale_qs.filter(created_at__date__lte=date_to)
+        sale_qs = sale_qs.filter(sale_date__lte=date_to)
         app_qs  = app_qs.filter(created_at__date__lte=date_to)
 
     trunc_map = {
@@ -2870,7 +2914,7 @@ def admin_leads_analytics(request):
         .values('period').annotate(count=Count('id')).order_by('period')
     )
     sales_series = (
-        sale_qs.annotate(period=TruncFn('created_at'))
+        sale_qs.annotate(period=TruncFn('sale_date'))
         .values('period').annotate(count=Count('id'), revenue=Sum('sale_price')).order_by('period')
     )
 
