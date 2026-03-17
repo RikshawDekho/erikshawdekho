@@ -728,57 +728,12 @@ function MyDocsTab({ authFetch }) {
   );
 }
 
-/* ─── Public Financer listing ───────────────────────────── */
-function FinancerListing() {
-  const [financers, setFinancers] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`${API}/public/financers/`)
-      .then(r => r.ok ? r.json() : [])
-      .then(d => { setFinancers(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading financers...</div>;
-
-  return (
-    <div>
-      <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: "#111827" }}>Available Financers</div>
-      {financers.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>No verified financers available yet.</div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-          {financers.map(f => (
-            <div key={f.id} style={{ background: "#fff", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb" }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>{f.company_name}</div>
-              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>📍 {f.city}{f.state ? `, ${f.state}` : ""}</div>
-              {f.interest_rate_min && f.interest_rate_max && (
-                <div style={{ fontSize: 13, color: P, fontWeight: 600, marginTop: 8 }}>
-                  Interest: {f.interest_rate_min}% — {f.interest_rate_max}%
-                </div>
-              )}
-              {f.min_loan_amount && f.max_loan_amount && (
-                <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
-                  Loan: {fmtINR(f.min_loan_amount)} — {fmtINR(f.max_loan_amount)}
-                </div>
-              )}
-              {f.processing_fee_pct && (
-                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Processing fee: {f.processing_fee_pct}%</div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════
    MAIN PAGE
    ═══════════════════════════════════════════════════════════ */
 export default function FinancerPage() {
-  const [mode, setMode] = useState("browse"); // browse | login | register | dashboard
+  const [mode, setMode] = useState("login"); // login | register | dashboard
   const [token, setToken] = useState(() => localStorage.getItem("erd_financer_token") || null);
   const [dashTab, setDashTab] = useState("profile");
   const [profile, setProfile] = useState(null);
@@ -826,7 +781,7 @@ export default function FinancerPage() {
     localStorage.removeItem("erd_financer_refresh");
     setToken(null);
     setProfile(null);
-    setMode("browse");
+    setMode("login");
   };
 
   // Auto-login if token exists
@@ -857,26 +812,25 @@ export default function FinancerPage() {
         </div>
       </div>
 
-      {/* Top tab bar */}
-      <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 24px" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 0, overflowX: "auto" }}>
-          {[
-            { id: "browse", label: "Browse Financers" },
-            { id: "login", label: "Login" },
-            { id: "register", label: "Register" },
-            ...(token ? [{ id: "dashboard", label: "Dashboard" }] : []),
-          ].map(t => (
-            <button key={t.id} onClick={() => setMode(t.id)}
-              style={{ padding: "14px 20px", background: "none", border: "none", borderBottom: mode === t.id ? `3px solid ${P}` : "3px solid transparent", fontWeight: mode === t.id ? 700 : 500, fontSize: 14, color: mode === t.id ? P : "#6b7280", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-              {t.label}
-            </button>
-          ))}
+      {/* Auth tab bar — only shown when not logged in */}
+      {!token && (
+        <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 24px" }}>
+          <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 0 }}>
+            {[
+              { id: "login", label: "Login" },
+              { id: "register", label: "Register" },
+            ].map(t => (
+              <button key={t.id} onClick={() => setMode(t.id)}
+                style={{ padding: "14px 24px", background: "none", border: "none", borderBottom: mode === t.id ? `3px solid ${P}` : "3px solid transparent", fontWeight: mode === t.id ? 700 : 500, fontSize: 14, color: mode === t.id ? P : "#6b7280", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Content */}
       <div style={{ maxWidth: LAYOUT.contentWidthNarrow, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
-        {mode === "browse" && <FinancerListing />}
         {mode === "login" && (
           <div>
             <FinancerLoginForm onSuccess={handleLoginSuccess} />
