@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
@@ -129,7 +129,7 @@ function ProfileTab({ profile }) {
           { l: "Phone", v: profile.phone || "—" },
           { l: "Location", v: [profile.city, profile.state].filter(Boolean).join(", ") || "—" },
           { l: "Interest Rate", v: profile.interest_rate_min && profile.interest_rate_max ? `${profile.interest_rate_min}% — ${profile.interest_rate_max}%` : "—" },
-          { l: "Loan Range", v: profile.loan_amount_min && profile.loan_amount_max ? `${fmtINR(profile.loan_amount_min)} — ${fmtINR(profile.loan_amount_max)}` : "—" },
+          { l: "Loan Range", v: profile.min_loan_amount && profile.max_loan_amount ? `${fmtINR(profile.min_loan_amount)} — ${fmtINR(profile.max_loan_amount)}` : "—" },
           { l: "Processing Fee", v: profile.processing_fee_pct ? `${profile.processing_fee_pct}%` : "—" },
           { l: "Status", v: profile.is_verified ? "✅ Verified" : "⏳ Pending Verification" },
         ].map(({ l, v }) => (
@@ -148,43 +148,100 @@ function DealersTab({ authFetch }) {
   const [dealers, setDealers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const load = useCallback(() => {
     setLoading(true);
-    authFetch("/financer/dealers/").then(r => r.ok ? r.json() : []).then(d => { setDealers(Array.isArray(d) ? d : d?.results || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [authFetch]);
+    const p = new URLSearchParams();
+    if (search) p.set("search", search);
+    if (statusFilter) p.set("status", statusFilter);
+    const qs = p.toString() ? `?${p}` : "";
+    authFetch(`/financer/dealers/${qs}`)
+      .then(r => r.ok ? r.json() : { results: [] })
+      .then(d => { setDealers(Array.isArray(d) ? d : d?.results || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [authFetch, search, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleAction = async (dealerId, act) => {
     setActionLoading(dealerId);
-    await authFetch(`/financer/dealers/${dealerId}/approve/`, {
+    const res = await authFetch(`/financer/dealers/${dealerId}/approve/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: act }),
+      body: JSON.stringify({ status: act }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(data.message || `Dealer ${act}.`);
+    } else {
+      showToast(data.error || "Action failed.", "error");
+    }
     load();
     setActionLoading(null);
   };
+
+  const approvedCount = dealers.filter(d => d.association_status === "approved").length;
 
   if (loading) return <SectionSkeleton rows={3} style={{ padding: 40 }} />;
 
   return (
     <div>
-      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: "#111827" }}>Dealer Associations</div>
+      {toast && (
+        <div style={{ position: "fixed", top: 20, right: 20, padding: "10px 18px", borderRadius: 10, background: toast.type === "error" ? "#fef2f2" : "#dcfce7", color: toast.type === "error" ? "#dc2626" : "#166534", fontWeight: 700, fontSize: 13, zIndex: 9999, boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
+          {toast.msg}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>Dealer Network</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>{approvedCount} approved dealers in your network</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input type="text" placeholder="Search dealers..." value={search} onChange={e => setSearch(e.target.value)}
+            style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", minWidth: 160 }} />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit" }}>
+            <option value="">All Dealers</option>
+            <option value="approved">My Network (Approved)</option>
+            <option value="pending">Pending Approval</option>
+            <option value="rejected">Rejected</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </div>
+      </div>
+
       {dealers.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>No dealers found. Dealers will appear here once they apply to work with you.</div>
+        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
+          {statusFilter ? `No dealers with status "${statusFilter}".` : "No verified dealers found."}
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {dealers.map(d => (
             <div key={d.id} style={{ background: "#fff", borderRadius: 12, padding: 16, border: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{d.dealer_name}</div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>📍 {d.city}{d.state ? `, ${d.state}` : ""} · {d.vehicle_count || 0} vehicles</div>
-                <div style={{ marginTop: 6 }}><Badge status={d.association_status || "none"} /></div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>📍 {d.city}{d.state ? `, ${d.state}` : ""} · {d.vehicle_count || 0} vehicles · 📞 {d.phone || "—"}</div>
+                <div style={{ marginTop: 6 }}>
+                  {d.association_status ? <Badge status={d.association_status} /> : <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Not Connected</span>}
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                {(d.association_status === "pending") && (
+                {/* Financer proactively adds a dealer (no existing association) */}
+                {!d.association_status && (
+                  <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
+                    style={{ background: P, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: actionLoading === d.id ? 0.6 : 1 }}>
+                    {actionLoading === d.id ? "Adding..." : "➕ Add to Network"}
+                  </button>
+                )}
+                {d.association_status === "pending" && (
                   <>
                     <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
                       style={{ background: G, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
@@ -200,6 +257,18 @@ function DealersTab({ authFetch }) {
                   <button onClick={() => handleAction(d.id, "suspended")} disabled={actionLoading === d.id}
                     style={{ background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
                     Suspend
+                  </button>
+                )}
+                {d.association_status === "suspended" && (
+                  <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
+                    style={{ background: G, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    ♻️ Re-activate
+                  </button>
+                )}
+                {d.association_status === "rejected" && (
+                  <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
+                    style={{ background: P, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    ➕ Add Anyway
                   </button>
                 )}
               </div>
@@ -234,7 +303,7 @@ function RequiredDocsTab({ authFetch }) {
     const res = await authFetch("/financer/required-documents/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ document_type: newDocType, description: newDocDesc, is_mandatory: true }),
+      body: JSON.stringify({ doc_type: newDocType, description: newDocDesc, is_mandatory: true }),
     });
     if (res.ok) { load(); setNewDocDesc(""); }
     setAdding(false);
@@ -257,7 +326,7 @@ function RequiredDocsTab({ authFetch }) {
           {docs.map(d => (
             <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "#f9fafb", borderRadius: 8, border: "1px solid #f3f4f6" }}>
               <div>
-                <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>{d.document_type?.replace(/_/g, " ").toUpperCase()}</span>
+                <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>{(d.doc_type || d.document_type)?.replace(/_/g, " ").toUpperCase()}</span>
                 {d.description && <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>— {d.description}</span>}
                 {d.is_mandatory && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, marginLeft: 8 }}>Mandatory</span>}
               </div>
@@ -283,16 +352,79 @@ function RequiredDocsTab({ authFetch }) {
   );
 }
 
+/* ─── Remarks Thread (shared component) ─────────────────── */
+function RemarksThread({ remarks, onPost, posting, role }) {
+  const [text, setText] = useState("");
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [remarks]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    await onPost(text.trim());
+    setText("");
+  };
+
+  return (
+    <div style={{ border: "1px solid #e9d5ff", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "8px 14px", background: "#faf5ff", borderBottom: "1px solid #e9d5ff", fontWeight: 600, fontSize: 12, color: P }}>
+        💬 Remarks Thread ({remarks.length})
+      </div>
+      <div style={{ maxHeight: 220, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {remarks.length === 0 && <div style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", padding: "10px 0" }}>No remarks yet. Start the conversation.</div>}
+        {remarks.map(r => {
+          const isMe = r.author_type === role;
+          return (
+            <div key={r.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
+              <div style={{
+                maxWidth: "80%", padding: "8px 12px", borderRadius: isMe ? "12px 12px 0 12px" : "12px 12px 12px 0",
+                background: isMe ? P : "#f3f4f6", color: isMe ? "#fff" : "#111827", fontSize: 13,
+              }}>
+                <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 3 }}>
+                  {isMe ? "You" : (r.author_type === "financer" ? "Financer" : "Dealer")} · {new Date(r.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+                </div>
+                {r.content}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+      <form onSubmit={submit} style={{ display: "flex", gap: 8, padding: "10px 14px", borderTop: "1px solid #e9d5ff", background: "#faf5ff" }}>
+        <input type="text" value={text} onChange={e => setText(e.target.value)} placeholder="Add a remark..."
+          style={{ flex: 1, padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+        <button type="submit" disabled={posting || !text.trim()}
+          style={{ background: P, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: posting ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: posting ? 0.6 : 1 }}>
+          {posting ? "..." : "Send"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 /* ─── Dashboard Tab: Finance Applications ───────────────── */
 function ApplicationsTab({ authFetch }) {
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [statusUpdate, setStatusUpdate] = useState({ notes: "" });
+  const [postingRemark, setPostingRemark] = useState(false);
+  const [localRemarks, setLocalRemarks] = useState({}); // appId → remarks[]
 
   const load = useCallback(() => {
     setLoading(true);
-    authFetch("/financer/applications/").then(r => r.ok ? r.json() : []).then(d => { setApps(Array.isArray(d) ? d : d?.results || []); setLoading(false); }).catch(() => setLoading(false));
+    authFetch("/financer/applications/").then(r => r.ok ? r.json() : []).then(d => {
+      const list = Array.isArray(d) ? d : d?.results || [];
+      setApps(list);
+      // Build local remarks cache from embedded data
+      const rm = {};
+      list.forEach(a => { if (a.remarks) rm[a.id] = a.remarks; });
+      setLocalRemarks(rm);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [authFetch]);
 
   useEffect(() => { load(); }, [load]);
@@ -306,6 +438,20 @@ function ApplicationsTab({ authFetch }) {
     setStatusUpdate({ notes: "" });
     setExpanded(null);
     load();
+  };
+
+  const postRemark = async (appId, content) => {
+    setPostingRemark(true);
+    const res = await authFetch(`/financer/applications/${appId}/remarks/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    if (res.ok) {
+      const remark = await res.json();
+      setLocalRemarks(prev => ({ ...prev, [appId]: [...(prev[appId] || []), remark] }));
+    }
+    setPostingRemark(false);
   };
 
   if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading applications...</div>;
@@ -323,12 +469,19 @@ function ApplicationsTab({ authFetch }) {
                 onClick={() => setExpanded(expanded === app.id ? null : app.id)}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>
-                    {app.customer_name} — {fmtINR(app.loan_amount_requested)}
+                    {app.customer_name} — {fmtINR(app.loan_amount_requested || app.loan_amount)}
                   </div>
                   <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-                    Dealer: {app.dealer_name || "—"} · {app.customer_phone} · Tenure: {app.loan_tenure_months}mo
+                    Dealer: {app.dealer_name || "—"} · {app.customer_phone} · Tenure: {app.loan_tenure_months || app.tenure_months}mo
                   </div>
-                  <div style={{ marginTop: 6 }}><Badge status={app.status} /></div>
+                  <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <Badge status={app.status} />
+                    {(localRemarks[app.id]?.length || 0) > 0 && (
+                      <span style={{ background: "#ede9fe", color: P, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>
+                        💬 {localRemarks[app.id].length} remark{localRemarks[app.id].length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <span style={{ fontSize: 18, color: "#9ca3af" }}>{expanded === app.id ? "▲" : "▼"}</span>
               </div>
@@ -337,9 +490,10 @@ function ApplicationsTab({ authFetch }) {
                 <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12, marginBottom: 16 }}>
                     {[
-                      { l: "Vehicle", v: app.vehicle_description || "—" },
-                      { l: "Loan Amount", v: fmtINR(app.loan_amount_requested) },
-                      { l: "Tenure", v: `${app.loan_tenure_months} months` },
+                      { l: "Vehicle", v: app.vehicle_description || app.vehicle || "—" },
+                      { l: "Loan Amount", v: fmtINR(app.loan_amount_requested || app.loan_amount) },
+                      { l: "Down Payment", v: fmtINR(app.down_payment) },
+                      { l: "Tenure", v: `${app.loan_tenure_months || app.tenure_months} months` },
                       { l: "Customer Phone", v: app.customer_phone },
                       { l: "Customer Aadhaar", v: app.customer_aadhaar || "—" },
                       { l: "Customer PAN", v: app.customer_pan || "—" },
@@ -352,22 +506,22 @@ function ApplicationsTab({ authFetch }) {
                     ))}
                   </div>
 
-                  {/* Documents */}
+                  {/* Documents uploaded by dealer */}
                   {app.documents && app.documents.length > 0 && (
                     <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: "#111827", marginBottom: 8 }}>📄 Documents ({app.documents.length})</div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: "#111827", marginBottom: 8 }}>📄 Uploaded Documents ({app.documents.length})</div>
                       {app.documents.map(doc => (
                         <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px", background: "#f9fafb", borderRadius: 6, marginBottom: 4 }}>
-                          <span style={{ fontSize: 12, color: "#374151" }}>{doc.document_type?.replace(/_/g, " ").toUpperCase()} — {doc.description || "No desc"}</span>
+                          <span style={{ fontSize: 12, color: "#374151" }}>{doc.doc_type?.replace(/_/g, " ").toUpperCase()} {doc.notes ? `— ${doc.notes}` : ""}</span>
                           {doc.file && <a href={doc.file} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 600, fontSize: 11 }}>View ↗</a>}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* Status update actions */}
-                  {["submitted", "under_review", "docs_required"].includes(app.status) && (
-                    <div style={{ padding: 14, background: "#faf5ff", borderRadius: 10, border: "1px solid #e9d5ff" }}>
+                  {/* Status update */}
+                  {["submitted", "under_review", "docs_required", "approved"].includes(app.status) && (
+                    <div style={{ padding: 14, background: "#faf5ff", borderRadius: 10, border: "1px solid #e9d5ff", marginBottom: 16 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: P, marginBottom: 8 }}>Update Status</div>
                       <input type="text" placeholder="Notes for dealer (optional)" value={statusUpdate.notes} onChange={e => setStatusUpdate({ notes: e.target.value })}
                         style={{ width: "100%", padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", marginBottom: 10, boxSizing: "border-box" }} />
@@ -394,6 +548,14 @@ function ApplicationsTab({ authFetch }) {
                       </div>
                     </div>
                   )}
+
+                  {/* Remarks thread */}
+                  <RemarksThread
+                    remarks={localRemarks[app.id] || []}
+                    onPost={(content) => postRemark(app.id, content)}
+                    posting={postingRemark}
+                    role="financer"
+                  />
                 </div>
               )}
             </div>
@@ -432,19 +594,29 @@ function SubscriptionTab({ authFetch }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ padding: "10px 14px", background: "#faf5ff", borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: "#9ca3af" }}>Plan</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: P, marginTop: 2 }}>{sub.plan_name || sub.plan_tier || "Free Tier"}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: P, marginTop: 2 }}>{sub.plan_name || "Free Trial"}</div>
             </div>
             <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: "#9ca3af" }}>Applications Used</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{sub.applications_used || 0} / {sub.max_applications || "∞"}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>
+                {sub.applications_used || 0} / {sub.max_applications === 0 ? "∞" : (sub.max_applications || 5)}
+              </div>
             </div>
             <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: "#9ca3af" }}>Dealer Limit</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{sub.max_dealers || "∞"}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>
+                {sub.max_dealer_associations === 0 ? "Unlimited" : (sub.max_dealer_associations ?? 2)}
+              </div>
+            </div>
+            <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>Commission / Lead</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>
+                {sub.commission_per_lead ? fmtINR(sub.commission_per_lead) : "—"}
+              </div>
             </div>
             <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: "#9ca3af" }}>Expires</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{sub.expires_at ? new Date(sub.expires_at).toLocaleDateString("en-IN") : "—"}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{sub.expires_at ? new Date(sub.expires_at).toLocaleDateString("en-IN") : "No expiry"}</div>
             </div>
           </div>
         </div>
@@ -457,26 +629,25 @@ function SubscriptionTab({ authFetch }) {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
           {plans.map(plan => {
-            const isCurrent = sub && (sub.plan_tier === plan.tier || sub.plan_name === plan.name);
+            // Compare using plan_slug (API field) vs plan.slug
+            const isCurrent = sub && sub.plan_slug === plan.slug;
             return (
               <div key={plan.id} style={{
                 background: isCurrent ? "#faf5ff" : "#fff", borderRadius: 14, padding: 24,
                 border: isCurrent ? `2px solid ${P}` : "1px solid #e5e7eb", textAlign: "center",
               }}>
-                {isCurrent && <div style={{ background: P, color: "#fff", fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 20, display: "inline-block", marginBottom: 10 }}>Current Plan</div>}
+                {isCurrent && <div style={{ background: P, color: "#fff", fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 20, display: "inline-block", marginBottom: 10 }}>✓ Current Plan</div>}
                 <div style={{ fontWeight: 800, fontSize: 18, color: "#111827", marginBottom: 4 }}>{plan.name}</div>
                 <div style={{ fontSize: 28, fontWeight: 800, color: P, marginBottom: 4 }}>
                   {plan.price_per_year > 0 ? `${fmtINR(plan.price_per_year)}/yr` : "Free"}
                 </div>
-                <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16, lineHeight: 1.6 }}>
-                  {plan.max_dealer_associations ? `Up to ${plan.max_dealer_associations} dealers` : "Unlimited dealers"}<br />
-                  {plan.max_finance_applications ? `${plan.max_finance_applications} applications/yr` : "Unlimited applications"}<br />
-                  {plan.success_commission_pct > 0 && `${plan.success_commission_pct}% success commission`}
+                <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16, lineHeight: 1.8 }}>
+                  {plan.max_dealer_associations === 0 ? "Unlimited dealers" : `Up to ${plan.max_dealer_associations} dealers`}<br />
+                  {plan.max_finance_applications === 0 ? "Unlimited applications" : `${plan.max_finance_applications} applications`}<br />
+                  {plan.commission_per_lead && `${fmtINR(plan.commission_per_lead)} commission/lead`}
                 </div>
-                {!isCurrent && plan.price_per_year > 0 && (
-                  <button style={{ background: P, color: "#fff", border: "none", padding: "10px 24px", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                    Upgrade →
-                  </button>
+                {!isCurrent && (
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>Contact admin to upgrade</div>
                 )}
               </div>
             );
@@ -508,7 +679,7 @@ function MyDocsTab({ authFetch }) {
     if (!docFile) return;
     setUploading(true);
     const fd = new FormData();
-    fd.append("document_type", docType);
+    fd.append("doc_type", docType);
     fd.append("description", docDesc);
     fd.append("file", docFile);
     const res = await authFetch("/financer/documents/", { method: "POST", body: fd });
@@ -526,7 +697,7 @@ function MyDocsTab({ authFetch }) {
           {docs.map(d => (
             <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#f9fafb", borderRadius: 8, marginBottom: 8, border: "1px solid #f3f4f6" }}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{d.document_type?.toUpperCase()} — {d.description || "No description"}</div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{(d.doc_type || d.document_type)?.replace(/_/g, " ").toUpperCase()} — {d.description || d.title || "No description"}</div>
                 <div style={{ fontSize: 11, color: "#6b7280" }}>{d.is_verified ? "✅ Verified" : "⏳ Under review"}</div>
               </div>
               {d.file && <a href={d.file} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 600, fontSize: 12, textDecoration: "none" }}>View ↗</a>}
@@ -587,9 +758,9 @@ function FinancerListing() {
                   Interest: {f.interest_rate_min}% — {f.interest_rate_max}%
                 </div>
               )}
-              {f.loan_amount_min && f.loan_amount_max && (
+              {f.min_loan_amount && f.max_loan_amount && (
                 <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
-                  Loan: {fmtINR(f.loan_amount_min)} — {fmtINR(f.loan_amount_max)}
+                  Loan: {fmtINR(f.min_loan_amount)} — {fmtINR(f.max_loan_amount)}
                 </div>
               )}
               {f.processing_fee_pct && (
@@ -728,7 +899,7 @@ export default function FinancerPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <div>
                 <div style={{ fontWeight: 800, fontSize: 22, color: "#111827" }}>🏦 {profile?.company_name || "Dashboard"}</div>
-                {profile && <div style={{ fontSize: 13, color: "#6b7280" }}>📍 {profile.city}{profile.state ? `, ${profile.state}` : ""} · {profile.is_verified ? "✅ Verified" : "⏳ Pending"}</div>}
+                {profile && <div style={{ fontSize: 13, color: "#6b7280" }}>📍 {profile.city}{profile.state ? `, ${profile.state}` : ""} · {profile.is_verified ? "✅ Verified" : "⏳ Pending verification"}</div>}
               </div>
               <button onClick={handleLogout} style={{ background: "#f3f4f6", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Logout</button>
             </div>

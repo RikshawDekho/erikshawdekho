@@ -19,7 +19,7 @@ from .models import (
     BlogPost, DealerAPIKey, PlatformSettings, FinancerProfile, FinancerDocument,
     CustomerProfile, FinancerPlan, FinancerSubscription, FinancerDealerAssociation,
     FinancerRequiredDocument, FinanceApplication, FinanceApplicationDocument,
-    Plan,
+    FinanceApplicationRemark, Plan,
 )
 from .serializers import (
     VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
@@ -2315,7 +2315,12 @@ def dealer_finance_applications(request):
         'status_notes': a.status_notes,
         'submitted_at': a.submitted_at.isoformat() if a.submitted_at else None,
         'created_at': a.created_at.isoformat(),
+        'down_payment': str(a.down_payment),
         'doc_count': a.documents.count(),
+        'remarks': [{
+            'id': r.id, 'author_type': r.author_type, 'content': r.content,
+            'created_at': r.created_at.isoformat(),
+        } for r in a.remarks.all()],
     } for a in qs]
 
     return Response({'results': data, 'count': qs.count()})
@@ -2355,6 +2360,78 @@ def finance_application_documents(request, app_id):
         'file': request.build_absolute_uri(d.file.url) if d.file else None,
         'uploaded_at': d.uploaded_at.isoformat(),
     } for d in docs]
+    return Response(data)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def finance_application_remarks(request, app_id):
+    """
+    GET:  List remarks on a finance application (visible to both financer and dealer).
+    POST: Add a remark (either party).
+    Authentication determines the author_type automatically.
+    """
+    user = request.user
+    app = None
+    author_type = None
+
+    # Try dealer first, then financer
+    try:
+        dealer = user.dealer_profile
+        app = FinanceApplication.objects.get(pk=app_id, dealer=dealer)
+        author_type = 'dealer'
+    except (AttributeError, DealerProfile.DoesNotExist, FinanceApplication.DoesNotExist):
+        pass
+
+    if app is None:
+        try:
+            fp = user.financer_profile
+            app = FinanceApplication.objects.get(pk=app_id, financer=fp)
+            author_type = 'financer'
+        except (AttributeError, FinancerProfile.DoesNotExist, FinanceApplication.DoesNotExist):
+            pass
+
+    if app is None:
+        return Response({'error': 'Application not found or access denied'}, status=404)
+
+    if request.method == 'POST':
+        content = request.data.get('content', '').strip()
+        if not content:
+            return Response({'error': 'content is required'}, status=400)
+
+        remark = FinanceApplicationRemark.objects.create(
+            application=app, author_type=author_type, content=content
+        )
+
+        # Notify the other party
+        try:
+            from api.notifications import send_push_notification
+            if author_type == 'dealer':
+                target_token = getattr(getattr(app.financer.user, 'profile', None), 'fcm_token', None)
+                notif_title = 'New Dealer Remark'
+                notif_body = f'{app.dealer.dealer_name}: {content[:60]}'
+            else:
+                target_token = getattr(getattr(app.dealer.user, 'profile', None), 'fcm_token', None)
+                notif_title = 'Financer Remark on Application'
+                notif_body = f'{app.financer.company_name}: {content[:60]}'
+            if target_token:
+                send_push_notification(
+                    fcm_token=target_token, title=notif_title, body=notif_body,
+                    data={'type': 'finance_remark', 'app_id': str(app.id)}
+                )
+        except Exception:
+            pass
+
+        return Response({
+            'id': remark.id, 'author_type': remark.author_type,
+            'content': remark.content, 'created_at': remark.created_at.isoformat(),
+        }, status=201)
+
+    remarks = FinanceApplicationRemark.objects.filter(application=app)
+    data = [{
+        'id': r.id, 'author_type': r.author_type, 'content': r.content,
+        'created_at': r.created_at.isoformat(),
+    } for r in remarks]
     return Response(data)
 
 
@@ -2406,6 +2483,10 @@ def financer_applications(request):
             'file': request.build_absolute_uri(d.file.url) if d.file else None,
             'uploaded_at': d.uploaded_at.isoformat(),
         } for d in a.documents.all()],
+        'remarks': [{
+            'id': r.id, 'author_type': r.author_type, 'content': r.content,
+            'created_at': r.created_at.isoformat(),
+        } for r in a.remarks.all()],
     } for a in qs]
 
     return Response({'results': data, 'count': qs.count()})

@@ -104,6 +104,7 @@ urlpatterns = [
     # Financer: incoming applications
     path('financer/applications/',                             views.financer_applications,              name='financer-applications'),
     path('financer/applications/<int:app_id>/update-status/',  views.financer_update_application_status, name='financer-update-app-status'),
+    path('financer/applications/<int:app_id>/remarks/',        views.finance_application_remarks,        name='financer-finance-app-remarks'),
     # Financer: subscription plans
     path('financer/plans/',                                    views.financer_plans_list,                name='financer-plans'),
     path('financer/subscription/',                             views.financer_subscription_status,       name='financer-subscription'),
@@ -114,6 +115,7 @@ urlpatterns = [
     path('dealer/financers/<int:financer_id>/requirements/',   views.dealer_financer_requirements,      name='dealer-financer-requirements'),
     path('dealer/finance-applications/',                       views.dealer_finance_applications,       name='dealer-finance-applications'),
     path('dealer/finance-applications/<int:app_id>/documents/',views.finance_application_documents,     name='finance-app-documents'),
+    path('dealer/finance-applications/<int:app_id>/remarks/', views.finance_application_remarks,       name='dealer-finance-app-remarks'),
 
     # Admin: financer management
     path('admin-portal/financers/',                                    views.admin_financers,                   name='admin-financers'),

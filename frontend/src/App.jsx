@@ -268,6 +268,8 @@ const api = {
     createFinApp:    (d)      => apiFetch("/dealer/finance-applications/", { method: "POST", body: JSON.stringify(d) }),
     finAppDocs:      (id)     => apiFetch(`/dealer/finance-applications/${id}/documents/`),
     uploadFinAppDoc: (id,d)   => apiFetch(`/dealer/finance-applications/${id}/documents/`, { method: "POST", body: d }),
+    finAppRemarks:   (id)     => apiFetch(`/dealer/finance-applications/${id}/remarks/`),
+    postFinAppRemark:(id,d)   => apiFetch(`/dealer/finance-applications/${id}/remarks/`, { method: "POST", body: JSON.stringify(d) }),
     freeTierUsage:   ()       => apiFetch("/dealer/free-tier-usage/"),
   },
   financer: {
@@ -2383,6 +2385,9 @@ function Finance() {
   const [finAppDocs, setFinAppDocs] = useState([]);
   const [finAppDocFiles, setFinAppDocFiles] = useState([]); // [{file, label}]
   const [uploadingFinAppDoc, setUploadingFinAppDoc] = useState(false);
+  const [finAppRemarks, setFinAppRemarks] = useState([]);
+  const [postingFinAppRemark, setPostingFinAppRemark] = useState(false);
+  const [finAppRemarkText, setFinAppRemarkText] = useState("");
 
   const setF = k => v => setEmiForm(p => ({ ...p, [k]: v }));
   const setNL = k => v => setNewLoan(p => ({ ...p, [k]: v }));
@@ -2465,7 +2470,21 @@ function Finance() {
   const openFinAppDetail = async (app) => {
     setFinAppDetail(app);
     setFinAppDocs([]);
+    setFinAppRemarks(app.remarks || []);
+    setFinAppRemarkText("");
     try { const r = await api.dealer.finAppDocs(app.id); setFinAppDocs(r.results || r || []); } catch { setFinAppDocs([]); }
+    try { const r = await api.dealer.finAppRemarks(app.id); setFinAppRemarks(Array.isArray(r) ? r : r.results || []); } catch { /* keep embedded */ }
+  };
+
+  const handlePostFinAppRemark = async () => {
+    if (!finAppDetail || !finAppRemarkText.trim()) return;
+    setPostingFinAppRemark(true);
+    try {
+      const r = await api.dealer.postFinAppRemark(finAppDetail.id, { content: finAppRemarkText.trim() });
+      setFinAppRemarks(prev => [...prev, r]);
+      setFinAppRemarkText("");
+    } catch { /* ignore */ }
+    setPostingFinAppRemark(false);
   };
 
   const handleUploadFinAppDocs = async () => {
@@ -2663,7 +2682,7 @@ function Finance() {
                     </td>
                     <td style={{ padding: "12px 14px", color: C.textMid }}>{f.city || "—"}</td>
                     <td style={{ padding: "12px 14px", color: C.textMid }}>
-                      {f.min_interest_rate && f.max_interest_rate ? `${f.min_interest_rate}%–${f.max_interest_rate}%` : "—"}
+                      {f.interest_rate_min && f.interest_rate_max ? `${f.interest_rate_min}%–${f.interest_rate_max}%` : "—"}
                     </td>
                     <td style={{ padding: "12px 14px", color: C.textMid }}>
                       {f.max_loan_amount ? fmtINR(f.max_loan_amount) : "—"}
@@ -2746,7 +2765,7 @@ function Finance() {
           <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
             {[
               ["City", selectedFinancer.city],
-              ["Interest Rate", selectedFinancer.min_interest_rate && selectedFinancer.max_interest_rate ? `${selectedFinancer.min_interest_rate}% – ${selectedFinancer.max_interest_rate}%` : "—"],
+              ["Interest Rate", selectedFinancer.interest_rate_min && selectedFinancer.interest_rate_max ? `${selectedFinancer.interest_rate_min}% – ${selectedFinancer.interest_rate_max}%` : "—"],
               ["Max Loan Amount", selectedFinancer.max_loan_amount ? fmtINR(selectedFinancer.max_loan_amount) : "—"],
               ["Processing Fee", selectedFinancer.processing_fee_pct ? `${selectedFinancer.processing_fee_pct}%` : "—"],
             ].map(([l, v]) => (
@@ -2835,20 +2854,21 @@ function Finance() {
         </Modal>
       )}
 
-      {/* ── Finance App Detail + Document Upload ── */}
+      {/* ── Finance App Detail + Documents + Remarks ── */}
       {finAppDetail && (
-        <Modal title={`📎 Documents — ${finAppDetail.customer_name}`} onClose={() => { setFinAppDetail(null); setFinAppDocs([]); setFinAppDocFiles([]); }} width={560}>
+        <Modal title={`📎 Finance App — ${finAppDetail.customer_name}`} onClose={() => { setFinAppDetail(null); setFinAppDocs([]); setFinAppDocFiles([]); setFinAppRemarks([]); setFinAppRemarkText(""); }} width={600}>
+          {/* Summary bar */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: C.textMid, marginBottom: 10 }}>
               <span>Financer: <b style={{ color: C.text }}>{finAppDetail.financer_name || "—"}</b></span>
               <span>Loan: <b style={{ color: C.success }}>{fmtINR(finAppDetail.loan_amount)}</b></span>
-              {finAppDetail.down_payment && <span>DP: <b>{fmtINR(finAppDetail.down_payment)}</b></span>}
+              {finAppDetail.down_payment && parseFloat(finAppDetail.down_payment) > 0 && <span>DP: <b>{fmtINR(finAppDetail.down_payment)}</b></span>}
               <Badge label={finAppDetail.status} color={STATUS_COLORS[finAppDetail.status] || C.textMid} />
             </div>
             {finAppDetail.status_notes && <div style={{ fontSize: 12, color: C.warning, background: `${C.warning}12`, padding: "6px 10px", borderRadius: 6, marginBottom: 10 }}>ℹ {finAppDetail.status_notes}</div>}
           </div>
 
-          {/* Existing docs */}
+          {/* Uploaded docs */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Uploaded Documents ({finAppDocs.length})</div>
             {finAppDocs.length === 0 ? (
@@ -2858,7 +2878,7 @@ function Finance() {
                 {finAppDocs.map((doc, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: C.bg, borderRadius: 6, fontSize: 12 }}>
                     <span>📄</span>
-                    <span style={{ flex: 1, color: C.text }}>{doc.label || doc.file_name || `Document ${i+1}`}</span>
+                    <span style={{ flex: 1, color: C.text }}>{doc.label || doc.notes || doc.doc_type || `Document ${i+1}`}</span>
                     {doc.file && <a href={doc.file} target="_blank" rel="noreferrer" style={{ color: C.primary, fontWeight: 600 }}>View</a>}
                   </div>
                 ))}
@@ -2867,7 +2887,7 @@ function Finance() {
           </div>
 
           {/* Upload new docs */}
-          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14, marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Upload Documents</div>
             {finAppDocFiles.map((df, i) => (
               <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -2892,8 +2912,42 @@ function Finance() {
               )}
             </div>
           </div>
+
+          {/* Remarks thread */}
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>💬 Remarks ({finAppRemarks.length})</div>
+            <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10, padding: "4px 0" }}>
+              {finAppRemarks.length === 0 && <div style={{ fontSize: 12, color: C.textDim, textAlign: "center", padding: "8px 0" }}>No remarks yet. You can message the financer here.</div>}
+              {finAppRemarks.map(r => {
+                const isMe = r.author_type === "dealer";
+                return (
+                  <div key={r.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                    <div style={{
+                      maxWidth: "80%", padding: "8px 12px", fontSize: 12,
+                      borderRadius: isMe ? "12px 12px 0 12px" : "12px 12px 12px 0",
+                      background: isMe ? C.primary : C.bg, color: isMe ? "#fff" : C.text,
+                      border: isMe ? "none" : `1px solid ${C.border}`,
+                    }}>
+                      <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 3 }}>
+                        {isMe ? "You" : "Financer"} · {new Date(r.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+                      </div>
+                      {r.content}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="text" value={finAppRemarkText} onChange={e => setFinAppRemarkText(e.target.value)}
+                placeholder="Type a message for financer..."
+                onKeyDown={e => e.key === "Enter" && !e.shiftKey && handlePostFinAppRemark()}
+                style={{ flex: 1, padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+              <Btn label={postingFinAppRemark ? "..." : "Send"} color={C.primary} disabled={postingFinAppRemark || !finAppRemarkText.trim()} onClick={handlePostFinAppRemark} />
+            </div>
+          </div>
+
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-            <Btn label="Close" outline color={C.textMid} onClick={() => { setFinAppDetail(null); setFinAppDocs([]); setFinAppDocFiles([]); }} />
+            <Btn label="Close" outline color={C.textMid} onClick={() => { setFinAppDetail(null); setFinAppDocs([]); setFinAppDocFiles([]); setFinAppRemarks([]); setFinAppRemarkText(""); }} />
           </div>
         </Modal>
       )}

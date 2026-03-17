@@ -878,3 +878,23 @@ class FinanceApplicationDocument(models.Model):
 
     def __str__(self):
         return f"FA-{self.application_id} — {self.doc_type}"
+
+
+class FinanceApplicationRemark(models.Model):
+    """
+    Threaded remarks on a FinanceApplication — visible to both financer and dealer.
+    Either party can post remarks; the other sees them immediately.
+    """
+    AUTHOR_CHOICES = [('financer', 'Financer'), ('dealer', 'Dealer')]
+
+    application = models.ForeignKey(FinanceApplication, on_delete=models.CASCADE,
+                                    related_name='remarks')
+    author_type = models.CharField(max_length=10, choices=AUTHOR_CHOICES)
+    content     = models.TextField()
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"FA-{self.application_id} [{self.author_type}]: {self.content[:50]}"
