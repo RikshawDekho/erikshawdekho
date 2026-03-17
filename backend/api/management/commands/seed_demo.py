@@ -133,12 +133,12 @@ class Command(BaseCommand):
         self.stdout.write(f"  ✓ Demo dealer: username=demo  password=demo1234")
 
         # ── Plans ─────────────────────────────────────────────────────
-        free_plan, _ = Plan.objects.get_or_create(
+        free_plan, _ = Plan.objects.update_or_create(
             slug='free',
             defaults={
                 'name': 'Free Plan',
                 'price': 0,
-                'listing_limit': 3,
+                'listing_limit': 5,
                 'priority_ranking': False,
                 'featured_badge': False,
                 'whatsapp_alerts': False,
@@ -148,7 +148,7 @@ class Command(BaseCommand):
                 'is_active': True,
             }
         )
-        early_plan, _ = Plan.objects.get_or_create(
+        early_plan, _ = Plan.objects.update_or_create(
             slug='early_dealer',
             defaults={
                 'name': 'Early Dealer Plan',

@@ -24,6 +24,7 @@ urlpatterns = [
     path('auth/me/',                views.me,                name='me'),
     path('auth/forgot-password/',              views.forgot_password,              name='forgot-password'),
     path('auth/reset-password/',               views.reset_password_confirm,       name='reset-password'),
+    path('auth/reset-password-phone/',         views.reset_password_phone,         name='reset-password-phone'),
     path('admin-portal/dealers/<int:dealer_id>/reset-password/', views.admin_reset_dealer_password, name='admin-reset-dealer-password'),
     path('auth/token/refresh/',     TokenRefreshView.as_view(), name='token-refresh'),
 
@@ -103,6 +104,7 @@ urlpatterns = [
     # Financer: incoming applications
     path('financer/applications/',                             views.financer_applications,              name='financer-applications'),
     path('financer/applications/<int:app_id>/update-status/',  views.financer_update_application_status, name='financer-update-app-status'),
+    path('financer/applications/<int:app_id>/remarks/',        views.finance_application_remarks,        name='financer-finance-app-remarks'),
     # Financer: subscription plans
     path('financer/plans/',                                    views.financer_plans_list,                name='financer-plans'),
     path('financer/subscription/',                             views.financer_subscription_status,       name='financer-subscription'),
@@ -113,9 +115,18 @@ urlpatterns = [
     path('dealer/financers/<int:financer_id>/requirements/',   views.dealer_financer_requirements,      name='dealer-financer-requirements'),
     path('dealer/finance-applications/',                       views.dealer_finance_applications,       name='dealer-finance-applications'),
     path('dealer/finance-applications/<int:app_id>/documents/',views.finance_application_documents,     name='finance-app-documents'),
+    path('dealer/finance-applications/<int:app_id>/remarks/', views.finance_application_remarks,       name='dealer-finance-app-remarks'),
 
     # Admin: financer management
-    path('admin-portal/financers/',                            views.admin_financers,                   name='admin-financers'),
-    path('admin-portal/financers/<int:financer_id>/',          views.admin_financers,                   name='admin-financer-detail'),
-    path('admin-portal/finance-applications/',                 views.admin_finance_applications,        name='admin-finance-applications'),
+    path('admin-portal/financers/',                                    views.admin_financers,                   name='admin-financers'),
+    path('admin-portal/financers/<int:financer_id>/',                  views.admin_financers,                   name='admin-financer-detail'),
+    path('admin-portal/financers/<int:financer_id>/reset-password/',   views.admin_reset_financer_password,     name='admin-reset-financer-password'),
+    path('admin-portal/financers/<int:financer_id>/manage/',           views.admin_manage_financer,             name='admin-manage-financer'),
+    path('admin-portal/finance-applications/',                         views.admin_finance_applications,        name='admin-finance-applications'),
+
+    # Admin: dealer management (plan + deactivate)
+    path('admin-portal/dealers/<int:dealer_id>/manage/',               views.admin_manage_dealer,               name='admin-manage-dealer'),
+
+    # Admin: leads analytics
+    path('admin-portal/leads-analytics/',                              views.admin_leads_analytics,             name='admin-leads-analytics'),
 ]

@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+
+# Public pages — fully crawlable
+Allow: /driver/marketplace
+Allow: /driver/dealers
+Allow: /driver/learn
+Allow: /driver/compare
+
+# Authenticated portals — block crawlers
+Disallow: /dealer/
+Disallow: /dealer/dashboard
+Disallow: /financer/
+Disallow: /admin/
+
+Sitemap: https://www.erikshawdekho.com/sitemap.xml

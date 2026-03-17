@@ -48,8 +48,9 @@ class DealerProfile(models.Model):
     plan            = models.ForeignKey('Plan', on_delete=models.SET_NULL, null=True, blank=True, related_name='dealers')
     listing_count   = models.IntegerField(default=0, help_text='Cached count of active listings')
     # ── Free Tier Tracking ────────────────────────────────
-    lifetime_lead_count   = models.IntegerField(default=0, help_text='Lifetime leads received (free tier limit: 50)')
+    lifetime_lead_count   = models.IntegerField(default=0, help_text='Lifetime leads received (free tier limit: 20)')
     invoice_count         = models.IntegerField(default=0, help_text='Invoices generated (free tier limit: 20)')
+    lifetime_enquiry_count = models.IntegerField(default=0, help_text='Lifetime public enquiries received (free tier limit: 20)')
     # ── Notification Preferences ──────────────────────────
     notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
     notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')
@@ -222,7 +223,8 @@ class Lead(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=['dealer', 'status']),
-            models.Index(fields=['created_at']),
+            models.Index(fields=['dealer', 'created_at']),   # fast sort+filter by dealer
+            models.Index(fields=['dealer', 'is_deleted']),   # soft-delete queries
         ]
 
     def __str__(self):
@@ -271,6 +273,9 @@ class Sale(models.Model):
     # Battery unit count + financer details
     battery_count    = models.IntegerField(default=1, help_text='Number of battery units installed')
     financer_details = models.TextField(blank=True, help_text='Financer name, loan a/c, ref number, branch etc.')
+    # Loan / finance breakdown
+    down_payment     = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text='Customer down payment amount')
+    loan_amount_financed = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text='Amount financed via loan')
     # GST compliance fields
     place_of_supply = models.CharField(max_length=100, blank=True)  # state name
     sale_updated_at = models.DateTimeField(auto_now=True)
@@ -674,20 +679,23 @@ class CustomerProfile(models.Model):
 # ─── FINANCER PLANS & SUBSCRIPTIONS ──────────────────────────────
 
 class FinancerPlan(models.Model):
-    """Subscription tiers for financer/NBFC partners."""
-    SLUG_FREE    = 'free'
-    SLUG_STARTER = 'starter'  # ₹5,000/yr — first 20 dealers
-    SLUG_GROWTH  = 'growth'   # Commission model — unlimited dealers
+    """Subscription tiers for financer/NBFC partners.
+
+    Free trial : 2 dealers, 5 applications, ₹3,000 commission per financed lead
+    Pro        : ₹5,000/year + ₹2,000 commission per financed lead, unlimited everything
+    """
+    SLUG_FREE = 'free'
+    SLUG_PRO  = 'pro'
 
     name                      = models.CharField(max_length=100, unique=True)
     slug                      = models.CharField(max_length=50, unique=True)
     price_per_year            = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    max_dealer_associations   = models.IntegerField(default=0,
-                                    help_text='Max dealers this financer can onboard. 0 = unlimited.')
-    max_finance_applications  = models.IntegerField(default=10,
-                                    help_text='Free tier: 10 applications before upgrade required.')
-    success_commission_pct    = models.DecimalField(max_digits=5, decimal_places=2, default=0,
-                                    help_text='Platform commission % charged on successful loan disbursement.')
+    max_dealer_associations   = models.IntegerField(default=2,
+                                    help_text='Max dealers financer can add. 0 = unlimited.')
+    max_finance_applications  = models.IntegerField(default=5,
+                                    help_text='Max lifetime applications. 0 = unlimited.')
+    commission_per_lead       = models.DecimalField(max_digits=10, decimal_places=2, default=3000,
+                                    help_text='Platform commission charged per successfully financed lead (₹).')
     is_active                 = models.BooleanField(default=True)
     features_json             = models.JSONField(default=list, blank=True,
                                     help_text='List of feature strings to display on plan card.')
@@ -870,3 +878,23 @@ class FinanceApplicationDocument(models.Model):
 
     def __str__(self):
         return f"FA-{self.application_id} — {self.doc_type}"
+
+
+class FinanceApplicationRemark(models.Model):
+    """
+    Threaded remarks on a FinanceApplication — visible to both financer and dealer.
+    Either party can post remarks; the other sees them immediately.
+    """
+    AUTHOR_CHOICES = [('financer', 'Financer'), ('dealer', 'Dealer')]
+
+    application = models.ForeignKey(FinanceApplication, on_delete=models.CASCADE,
+                                    related_name='remarks')
+    author_type = models.CharField(max_length=10, choices=AUTHOR_CHOICES)
+    content     = models.TextField()
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"FA-{self.application_id} [{self.author_type}]: {self.content[:50]}"

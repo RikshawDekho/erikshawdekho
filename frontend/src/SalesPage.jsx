@@ -443,8 +443,14 @@ function InvoicePrint({ inv, onClose }) {
               <div style={{ color: "#475569", lineHeight: 1.85, fontSize: 10 }}>
                 <div>Mode: <strong style={{ color: "#1e293b" }}>{PAYMENT_LABEL[inv.payment_method] || inv.payment_method}</strong></div>
                 {inv.financer_details && inv.payment_method === "loan" && (
-                  <div style={{ marginTop: 3, padding: "3px 6px", background: "#eff6ff", borderRadius: 4, color: "#1d4ed8", fontSize: 9 }}>
+                  <div style={{ marginTop: 3, padding: "4px 6px", background: "#eff6ff", borderRadius: 4, color: "#1d4ed8", fontSize: 9 }}>
                     Financer: <strong>{inv.financer_details}</strong>
+                  </div>
+                )}
+                {inv.payment_method === "loan" && (inv.down_payment || inv.loan_amount_financed) && (
+                  <div style={{ marginTop: 3, fontSize: 9, color: "#374151" }}>
+                    {inv.down_payment && <div>Down Payment: <strong>₹{Number(inv.down_payment).toLocaleString("en-IN")}</strong></div>}
+                    {inv.loan_amount_financed && <div>Loan Amount: <strong>₹{Number(inv.loan_amount_financed).toLocaleString("en-IN")}</strong></div>}
                   </div>
                 )}
                 {inv.dealer?.bank_name && <div>Bank: <strong style={{ color: "#1e293b" }}>{inv.dealer.bank_name}</strong></div>}
@@ -528,6 +534,8 @@ export function SalesPage() {
     battery_warranty_months: "", motor_serial_number: "", vehicle_warranty_months: "",
     // Finance details (required when payment_method === "loan")
     financer_details: "",
+    down_payment: "",
+    loan_amount_financed: "",
     // GST rates (default 2.5% each for eRickshaw EVs)
     cgst_rate: "2.5", sgst_rate: "2.5",
   };
@@ -596,6 +604,8 @@ export function SalesPage() {
         quantity: parseInt(form.quantity) || 1,
         cgst_rate: parseFloat(form.cgst_rate) || 2.5,
         sgst_rate: parseFloat(form.sgst_rate) || 2.5,
+        down_payment: form.down_payment ? parseFloat(form.down_payment) : null,
+        loan_amount_financed: form.loan_amount_financed ? parseFloat(form.loan_amount_financed) : null,
       };
       // Remove frontend-only field not in model
       delete payload.battery_serials;
@@ -989,6 +999,23 @@ export function SalesPage() {
                     required
                   />
                 </Field>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <Field label="Down Payment (₹)">
+                    <Input value={form.down_payment} onChange={v => {
+                      const dp = parseFloat(v) || 0;
+                      const sp = parseFloat(form.sale_price) || 0;
+                      setForm(p => ({ ...p, down_payment: v, loan_amount_financed: sp && dp ? String(Math.max(0, sp - dp)) : p.loan_amount_financed }));
+                    }} type="number" placeholder="0" />
+                  </Field>
+                  <Field label="Loan Amount Financed (₹)">
+                    <Input value={form.loan_amount_financed} onChange={setF("loan_amount_financed")} type="number" placeholder="Auto-calculated" />
+                  </Field>
+                </div>
+                {form.down_payment && form.loan_amount_financed && (
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                    Sale ₹{Number(form.sale_price||0).toLocaleString("en-IN")} = DP ₹{Number(form.down_payment||0).toLocaleString("en-IN")} + Loan ₹{Number(form.loan_amount_financed||0).toLocaleString("en-IN")}
+                  </div>
+                )}
               </div>
             )}
 
