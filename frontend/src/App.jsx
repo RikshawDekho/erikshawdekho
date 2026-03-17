@@ -2378,12 +2378,12 @@ function Finance() {
   // ── Finance Applications ──
   const [finApps, setFinApps] = useState([]);
   const [showNewFinApp, setShowNewFinApp] = useState(false);
-  const [newFinApp, setNewFinApp] = useState({ financer: "", vehicle: "", customer_name: "", customer_phone: "", customer_email: "", customer_aadhaar: "", customer_pan: "", loan_amount: "", down_payment: "", tenure_months: "36", notes: "" });
+  const [newFinApp, setNewFinApp] = useState({ financer: "", vehicle: "", vehicle_price: "", customer_name: "", customer_phone: "", customer_email: "", customer_aadhaar: "", customer_pan: "", loan_amount: "", down_payment: "", tenure_months: "36" });
   const [savingFinApp, setSavingFinApp] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [finAppDetail, setFinAppDetail] = useState(null);
   const [finAppDocs, setFinAppDocs] = useState([]);
-  const [finAppDocFiles, setFinAppDocFiles] = useState([]); // [{file, label}]
+  const [finAppDocFiles, setFinAppDocFiles] = useState([]); // [{file, label, doc_type}]
   const [uploadingFinAppDoc, setUploadingFinAppDoc] = useState(false);
   const [finAppRemarks, setFinAppRemarks] = useState([]);
   const [postingFinAppRemark, setPostingFinAppRemark] = useState(false);
@@ -2491,10 +2491,11 @@ function Finance() {
     if (!finAppDetail || finAppDocFiles.length === 0) return;
     setUploadingFinAppDoc(true);
     let uploaded = 0;
-    for (const { file, label } of finAppDocFiles) {
+    for (const { file, label, doc_type } of finAppDocFiles) {
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("label", label || file.name);
+      fd.append("doc_type", doc_type || "other");
+      fd.append("notes", label || "");
       try {
         await api.dealer.uploadFinAppDoc(finAppDetail.id, fd);
         uploaded++;
@@ -2507,16 +2508,18 @@ function Finance() {
     toast(`${uploaded} document(s) uploaded`, "success");
   };
 
-  const handleCreateFinApp = async (e) => {
-    e.preventDefault();
+  const handleCreateFinApp = async (doSubmit = false) => {
     if (!newFinApp.financer) { toast("Select a financer", "warning"); return; }
     if (!newFinApp.customer_name || !newFinApp.customer_phone) { toast("Customer name and phone required", "warning"); return; }
+    if (doSubmit && !newFinApp.loan_amount) { toast("Loan amount is required to submit", "warning"); return; }
     setSavingFinApp(true);
     try {
-      await api.dealer.createFinApp({ ...newFinApp });
-      toast("Finance application created!", "success");
+      const payload = { ...newFinApp };
+      if (doSubmit) payload.submit = true;
+      await api.dealer.createFinApp(payload);
+      toast(doSubmit ? "Application submitted to financer!" : "Draft saved.", "success");
       setShowNewFinApp(false);
-      setNewFinApp({ financer: "", vehicle: "", customer_name: "", customer_phone: "", customer_email: "", customer_aadhaar: "", customer_pan: "", loan_amount: "", down_payment: "", tenure_months: "36", notes: "" });
+      setNewFinApp({ financer: "", vehicle: "", vehicle_price: "", customer_name: "", customer_phone: "", customer_email: "", customer_aadhaar: "", customer_pan: "", loan_amount: "", down_payment: "", tenure_months: "36" });
       loadFinApps();
     } catch (err) {
       const msg = err?.detail || err?.error || Object.values(err || {}).flat().join(" ") || "Failed to create.";
@@ -2735,7 +2738,7 @@ function Finance() {
                       <div style={{ fontSize: 11, color: C.textDim }}>{a.customer_phone}</div>
                     </td>
                     <td style={{ padding: "12px 14px", color: C.textMid, fontSize: 12 }}>{a.financer_name || "—"}</td>
-                    <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.vehicle_name || "—"}</td>
+                    <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.vehicle || "—"}</td>
                     <td style={{ padding: "12px 14px" }}>
                       <div style={{ fontWeight: 700, color: C.success }}>{fmtINR(a.loan_amount)}</div>
                       {a.down_payment && <div style={{ fontSize: 11, color: C.textDim }}>DP: {fmtINR(a.down_payment)}</div>}
@@ -2782,7 +2785,10 @@ function Finance() {
                 {finReqs.map(r => (
                   <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                     <span style={{ color: r.is_mandatory ? C.danger : C.textDim }}>{r.is_mandatory ? "●" : "○"}</span>
-                    <span>{r.label}</span>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>{r.doc_type_label || r.doc_type?.replace(/_/g, " ")}</span>
+                      {r.description && <span style={{ color: C.textDim, fontSize: 12 }}> — {r.description}</span>}
+                    </div>
                     {r.is_mandatory && <Badge label="Required" color={C.danger} />}
                   </div>
                 ))}
@@ -2802,7 +2808,7 @@ function Finance() {
       {/* ── New Finance Application Modal ── */}
       {showNewFinApp && (
         <Modal title="New Finance Application" onClose={() => setShowNewFinApp(false)} width={600}>
-          <form onSubmit={handleCreateFinApp}>
+          <form onSubmit={e => e.preventDefault()}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div style={{ gridColumn: "1 / -1" }}>
                 <Field label="Financer / NBFC *">
@@ -2842,13 +2848,11 @@ function Finance() {
                 )}
               </Field>
               <Field label="Tenure (months)"><Input value={newFinApp.tenure_months} onChange={setNFA("tenure_months")} type="number" placeholder="36" /></Field>
-              <div style={{ gridColumn: "1 / -1" }}>
-                <Field label="Notes"><TextArea value={newFinApp.notes} onChange={setNFA("notes")} placeholder="Additional notes for financer..." /></Field>
-              </div>
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={() => setShowNewFinApp(false)} />
-              <Btn label={savingFinApp ? "Submitting..." : "Submit Application"} color={C.primary} type="submit" disabled={savingFinApp} />
+              <Btn label={savingFinApp ? "Saving..." : "Save Draft"} outline color={C.textMid} type="button" disabled={savingFinApp} onClick={() => handleCreateFinApp(false)} />
+              <Btn label={savingFinApp ? "Submitting..." : "Submit to Financer →"} color={C.primary} type="button" disabled={savingFinApp} onClick={() => handleCreateFinApp(true)} />
             </div>
           </form>
         </Modal>
@@ -2878,7 +2882,7 @@ function Finance() {
                 {finAppDocs.map((doc, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: C.bg, borderRadius: 6, fontSize: 12 }}>
                     <span>📄</span>
-                    <span style={{ flex: 1, color: C.text }}>{doc.label || doc.notes || doc.doc_type || `Document ${i+1}`}</span>
+                    <span style={{ flex: 1, color: C.text }}>{[doc.doc_type?.replace(/_/g, " ").toUpperCase(), doc.notes].filter(Boolean).join(" — ") || `Document ${i+1}`}</span>
                     {doc.file && <a href={doc.file} target="_blank" rel="noreferrer" style={{ color: C.primary, fontWeight: 600 }}>View</a>}
                   </div>
                 ))}
@@ -2890,11 +2894,15 @@ function Finance() {
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14, marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Upload Documents</div>
             {finAppDocFiles.map((df, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                <input type="text" value={df.label} placeholder="Document label (e.g. Aadhaar, PAN, Income Proof)"
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                <select value={df.doc_type || "other"} onChange={e => setFinAppDocFiles(p => p.map((x, j) => j === i ? { ...x, doc_type: e.target.value } : x))}
+                  style={{ padding: "6px 8px", border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.bg, color: C.text, fontFamily: "inherit" }}>
+                  {[["aadhaar","Aadhaar"],["pan","PAN"],["voter_id","Voter ID"],["driving_license","Driving License"],["bank_statement","Bank Statement"],["income_proof","Income Proof"],["address_proof","Address Proof"],["passport_photo","Passport Photo"],["vehicle_quotation","Vehicle Quotation"],["form_16","Form 16"],["other","Other"]].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <input type="text" value={df.label} placeholder="Notes (optional)"
                   onChange={e => setFinAppDocFiles(p => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
-                  style={{ flex: 1, padding: "6px 10px", border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.bg, color: C.text, fontFamily: "inherit" }} />
-                <span style={{ fontSize: 12, color: C.textDim, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{df.file.name}</span>
+                  style={{ flex: 1, minWidth: 100, padding: "6px 10px", border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.bg, color: C.text, fontFamily: "inherit" }} />
+                <span style={{ fontSize: 12, color: C.textDim, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{df.file.name}</span>
                 <button onClick={() => setFinAppDocFiles(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
               </div>
             ))}
@@ -2902,7 +2910,7 @@ function Finance() {
               <label style={{ padding: "7px 14px", border: `1.5px dashed ${C.border}`, borderRadius: 7, cursor: "pointer", fontSize: 12, color: C.textMid, fontFamily: "inherit" }}>
                 + Add File
                 <input type="file" multiple style={{ display: "none" }} onChange={e => {
-                  const files = Array.from(e.target.files).map(f => ({ file: f, label: f.name.replace(/\.[^.]+$/, "") }));
+                  const files = Array.from(e.target.files).map(f => ({ file: f, label: f.name.replace(/\.[^.]+$/, ""), doc_type: "other" }));
                   setFinAppDocFiles(p => [...p, ...files]);
                   e.target.value = "";
                 }} />
@@ -5692,7 +5700,7 @@ function AdminPortal({ user, onLogout }) {
                         <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{a.customer_name}</td>
                         <td style={{ padding: "12px 14px", color: C.textMid }}>{a.dealer_name || "—"}</td>
                         <td style={{ padding: "12px 14px", color: C.textMid }}>{a.financer_name || "—"}</td>
-                        <td style={{ padding: "12px 14px", fontSize: 12 }}>{a.vehicle_name || "—"}</td>
+                        <td style={{ padding: "12px 14px", fontSize: 12 }}>{a.vehicle || "—"}</td>
                         <td style={{ padding: "12px 14px", color: C.primary, fontWeight: 700 }}>₹{Number(a.loan_amount || 0).toLocaleString("en-IN")}</td>
                         <td style={{ padding: "12px 14px" }}><Badge label={a.status} color={a.status==="approved"||a.status==="disbursed" ? C.success : a.status==="rejected" ? C.danger : C.warning} /></td>
                         <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString("en-IN") : "Draft"}</td>

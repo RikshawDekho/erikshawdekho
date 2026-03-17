@@ -2695,9 +2695,11 @@ def admin_finance_applications(request):
         'customer_name': a.customer_name,
         'dealer_name': a.dealer.dealer_name,
         'financer_name': a.financer.company_name,
+        'vehicle': str(a.vehicle) if a.vehicle else None,
         'loan_amount': str(a.loan_amount),
         'status': a.status,
         'status_display': a.get_status_display(),
+        'submitted_at': a.submitted_at.isoformat() if a.submitted_at else None,
         'created_at': a.created_at.isoformat(),
     } for a in qs]
 

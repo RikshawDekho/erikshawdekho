@@ -125,7 +125,8 @@ function ProfileTab({ profile }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {[
           { l: "Company", v: profile.company_name },
-          { l: "License", v: profile.license_number || "—" },
+          { l: "GSTIN", v: profile.gstin || "—" },
+          { l: "PAN", v: profile.pan_number || "—" },
           { l: "Phone", v: profile.phone || "—" },
           { l: "Location", v: [profile.city, profile.state].filter(Boolean).join(", ") || "—" },
           { l: "Interest Rate", v: profile.interest_rate_min && profile.interest_rate_max ? `${profile.interest_rate_min}% — ${profile.interest_rate_max}%` : "—" },
@@ -413,10 +414,16 @@ function ApplicationsTab({ authFetch }) {
   const [statusUpdate, setStatusUpdate] = useState({ notes: "" });
   const [postingRemark, setPostingRemark] = useState(false);
   const [localRemarks, setLocalRemarks] = useState({}); // appId → remarks[]
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    authFetch("/financer/applications/").then(r => r.ok ? r.json() : []).then(d => {
+    const p = new URLSearchParams();
+    if (search) p.set("search", search);
+    if (statusFilter) p.set("status", statusFilter);
+    const qs = p.toString() ? `?${p}` : "";
+    authFetch(`/financer/applications/${qs}`).then(r => r.ok ? r.json() : []).then(d => {
       const list = Array.isArray(d) ? d : d?.results || [];
       setApps(list);
       // Build local remarks cache from embedded data
@@ -425,7 +432,7 @@ function ApplicationsTab({ authFetch }) {
       setLocalRemarks(rm);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [authFetch]);
+  }, [authFetch, search, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -458,7 +465,20 @@ function ApplicationsTab({ authFetch }) {
 
   return (
     <div>
-      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: "#111827" }}>Finance Applications ({apps.length})</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>Finance Applications ({apps.length})</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer / dealer..."
+            style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", outline: "none", minWidth: 180 }} />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            style={{ padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            <option value="">All Statuses</option>
+            {["submitted","under_review","docs_required","approved","rejected","disbursed","cancelled","draft"].map(s => (
+              <option key={s} value={s}>{s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())}</option>
+            ))}
+          </select>
+        </div>
+      </div>
       {apps.length === 0 ? (
         <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>No applications yet. Dealers will submit loan applications here.</div>
       ) : (
@@ -469,10 +489,10 @@ function ApplicationsTab({ authFetch }) {
                 onClick={() => setExpanded(expanded === app.id ? null : app.id)}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>
-                    {app.customer_name} — {fmtINR(app.loan_amount_requested || app.loan_amount)}
+                    {app.customer_name} — {fmtINR(app.loan_amount)}
                   </div>
                   <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-                    Dealer: {app.dealer_name || "—"} · {app.customer_phone} · Tenure: {app.loan_tenure_months || app.tenure_months}mo
+                    Dealer: {app.dealer_name || "—"} · {app.customer_phone} · Tenure: {app.tenure_months}mo
                   </div>
                   <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <Badge status={app.status} />
@@ -482,6 +502,11 @@ function ApplicationsTab({ authFetch }) {
                       </span>
                     )}
                   </div>
+                  {app.status_notes && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: "#92400e", background: "#fef3c7", padding: "3px 8px", borderRadius: 6, display: "inline-block" }}>
+                      ℹ️ {app.status_notes}
+                    </div>
+                  )}
                 </div>
                 <span style={{ fontSize: 18, color: "#9ca3af" }}>{expanded === app.id ? "▲" : "▼"}</span>
               </div>
@@ -490,14 +515,16 @@ function ApplicationsTab({ authFetch }) {
                 <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12, marginBottom: 16 }}>
                     {[
-                      { l: "Vehicle", v: app.vehicle_description || app.vehicle || "—" },
-                      { l: "Loan Amount", v: fmtINR(app.loan_amount_requested || app.loan_amount) },
+                      { l: "Vehicle", v: app.vehicle || "—" },
+                      { l: "Loan Amount", v: fmtINR(app.loan_amount) },
                       { l: "Down Payment", v: fmtINR(app.down_payment) },
-                      { l: "Tenure", v: `${app.loan_tenure_months || app.tenure_months} months` },
+                      { l: "Tenure", v: `${app.tenure_months} months` },
                       { l: "Customer Phone", v: app.customer_phone },
+                      { l: "Customer Email", v: app.customer_email || "—" },
                       { l: "Customer Aadhaar", v: app.customer_aadhaar || "—" },
                       { l: "Customer PAN", v: app.customer_pan || "—" },
-                      { l: "Submitted", v: app.created_at ? new Date(app.created_at).toLocaleDateString("en-IN") : "—" },
+                      { l: "Customer Address", v: app.customer_address || "—" },
+                      { l: "Submitted", v: app.submitted_at ? new Date(app.submitted_at).toLocaleDateString("en-IN") : (app.created_at ? new Date(app.created_at).toLocaleDateString("en-IN") : "—") },
                     ].map(({ l, v }) => (
                       <div key={l} style={{ padding: "8px 12px", background: "#f9fafb", borderRadius: 6 }}>
                         <div style={{ fontSize: 10, color: "#9ca3af" }}>{l}</div>
@@ -519,11 +546,11 @@ function ApplicationsTab({ authFetch }) {
                     </div>
                   )}
 
-                  {/* Status update */}
-                  {["submitted", "under_review", "docs_required", "approved"].includes(app.status) && (
+                  {/* Status update — enterprise state machine */}
+                  {!["rejected","disbursed","cancelled"].includes(app.status) && (
                     <div style={{ padding: 14, background: "#faf5ff", borderRadius: 10, border: "1px solid #e9d5ff", marginBottom: 16 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: P, marginBottom: 8 }}>Update Status</div>
-                      <input type="text" placeholder="Notes for dealer (optional)" value={statusUpdate.notes} onChange={e => setStatusUpdate({ notes: e.target.value })}
+                      <div style={{ fontWeight: 600, fontSize: 13, color: P, marginBottom: 8 }}>Update Application Status</div>
+                      <input type="text" placeholder="Internal notes / reason (shown to dealer)" value={statusUpdate.notes} onChange={e => setStatusUpdate({ notes: e.target.value })}
                         style={{ width: "100%", padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", marginBottom: 10, boxSizing: "border-box" }} />
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {app.status === "submitted" && (
@@ -531,18 +558,29 @@ function ApplicationsTab({ authFetch }) {
                             🔍 Start Review
                           </button>
                         )}
-                        <button onClick={() => updateStatus(app.id, "docs_required")} style={{ background: "#fff7ed", color: "#c2410c", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                          📋 Request Docs
-                        </button>
-                        <button onClick={() => updateStatus(app.id, "approved")} style={{ background: "#dcfce7", color: "#166534", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                          ✅ Approve
-                        </button>
-                        <button onClick={() => updateStatus(app.id, "rejected")} style={{ background: "#fef2f2", color: "#dc2626", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                          ❌ Reject
-                        </button>
-                        {app.status !== "submitted" && (
+                        {["submitted", "under_review"].includes(app.status) && (
+                          <button onClick={() => updateStatus(app.id, "docs_required")} style={{ background: "#fff7ed", color: "#c2410c", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            📋 Request Docs
+                          </button>
+                        )}
+                        {["under_review", "docs_required"].includes(app.status) && (
+                          <button onClick={() => updateStatus(app.id, "approved")} style={{ background: "#dcfce7", color: "#166534", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            ✅ Approve
+                          </button>
+                        )}
+                        {["submitted", "under_review", "docs_required"].includes(app.status) && (
+                          <button onClick={() => updateStatus(app.id, "rejected")} style={{ background: "#fef2f2", color: "#dc2626", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            ❌ Reject
+                          </button>
+                        )}
+                        {app.status === "approved" && (
                           <button onClick={() => updateStatus(app.id, "disbursed")} style={{ background: P, color: "#fff", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                             💰 Mark Disbursed
+                          </button>
+                        )}
+                        {app.status === "approved" && (
+                          <button onClick={() => updateStatus(app.id, "cancelled")} style={{ background: "#f3f4f6", color: "#6b7280", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            🚫 Cancel
                           </button>
                         )}
                       </div>
