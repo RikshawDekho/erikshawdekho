@@ -19,7 +19,7 @@ from api.models import DealerProfile, FinancerProfile, UserProfile
 
 
 APP_ENV = os.environ.get('APP_ENV', 'production').lower()
-IS_PROD = APP_ENV == 'production'
+IS_PROD = APP_ENV in ('production', 'prod')
 
 # Always created (every environment including production)
 PROTECTED_ALWAYS = [
