@@ -242,9 +242,13 @@ const api = {
     toggleUserActive:   (id)       => apiFetch(`/admin-portal/users/${id}/toggle-active/`, { method: "PATCH" }),
     createUser:         (d)        => apiFetch("/admin-portal/create-user/", { method: "POST", body: JSON.stringify(d) }),
     updateSettings:     (d)        => apiFetch("/admin-portal/settings/", { method: "PATCH", body: JSON.stringify(d) }),
-    financers:          (p="")     => apiFetch(`/admin-portal/financers/${p}`),
-    verifyFinancer:     (id,d)     => apiFetch(`/admin-portal/financers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
-    financeApps:        (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
+    financers:              (p="")     => apiFetch(`/admin-portal/financers/${p}`),
+    verifyFinancer:         (id,d)     => apiFetch(`/admin-portal/financers/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    resetFinancerPassword:  (id,d)     => apiFetch(`/admin-portal/financers/${id}/reset-password/`, { method: "POST", body: JSON.stringify(d) }),
+    manageFinancer:         (id,d)     => apiFetch(`/admin-portal/financers/${id}/manage/`, { method: "POST", body: JSON.stringify(d) }),
+    manageDealer:           (id,d)     => apiFetch(`/admin-portal/dealers/${id}/manage/`, { method: "POST", body: JSON.stringify(d) }),
+    leadsAnalytics:         (p="")     => apiFetch(`/admin-portal/leads-analytics/${p}`),
+    financeApps:            (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
   },
   auth: {
     forgotPassword:    (d) => apiFetch("/auth/forgot-password/",       { method: "POST", body: JSON.stringify(d) }),
@@ -1053,7 +1057,6 @@ function AuthPage({ onAuth }) {
               </button>
             </div>
           )}
-          <div style={{ textAlign: "center", marginTop: 10, fontSize: 12, color: C.textDim }}>Demo: username=<b>demo</b> &nbsp;password=<b>demo1234</b></div>
         </Card>
         )}
       </div>
@@ -1498,7 +1501,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", vehicle_type: "passenger", price: "", stock_quantity: "", year: 2024, description: "", thumbnail: null });
+  const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", vehicle_type: "passenger", price: "", stock_quantity: "", year: 2024, description: "", thumbnail: null, is_used: false, range_km: "", battery_capacity: "", max_speed: "", seating_capacity: "3", payload_kg: "", warranty_years: "1", hsn_code: "8703", thumbnail_url: "" });
   const [saving, setSaving] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [newBrandName, setNewBrandName] = useState("");
@@ -1547,6 +1550,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     setSaving(true);
     try {
       let payload;
+      const specFields = { range_km: form.range_km || null, battery_capacity: form.battery_capacity, max_speed: form.max_speed || null, seating_capacity: form.seating_capacity || 3, payload_kg: form.payload_kg || null, warranty_years: form.warranty_years || 1, hsn_code: form.hsn_code || "8703", is_used: form.is_used };
       if (form.thumbnail) {
         payload = new FormData();
         payload.append("brand", form.brand_id);
@@ -1554,14 +1558,15 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         payload.append("fuel_type", form.fuel_type);
         payload.append("vehicle_type", form.vehicle_type);
         payload.append("price", form.price);
-        // Default stock_quantity to 1 so vehicle appears in marketplace
         payload.append("stock_quantity", form.stock_quantity || 1);
         payload.append("year", form.year);
         if (form.description) payload.append("description", form.description);
         payload.append("thumbnail", form.thumbnail);
+        Object.entries(specFields).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== "") payload.append(k, v); });
       } else {
-        const { thumbnail, brand_id, ...rest } = form;
-        payload = { ...rest, brand: brand_id, stock_quantity: form.stock_quantity || 1 };
+        const { thumbnail, brand_id, thumbnail_url: turl, ...rest } = form;
+        payload = { ...rest, ...specFields, brand: brand_id, stock_quantity: form.stock_quantity || 1 };
+        if (turl) payload.thumbnail_url = turl;
       }
       await api.vehicles.create(payload);
       toast("Vehicle added successfully!", "success");
@@ -1575,7 +1580,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   const openEdit = (v) => {
     setEditVehicle(v);
-    setEditForm({ model_name: v.model_name, fuel_type: v.fuel_type, vehicle_type: v.vehicle_type || "passenger", price: v.price, stock_quantity: v.stock_quantity, year: v.year, description: v.description || "", thumbnail: null });
+    setEditForm({ model_name: v.model_name, fuel_type: v.fuel_type, vehicle_type: v.vehicle_type || "passenger", price: v.price, stock_quantity: v.stock_quantity, year: v.year, description: v.description || "", thumbnail: null, is_used: v.is_used || false, range_km: v.range_km || "", battery_capacity: v.battery_capacity || "", max_speed: v.max_speed || "", seating_capacity: v.seating_capacity || "3", payload_kg: v.payload_kg || "", warranty_years: v.warranty_years || "1", hsn_code: v.hsn_code || "8703", thumbnail_url: v.thumbnail_url || "" });
   };
 
   const saveEdit = async (e) => {
@@ -1585,6 +1590,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     setEditSaving(true);
     try {
       let payload;
+      const editSpecFields = { range_km: editForm.range_km || null, battery_capacity: editForm.battery_capacity, max_speed: editForm.max_speed || null, seating_capacity: editForm.seating_capacity || 3, payload_kg: editForm.payload_kg || null, warranty_years: editForm.warranty_years || 1, hsn_code: editForm.hsn_code || "8703", is_used: editForm.is_used };
       if (editForm.thumbnail) {
         payload = new FormData();
         payload.append("model_name", editForm.model_name);
@@ -1595,9 +1601,11 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         payload.append("year", editForm.year);
         if (editForm.description) payload.append("description", editForm.description);
         payload.append("thumbnail", editForm.thumbnail);
+        Object.entries(editSpecFields).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== "") payload.append(k, v); });
       } else {
-        const { thumbnail, ...rest } = editForm;
-        payload = rest;
+        const { thumbnail, thumbnail_url: turl, ...rest } = editForm;
+        payload = { ...rest, ...editSpecFields };
+        if (turl) payload.thumbnail_url = turl;
       }
       await api.vehicles.update(editVehicle.id, payload);
       toast("Vehicle updated successfully!", "success");
@@ -1721,19 +1729,36 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
               <Field label="Price (₹)" required><Input value={form.price} onChange={setForm_("price")} type="number" placeholder="150000" /></Field>
               <Field label="Stock Quantity"><Input value={form.stock_quantity} onChange={setForm_("stock_quantity")} type="number" placeholder="10" /></Field>
               <Field label="Year"><Input value={form.year} onChange={setForm_("year")} type="number" placeholder="2024" /></Field>
+              <Field label="Seating Capacity"><Input value={form.seating_capacity} onChange={setForm_("seating_capacity")} type="number" placeholder="3" /></Field>
+              <Field label="Range (km, for electric)"><Input value={form.range_km} onChange={setForm_("range_km")} type="number" placeholder="120" /></Field>
+              <Field label="Battery Capacity"><Input value={form.battery_capacity} onChange={setForm_("battery_capacity")} placeholder="100Ah 48V" /></Field>
+              <Field label="Max Speed (km/h)"><Input value={form.max_speed} onChange={setForm_("max_speed")} type="number" placeholder="45" /></Field>
+              <Field label="Payload (kg)"><Input value={form.payload_kg} onChange={setForm_("payload_kg")} type="number" placeholder="500" /></Field>
+              <Field label="Warranty (years)"><Input value={form.warranty_years} onChange={setForm_("warranty_years")} type="number" placeholder="1" /></Field>
+              <Field label="HSN Code"><Input value={form.hsn_code} onChange={setForm_("hsn_code")} placeholder="8703" /></Field>
+              <Field label="Condition">
+                <Select value={form.is_used ? "used" : "new"} onChange={v => setForm(p => ({ ...p, is_used: v === "used" }))} options={[{value:"new",label:"New"},{value:"used",label:"Used / Refurbished"}]} />
+              </Field>
             </div>
-            <Field label="Vehicle Photo (optional)" style={{ marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <input type="file" accept="image/*" onChange={e => setForm_("thumbnail")(e.target.files[0] || null)}
-                  style={{ flex: 1, fontSize: 13, cursor: "pointer", padding: "8px 0" }} />
-                {form.thumbnail && (
-                  <img src={URL.createObjectURL(form.thumbnail)} alt="preview"
-                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+            <Field label="Vehicle Photo" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", padding: "14px", border: `2px dashed ${C.border}`, borderRadius: 8, cursor: "pointer", textAlign: "center", background: C.bg }}>
+                    <div style={{ fontSize: 24, marginBottom: 4 }}>📷</div>
+                    <div style={{ fontSize: 12, color: C.textMid }}>Click to upload vehicle photo</div>
+                    <input type="file" accept="image/*" onChange={e => setForm_("thumbnail")(e.target.files[0] || null)} style={{ display: "none" }} />
+                  </label>
+                  <div style={{ marginTop: 8, fontSize: 12, color: C.textDim }}>Or paste image URL:</div>
+                  <Input value={form.thumbnail_url} onChange={setForm_("thumbnail_url")} placeholder="https://example.com/vehicle.jpg" />
+                </div>
+                {(form.thumbnail || form.thumbnail_url) && (
+                  <img src={form.thumbnail ? URL.createObjectURL(form.thumbnail) : form.thumbnail_url} alt="preview"
+                    style={{ width: 120, height: 90, objectFit: "cover", borderRadius: 8, border: `1.5px solid ${C.border}` }} />
                 )}
               </div>
             </Field>
             <Field label="Description">
-              <TextArea value={form.description} onChange={setForm_("description")} rows={3} placeholder="Vehicle description, key specs..." />
+              <TextArea value={form.description} onChange={setForm_("description")} rows={3} placeholder="Vehicle description, key specs, features..." />
             </Field>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
               <Btn label="Cancel" outline color={C.textMid} onClick={onAddClose} />
@@ -1768,18 +1793,30 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
               <Field label="Year">
                 <Input value={editForm.year} onChange={v => setEditForm(p => ({ ...p, year: v }))} type="number" />
               </Field>
+              <Field label="Seating Capacity"><Input value={editForm.seating_capacity || ""} onChange={v => setEditForm(p => ({ ...p, seating_capacity: v }))} type="number" placeholder="3" /></Field>
+              <Field label="Range (km)"><Input value={editForm.range_km || ""} onChange={v => setEditForm(p => ({ ...p, range_km: v }))} type="number" placeholder="120" /></Field>
+              <Field label="Battery Capacity"><Input value={editForm.battery_capacity || ""} onChange={v => setEditForm(p => ({ ...p, battery_capacity: v }))} placeholder="100Ah 48V" /></Field>
+              <Field label="Max Speed (km/h)"><Input value={editForm.max_speed || ""} onChange={v => setEditForm(p => ({ ...p, max_speed: v }))} type="number" placeholder="45" /></Field>
+              <Field label="Payload (kg)"><Input value={editForm.payload_kg || ""} onChange={v => setEditForm(p => ({ ...p, payload_kg: v }))} type="number" placeholder="500" /></Field>
+              <Field label="Warranty (years)"><Input value={editForm.warranty_years || ""} onChange={v => setEditForm(p => ({ ...p, warranty_years: v }))} type="number" placeholder="1" /></Field>
+              <Field label="HSN Code"><Input value={editForm.hsn_code || ""} onChange={v => setEditForm(p => ({ ...p, hsn_code: v }))} placeholder="8703" /></Field>
+              <Field label="Condition">
+                <Select value={editForm.is_used ? "used" : "new"} onChange={v => setEditForm(p => ({ ...p, is_used: v === "used" }))} options={[{value:"new",label:"New"},{value:"used",label:"Used / Refurbished"}]} />
+              </Field>
             </div>
-            <Field label="Update Photo (optional)" style={{ marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {editVehicle.thumbnail && !editForm.thumbnail && (
-                  <img src={editVehicle.thumbnail} alt="current"
-                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
-                )}
-                <input type="file" accept="image/*" onChange={e => setEditForm(p => ({ ...p, thumbnail: e.target.files[0] || null }))}
-                  style={{ flex: 1, fontSize: 13, cursor: "pointer", padding: "8px 0" }} />
-                {editForm.thumbnail && (
-                  <img src={URL.createObjectURL(editForm.thumbnail)} alt="new preview"
-                    style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: `2px solid ${C.primary}` }} />
+            <Field label="Update Photo" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", padding: "10px", border: `2px dashed ${C.border}`, borderRadius: 8, cursor: "pointer", textAlign: "center", background: C.bg, fontSize: 12, color: C.textMid }}>
+                    📷 Click to upload new photo
+                    <input type="file" accept="image/*" onChange={e => setEditForm(p => ({ ...p, thumbnail: e.target.files[0] || null }))} style={{ display: "none" }} />
+                  </label>
+                  <div style={{ marginTop: 6, fontSize: 12, color: C.textDim }}>Or update image URL:</div>
+                  <Input value={editForm.thumbnail_url || ""} onChange={v => setEditForm(p => ({ ...p, thumbnail_url: v }))} placeholder="https://example.com/vehicle.jpg" />
+                </div>
+                {(editVehicle.thumbnail || editForm.thumbnail || editForm.thumbnail_url) && (
+                  <img src={editForm.thumbnail ? URL.createObjectURL(editForm.thumbnail) : (editForm.thumbnail_url || editVehicle.thumbnail)} alt="preview"
+                    style={{ width: 100, height: 75, objectFit: "cover", borderRadius: 8, border: `1.5px solid ${C.border}` }} />
                 )}
               </div>
             </Field>
@@ -2343,6 +2380,9 @@ function Finance() {
   const [savingFinApp, setSavingFinApp] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [finAppDetail, setFinAppDetail] = useState(null);
+  const [finAppDocs, setFinAppDocs] = useState([]);
+  const [finAppDocFiles, setFinAppDocFiles] = useState([]); // [{file, label}]
+  const [uploadingFinAppDoc, setUploadingFinAppDoc] = useState(false);
 
   const setF = k => v => setEmiForm(p => ({ ...p, [k]: v }));
   const setNL = k => v => setNewLoan(p => ({ ...p, [k]: v }));
@@ -2420,6 +2460,32 @@ function Finance() {
   const openFinancerReqs = async (f) => {
     setSelectedFinancer(f);
     try { const r = await api.dealer.financerReqs(f.id); setFinReqs(r.results || r || []); } catch { setFinReqs([]); }
+  };
+
+  const openFinAppDetail = async (app) => {
+    setFinAppDetail(app);
+    setFinAppDocs([]);
+    try { const r = await api.dealer.finAppDocs(app.id); setFinAppDocs(r.results || r || []); } catch { setFinAppDocs([]); }
+  };
+
+  const handleUploadFinAppDocs = async () => {
+    if (!finAppDetail || finAppDocFiles.length === 0) return;
+    setUploadingFinAppDoc(true);
+    let uploaded = 0;
+    for (const { file, label } of finAppDocFiles) {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("label", label || file.name);
+      try {
+        await api.dealer.uploadFinAppDoc(finAppDetail.id, fd);
+        uploaded++;
+      } catch { /* continue */ }
+    }
+    const r = await api.dealer.finAppDocs(finAppDetail.id);
+    setFinAppDocs(r.results || r || []);
+    setFinAppDocFiles([]);
+    setUploadingFinAppDoc(false);
+    toast(`${uploaded} document(s) uploaded`, "success");
   };
 
   const handleCreateFinApp = async (e) => {
@@ -2637,7 +2703,7 @@ function Finance() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: C.bg }}>
-                  {["Customer","Phone","Financer","Vehicle","Loan Amount","Status","Notes","Date"].map(h => (
+                  {["Customer","Financer","Vehicle","Loan / DP","Status","Docs","Actions"].map(h => (
                     <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
                   ))}
                 </tr>
@@ -2645,20 +2711,28 @@ function Finance() {
               <tbody>
                 {finApps.map(a => (
                   <tr key={a.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "12px 14px", fontWeight: 600, color: C.text }}>{a.customer_name}</td>
-                    <td style={{ padding: "12px 14px", color: C.primary }}>{a.customer_phone}</td>
-                    <td style={{ padding: "12px 14px", color: C.textMid }}>{a.financer_name || "—"}</td>
-                    <td style={{ padding: "12px 14px", fontSize: 12 }}>{a.vehicle_name || "—"}</td>
-                    <td style={{ padding: "12px 14px", color: C.success, fontWeight: 700 }}>{fmtINR(a.loan_amount)}</td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <div style={{ fontWeight: 600, color: C.text }}>{a.customer_name}</div>
+                      <div style={{ fontSize: 11, color: C.textDim }}>{a.customer_phone}</div>
+                    </td>
+                    <td style={{ padding: "12px 14px", color: C.textMid, fontSize: 12 }}>{a.financer_name || "—"}</td>
+                    <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.vehicle_name || "—"}</td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <div style={{ fontWeight: 700, color: C.success }}>{fmtINR(a.loan_amount)}</div>
+                      {a.down_payment && <div style={{ fontSize: 11, color: C.textDim }}>DP: {fmtINR(a.down_payment)}</div>}
+                    </td>
                     <td style={{ padding: "12px 14px" }}>
                       <Badge label={a.status} color={STATUS_COLORS[a.status] || C.textMid} />
+                      {a.status_notes && <div style={{ fontSize: 10, color: C.textDim, marginTop: 3, maxWidth: 120 }}>{a.status_notes}</div>}
                     </td>
-                    <td style={{ padding: "12px 14px", fontSize: 11, color: C.textDim, maxWidth: 160 }}>{a.status_notes || "—"}</td>
-                    <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString("en-IN") : "Draft"}</td>
+                    <td style={{ padding: "12px 14px", fontSize: 12, color: C.textDim }}>{a.doc_count ?? "—"}</td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <Btn label="📎 Docs" size="sm" outline color={C.info} onClick={() => openFinAppDetail(a)} />
+                    </td>
                   </tr>
                 ))}
                 {finApps.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No finance applications yet. Apply to an NBFC financer first, then create an application.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No finance applications yet. Apply to an NBFC financer first, then create an application.</td></tr>
                 )}
               </tbody>
             </table>
@@ -2726,8 +2800,28 @@ function Finance() {
               <Field label="Customer Email"><Input value={newFinApp.customer_email} onChange={setNFA("customer_email")} type="email" placeholder="customer@email.com" /></Field>
               <Field label="Aadhaar Number"><Input value={newFinApp.customer_aadhaar} onChange={setNFA("customer_aadhaar")} placeholder="XXXX XXXX XXXX" /></Field>
               <Field label="PAN Number"><Input value={newFinApp.customer_pan} onChange={setNFA("customer_pan")} placeholder="ABCDE1234F" /></Field>
-              <Field label="Loan Amount (₹) *"><Input value={newFinApp.loan_amount} onChange={setNFA("loan_amount")} type="number" placeholder="150000" /></Field>
-              <Field label="Down Payment (₹)"><Input value={newFinApp.down_payment} onChange={setNFA("down_payment")} type="number" placeholder="30000" /></Field>
+              <Field label="Vehicle Price (₹)">
+                <Input value={newFinApp.vehicle_price || ""} onChange={v => {
+                  const vp = parseFloat(v) || 0;
+                  const dp = parseFloat(newFinApp.down_payment) || 0;
+                  setNewFinApp(p => ({ ...p, vehicle_price: v, loan_amount: dp ? String(Math.max(0, vp - dp)) : p.loan_amount }));
+                }} type="number" placeholder="200000" />
+              </Field>
+              <Field label="Down Payment (₹)">
+                <Input value={newFinApp.down_payment} onChange={v => {
+                  const dp = parseFloat(v) || 0;
+                  const vp = parseFloat(newFinApp.vehicle_price) || 0;
+                  setNewFinApp(p => ({ ...p, down_payment: v, loan_amount: vp ? String(Math.max(0, vp - dp)) : p.loan_amount }));
+                }} type="number" placeholder="30000" />
+              </Field>
+              <Field label="Loan Amount (₹) *">
+                <Input value={newFinApp.loan_amount} onChange={setNFA("loan_amount")} type="number" placeholder="150000" />
+                {newFinApp.vehicle_price && newFinApp.down_payment && (
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>
+                    ₹{Number(newFinApp.vehicle_price || 0).toLocaleString("en-IN")} − ₹{Number(newFinApp.down_payment || 0).toLocaleString("en-IN")} = ₹{Number(newFinApp.loan_amount || 0).toLocaleString("en-IN")}
+                  </div>
+                )}
+              </Field>
               <Field label="Tenure (months)"><Input value={newFinApp.tenure_months} onChange={setNFA("tenure_months")} type="number" placeholder="36" /></Field>
               <div style={{ gridColumn: "1 / -1" }}>
                 <Field label="Notes"><TextArea value={newFinApp.notes} onChange={setNFA("notes")} placeholder="Additional notes for financer..." /></Field>
@@ -2738,6 +2832,69 @@ function Finance() {
               <Btn label={savingFinApp ? "Submitting..." : "Submit Application"} color={C.primary} type="submit" disabled={savingFinApp} />
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* ── Finance App Detail + Document Upload ── */}
+      {finAppDetail && (
+        <Modal title={`📎 Documents — ${finAppDetail.customer_name}`} onClose={() => { setFinAppDetail(null); setFinAppDocs([]); setFinAppDocFiles([]); }} width={560}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: C.textMid, marginBottom: 10 }}>
+              <span>Financer: <b style={{ color: C.text }}>{finAppDetail.financer_name || "—"}</b></span>
+              <span>Loan: <b style={{ color: C.success }}>{fmtINR(finAppDetail.loan_amount)}</b></span>
+              {finAppDetail.down_payment && <span>DP: <b>{fmtINR(finAppDetail.down_payment)}</b></span>}
+              <Badge label={finAppDetail.status} color={STATUS_COLORS[finAppDetail.status] || C.textMid} />
+            </div>
+            {finAppDetail.status_notes && <div style={{ fontSize: 12, color: C.warning, background: `${C.warning}12`, padding: "6px 10px", borderRadius: 6, marginBottom: 10 }}>ℹ {finAppDetail.status_notes}</div>}
+          </div>
+
+          {/* Existing docs */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Uploaded Documents ({finAppDocs.length})</div>
+            {finAppDocs.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.textDim }}>No documents uploaded yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {finAppDocs.map((doc, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: C.bg, borderRadius: 6, fontSize: 12 }}>
+                    <span>📄</span>
+                    <span style={{ flex: 1, color: C.text }}>{doc.label || doc.file_name || `Document ${i+1}`}</span>
+                    {doc.file && <a href={doc.file} target="_blank" rel="noreferrer" style={{ color: C.primary, fontWeight: 600 }}>View</a>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Upload new docs */}
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Upload Documents</div>
+            {finAppDocFiles.map((df, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <input type="text" value={df.label} placeholder="Document label (e.g. Aadhaar, PAN, Income Proof)"
+                  onChange={e => setFinAppDocFiles(p => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                  style={{ flex: 1, padding: "6px 10px", border: `1.5px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.bg, color: C.text, fontFamily: "inherit" }} />
+                <span style={{ fontSize: 12, color: C.textDim, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{df.file.name}</span>
+                <button onClick={() => setFinAppDocFiles(p => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <label style={{ padding: "7px 14px", border: `1.5px dashed ${C.border}`, borderRadius: 7, cursor: "pointer", fontSize: 12, color: C.textMid, fontFamily: "inherit" }}>
+                + Add File
+                <input type="file" multiple style={{ display: "none" }} onChange={e => {
+                  const files = Array.from(e.target.files).map(f => ({ file: f, label: f.name.replace(/\.[^.]+$/, "") }));
+                  setFinAppDocFiles(p => [...p, ...files]);
+                  e.target.value = "";
+                }} />
+              </label>
+              {finAppDocFiles.length > 0 && (
+                <Btn label={uploadingFinAppDoc ? "Uploading..." : `Upload ${finAppDocFiles.length} File(s)`} color={C.primary} disabled={uploadingFinAppDoc} onClick={handleUploadFinAppDocs} />
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+            <Btn label="Close" outline color={C.textMid} onClick={() => { setFinAppDetail(null); setFinAppDocs([]); setFinAppDocFiles([]); }} />
+          </div>
         </Modal>
       )}
 
@@ -4898,14 +5055,15 @@ const FINANCER_NAV = [
 // ADMIN PORTAL
 // ═══════════════════════════════════════════════════════
 const ADMIN_NAV = [
-  { id: "overview",      label: "Overview",     icon: "📊" },
-  { id: "dealers",       label: "Dealers",      icon: "🏪" },
-  { id: "financers",     label: "Financers",    icon: "🏦" },
-  { id: "users",         label: "Users",        icon: "👥" },
-  { id: "applications",  label: "Applications", icon: "📋" },
-  { id: "fin_apps",      label: "Finance Apps", icon: "💳" },
-  { id: "enquiries",     label: "Enquiries",    icon: "💬" },
-  { id: "settings",      label: "Settings",     icon: "⚙️" },
+  { id: "overview",      label: "Overview",       icon: "📊" },
+  { id: "dealers",       label: "Dealers",        icon: "🏪" },
+  { id: "financers",     label: "Financers",      icon: "🏦" },
+  { id: "users",         label: "Users",          icon: "👥" },
+  { id: "applications",  label: "Applications",   icon: "📋" },
+  { id: "fin_apps",      label: "Finance Apps",   icon: "💳" },
+  { id: "analytics",     label: "Leads Analytics",icon: "📈" },
+  { id: "enquiries",     label: "Enquiries",      icon: "💬" },
+  { id: "settings",      label: "Settings",       icon: "⚙️" },
 ];
 
 function AdminSettingsPanel({ toast }) {
@@ -4980,6 +5138,13 @@ function AdminPortal({ user, onLogout }) {
   const [financers, setFinancers] = useState([]);
   const [finApps, setFinApps] = useState([]);
   const [finAppFilter, setFinAppFilter] = useState("");
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("monthly");
+  const [analyticsFrom, setAnalyticsFrom] = useState("");
+  const [analyticsTo, setAnalyticsTo] = useState("");
+  const [resetPwdFinancer, setResetPwdFinancer] = useState(null);
+  const [managePlanTarget, setManagePlanTarget] = useState(null); // { type: 'dealer'|'financer', item }
+  const [managePlanLoading, setManagePlanLoading] = useState(false);
 
   useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
 
@@ -4998,9 +5163,15 @@ function AdminPortal({ user, onLogout }) {
       applications: () => api.admin.applications(qs).then(d => { setApplications(d.results || []); setTotalPages(d.total_pages || 1); }),
       fin_apps:     () => api.admin.financeApps(qs).then(d => { setFinApps(d.results || d || []); setTotalPages(d.total_pages || 1); }),
       enquiries:    () => api.admin.enquiries(qs).then(d => { setEnquiries(d.results || []); setTotalPages(d.total_pages || 1); }),
+      analytics:    () => {
+        const ap = new URLSearchParams({ period: analyticsPeriod });
+        if (analyticsFrom) ap.set("date_from", analyticsFrom);
+        if (analyticsTo)   ap.set("date_to", analyticsTo);
+        return api.admin.leadsAnalytics(`?${ap}`).then(d => setAnalytics(d));
+      },
     };
     (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
-  }, [page, pg, debouncedSearch, dateFrom, dateTo, appFilter]);
+  }, [page, pg, debouncedSearch, dateFrom, dateTo, appFilter, analyticsPeriod, analyticsFrom, analyticsTo]);
 
   useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
 
@@ -5027,6 +5198,40 @@ function AdminPortal({ user, onLogout }) {
     await api.admin.deleteUser(id);
     setUsers(p => p.filter(u => u.id !== id));
     toast("User deleted.", "success");
+  };
+
+  const handleManagePlan = async (planSlug) => {
+    if (!managePlanTarget) return;
+    setManagePlanLoading(true);
+    try {
+      const { type, item } = managePlanTarget;
+      if (type === "dealer") {
+        await api.admin.manageDealer(item.id, { action: "set_plan", plan_slug: planSlug });
+        setDealers(p => p.map(d => d.id === item.id ? { ...d, plan_type: planSlug === "free" ? "free" : "pro" } : d));
+      } else {
+        await api.admin.manageFinancer(item.id, { action: "set_plan", plan_slug: planSlug });
+        setFinancers(p => p.map(f => f.id === item.id ? { ...f, plan_type: planSlug } : f));
+      }
+      toast(`Plan updated to ${planSlug}`, "success");
+      setManagePlanTarget(null);
+    } catch (e) { toast(e?.error || "Failed to update plan", "error"); }
+    setManagePlanLoading(false);
+  };
+
+  const handleToggleActive = async (type, item) => {
+    const action = item.is_active === false ? "activate" : "deactivate";
+    const label = type === "dealer" ? item.dealer_name : item.company_name;
+    if (!confirm(`${action === "deactivate" ? "Deactivate" : "Activate"} ${label}?`)) return;
+    try {
+      if (type === "dealer") {
+        await api.admin.manageDealer(item.id, { action });
+        setDealers(p => p.map(d => d.id === item.id ? { ...d, is_active: action === "activate" } : d));
+      } else {
+        await api.admin.manageFinancer(item.id, { action });
+        setFinancers(p => p.map(f => f.id === item.id ? { ...f, is_active: action === "activate" } : f));
+      }
+      toast(`${label} ${action}d.`, "success");
+    } catch (e) { toast(e?.error || "Failed", "error"); }
   };
 
   const sidebarStyle = { width: 200, minWidth: 200, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 };
@@ -5135,9 +5340,11 @@ function AdminPortal({ user, onLogout }) {
                           {d.is_verified ? <span style={{ color: C.success, fontWeight: 700 }}>✓ Verified</span> : <span style={{ color: C.textDim }}>—</span>}
                         </td>
                         <td style={{ padding: "12px 14px" }}>
-                          <div style={{ display: "flex", gap: 6 }}>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                             <Btn label={d.is_verified ? "Revoke" : "Verify"} size="sm" color={d.is_verified ? C.danger : C.success} onClick={() => verifyDealer(d.id, !d.is_verified)} />
-                            <Btn label="🔑 Reset Pwd" size="sm" outline color={C.warning} onClick={() => setResetPwdDealer(d)} />
+                            <Btn label="🔑 Pwd" size="sm" outline color={C.warning} onClick={() => setResetPwdDealer(d)} />
+                            <Btn label="📦 Plan" size="sm" outline color={C.info} onClick={() => setManagePlanTarget({ type: "dealer", item: d })} />
+                            <Btn label={d.is_active === false ? "✅ Activate" : "🚫 Deactivate"} size="sm" outline color={d.is_active === false ? C.success : C.danger} onClick={() => handleToggleActive("dealer", d)} />
                           </div>
                         </td>
                       </tr>
@@ -5382,7 +5589,12 @@ function AdminPortal({ user, onLogout }) {
                           {f.is_verified ? <span style={{ color: C.success, fontWeight: 700 }}>✓ Verified</span> : <span style={{ color: C.textDim }}>Pending</span>}
                         </td>
                         <td style={{ padding: "12px 14px" }}>
-                          <Btn label={f.is_verified ? "Revoke" : "Verify"} size="sm" color={f.is_verified ? C.danger : C.success} onClick={() => verifyFinancer(f.id, !f.is_verified)} />
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            <Btn label={f.is_verified ? "Revoke" : "Verify"} size="sm" color={f.is_verified ? C.danger : C.success} onClick={() => verifyFinancer(f.id, !f.is_verified)} />
+                            <Btn label="🔑 Pwd" size="sm" outline color={C.warning} onClick={() => setResetPwdFinancer(f)} />
+                            <Btn label="📦 Plan" size="sm" outline color={C.info} onClick={() => setManagePlanTarget({ type: "financer", item: f })} />
+                            <Btn label={f.is_active === false ? "✅ Activate" : "🚫 Deactivate"} size="sm" outline color={f.is_active === false ? C.success : C.danger} onClick={() => handleToggleActive("financer", f)} />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -5441,6 +5653,105 @@ function AdminPortal({ user, onLogout }) {
           </div>
         )}
 
+        {/* Leads Analytics */}
+        {page === "analytics" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <select value={analyticsPeriod} onChange={e => setAnalyticsPeriod(e.target.value)}
+                  style={{ padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text, fontFamily: "inherit" }}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+                <input type="date" value={analyticsFrom} onChange={e => setAnalyticsFrom(e.target.value)}
+                  style={{ padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text, fontFamily: "inherit" }} />
+                <input type="date" value={analyticsTo} onChange={e => setAnalyticsTo(e.target.value)}
+                  style={{ padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text, fontFamily: "inherit" }} />
+                <Btn label="🔍 Apply" size="sm" color={C.primary} onClick={loadPage} />
+                <Btn label="↺ Clear" size="sm" outline onClick={() => { setAnalyticsFrom(""); setAnalyticsTo(""); setAnalyticsPeriod("monthly"); }} />
+              </div>
+            </Card>
+            {loading ? <Spinner /> : analytics && (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14, marginBottom: 24 }}>
+                  {[
+                    ["📋","Total Leads",    analytics.totals?.leads, C.primary],
+                    ["💰","Total Sales",    analytics.totals?.sales, C.success],
+                    ["💳","Finance Apps",   analytics.totals?.finance_apps, C.info],
+                  ].map(([icon,label,value,color]) => (
+                    <StatCard key={label} icon={icon} label={label} value={value ?? "—"} color={color} />
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+                  <Card>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>📋 Leads by Dealer (Top 20)</div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead><tr style={{ background: C.bg }}>
+                        {["Dealer","City","Leads"].map(h => <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {(analytics.dealer_breakdown || []).map(d => (
+                          <tr key={d.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                            <td style={{ padding: "8px 10px", fontWeight: 600, color: C.text }}>{d.name}</td>
+                            <td style={{ padding: "8px 10px", color: C.textMid }}>{d.city || "—"}</td>
+                            <td style={{ padding: "8px 10px" }}><Badge label={d.lead_count} color={C.primary} /></td>
+                          </tr>
+                        ))}
+                        {(analytics.dealer_breakdown || []).length === 0 && <tr><td colSpan={3} style={{ padding: 20, textAlign: "center", color: C.textDim }}>No data</td></tr>}
+                      </tbody>
+                    </table>
+                  </Card>
+                  <Card>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>💳 Finance Apps by Financer (Top 20)</div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead><tr style={{ background: C.bg }}>
+                        {["Financer","City","Apps"].map(h => <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {(analytics.financer_breakdown || []).map(f => (
+                          <tr key={f.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                            <td style={{ padding: "8px 10px", fontWeight: 600, color: C.text }}>{f.name}</td>
+                            <td style={{ padding: "8px 10px", color: C.textMid }}>{f.city || "—"}</td>
+                            <td style={{ padding: "8px 10px" }}><Badge label={f.app_count} color={C.info} /></td>
+                          </tr>
+                        ))}
+                        {(analytics.financer_breakdown || []).length === 0 && <tr><td colSpan={3} style={{ padding: 20, textAlign: "center", color: C.textDim }}>No data</td></tr>}
+                      </tbody>
+                    </table>
+                  </Card>
+                </div>
+                <Card>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>📈 Leads Timeline</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead><tr style={{ background: C.bg }}>
+                        {["Period","Leads"].map(h => <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {(analytics.leads_series || []).map((s,i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                            <td style={{ padding: "7px 10px", color: C.textMid }}>{s.period}</td>
+                            <td style={{ padding: "7px 10px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ background: C.primary, height: 8, borderRadius: 4, width: Math.max(4, (s.count / Math.max(...(analytics.leads_series||[{count:1}]).map(x=>x.count))) * 120) }} />
+                                <span style={{ fontWeight: 700, color: C.text }}>{s.count}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {(analytics.leads_series || []).length === 0 && <tr><td colSpan={2} style={{ padding: 20, textAlign: "center", color: C.textDim }}>No lead data for this period</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </div>
+            )}
+            {!loading && !analytics && <Card><div style={{ textAlign: "center", padding: 40, color: C.textDim }}>Click Apply to load analytics data.</div></Card>}
+          </div>
+        )}
+
         {/* Settings */}
         {page === "settings" && <AdminSettingsPanel toast={toast} />}
       </div>
@@ -5454,14 +5765,17 @@ function AdminPortal({ user, onLogout }) {
           {resetPwdResult ? (
             <div style={{ background: `${C.success}12`, border: `1.5px solid ${C.success}44`, borderRadius: 10, padding: 18, marginBottom: 16 }}>
               <div style={{ fontWeight: 700, color: C.success, marginBottom: 8 }}>✓ Password reset successfully</div>
-              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>New temporary password:</div>
-              <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 800, color: C.text, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 14px", letterSpacing: 2 }}>{resetPwdResult}</div><div style={{ fontSize: 12, color: C.textDim, marginTop: 6 }}>Share the full password securely with the dealer (not shown here for security).</div>
-              <div style={{ fontSize: 11, color: C.textDim, marginTop: 8 }}>Please share this securely with the dealer. They should change it after logging in.</div>
+              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>New password (copy and share with dealer):</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 800, color: C.text, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 14px", letterSpacing: 2, flex: 1 }}>{resetPwdResult}</div>
+                <Btn label="Copy" outline color={C.primary} onClick={() => { navigator.clipboard.writeText(resetPwdResult); toast("Copied!", "success"); }} />
+              </div>
+              <div style={{ fontSize: 11, color: C.textDim, marginTop: 8 }}>Ask the dealer to change this password after logging in.</div>
             </div>
           ) : (
             <>
               <Field label="New Password (leave blank to auto-generate)">
-                <Input value={resetPwdInput} onChange={setResetPwdInput} type="password" placeholder="Min 6 characters, or leave blank" />
+                <Input value={resetPwdInput} onChange={setResetPwdInput} type="text" placeholder="Min 6 characters, or leave blank to auto-generate" />
               </Field>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
                 <Btn label="Cancel" outline color={C.textMid} onClick={() => { setResetPwdDealer(null); setResetPwdInput(""); }} />
@@ -5469,7 +5783,7 @@ function AdminPortal({ user, onLogout }) {
                   setResetPwdLoading(true);
                   try {
                     const r = await api.admin.resetDealerPassword(resetPwdDealer.id, { new_password: resetPwdInput });
-                    setResetPwdResult(r.temp_password_hint || 'Password reset successfully');
+                    setResetPwdResult(r.new_password || 'Password reset successfully');
                     toast(`Password reset for ${r.dealer_name}`, "success");
                   } catch { toast("Failed to reset password", "error"); }
                   setResetPwdLoading(false);
@@ -5477,6 +5791,82 @@ function AdminPortal({ user, onLogout }) {
               </div>
             </>
           )}
+        </Modal>
+      )}
+
+      {/* ── Admin: Reset Financer Password Modal ── */}
+      {resetPwdFinancer && (
+        <Modal title={`🔑 Reset Password — ${resetPwdFinancer.company_name}`} onClose={() => { setResetPwdFinancer(null); setResetPwdInput(""); setResetPwdResult(null); }}>
+          <div style={{ marginBottom: 14, fontSize: 13, color: C.textMid }}>
+            Company: <strong>{resetPwdFinancer.company_name}</strong> &nbsp;|&nbsp; Username: <strong>{resetPwdFinancer.username}</strong>
+          </div>
+          {resetPwdResult ? (
+            <div style={{ background: `${C.success}12`, border: `1.5px solid ${C.success}44`, borderRadius: 10, padding: 18 }}>
+              <div style={{ fontWeight: 700, color: C.success, marginBottom: 8 }}>✓ Password reset successfully</div>
+              <div style={{ fontSize: 13, color: C.textMid, marginBottom: 6 }}>New password (copy and share with financer):</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 800, color: C.text, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 14px", letterSpacing: 2, flex: 1 }}>{resetPwdResult}</div>
+                <Btn label="Copy" outline color={C.primary} onClick={() => { navigator.clipboard.writeText(resetPwdResult); toast("Copied!", "success"); }} />
+              </div>
+              <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>Ask the financer to change this password after logging in.</div>
+            </div>
+          ) : (
+            <>
+              <Field label="New Password (leave blank to auto-generate)">
+                <Input value={resetPwdInput} onChange={setResetPwdInput} type="text" placeholder="Min 6 characters, or leave blank to auto-generate" />
+              </Field>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+                <Btn label="Cancel" outline color={C.textMid} onClick={() => { setResetPwdFinancer(null); setResetPwdInput(""); }} />
+                <Btn label={resetPwdLoading ? "Resetting..." : "🔑 Reset Password"} color={C.warning} disabled={resetPwdLoading} onClick={async () => {
+                  setResetPwdLoading(true);
+                  try {
+                    const r = await api.admin.resetFinancerPassword(resetPwdFinancer.id, { new_password: resetPwdInput });
+                    setResetPwdResult(r.new_password || 'Password reset successfully');
+                    toast(`Password reset for ${r.company_name}`, "success");
+                  } catch { toast("Failed to reset password", "error"); }
+                  setResetPwdLoading(false);
+                }} />
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
+
+      {/* ── Admin: Manage Plan Modal ── */}
+      {managePlanTarget && (
+        <Modal title={`📦 Change Plan — ${managePlanTarget.type === "dealer" ? managePlanTarget.item.dealer_name : managePlanTarget.item.company_name}`} onClose={() => setManagePlanTarget(null)}>
+          <div style={{ fontSize: 13, color: C.textMid, marginBottom: 16 }}>
+            Current plan: <strong>{managePlanTarget.item.plan_type || "free"}</strong>
+          </div>
+          {managePlanTarget.type === "dealer" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { slug: "free", name: "Free Trial", desc: "5 listings, 20 leads/invoices/enquiries lifetime", color: C.warning },
+                { slug: "early_dealer", name: "Early Dealer (₹5,000/yr)", desc: "Unlimited listings, all features, 1 year validity", color: C.success },
+                { slug: "pro", name: "Pro Plan (₹9,000/yr)", desc: "Unlimited everything, all features, 1 year validity", color: C.primary },
+              ].map(p => (
+                <button key={p.slug} disabled={managePlanLoading} onClick={() => handleManagePlan(p.slug)}
+                  style={{ padding: "14px 18px", borderRadius: 10, border: `2px solid ${p.color}`, background: `${p.color}10`, cursor: managePlanLoading ? "wait" : "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                  <div style={{ fontWeight: 700, color: p.color, fontSize: 14 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: C.textMid, marginTop: 3 }}>{p.desc}</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { slug: "free", name: "Free Trial", desc: "Max 2 dealers · 5 applications · ₹3,000/lead commission", color: C.warning },
+                { slug: "pro",  name: "Pro (₹5,000/yr)", desc: "Unlimited dealers · Unlimited apps · ₹2,000/lead commission", color: C.primary },
+              ].map(p => (
+                <button key={p.slug} disabled={managePlanLoading} onClick={() => handleManagePlan(p.slug)}
+                  style={{ padding: "14px 18px", borderRadius: 10, border: `2px solid ${p.color}`, background: `${p.color}10`, cursor: managePlanLoading ? "wait" : "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                  <div style={{ fontWeight: 700, color: p.color, fontSize: 14 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: C.textMid, marginTop: 3 }}>{p.desc}</div>
+                </button>
+              ))}
+            </div>
+          )}
+          {managePlanLoading && <div style={{ textAlign: "center", marginTop: 16 }}><Spinner /></div>}
         </Modal>
       )}
     </div>
@@ -5532,11 +5922,13 @@ function FinancerPortal({ user, onLogout }) {
   useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
 
   const handleApproveDealer = async (dealerId, action) => {
+    // backend expects status: approved|rejected|suspended
+    const statusMap = { approve: "approved", reject: "rejected", suspend: "suspended", approve_again: "approved" };
     try {
-      await api.financer.approveDealer(dealerId, { action });
+      await api.financer.approveDealer(dealerId, { status: statusMap[action] || action });
       loadPage();
       toast(`Dealer ${action}d`, action === "approve" ? "success" : "warning");
-    } catch { toast("Action failed", "error"); }
+    } catch (e) { toast(e?.error || "Action failed", "error"); }
   };
 
   const handleUpdateAppStatus = async () => {
@@ -5616,9 +6008,9 @@ function FinancerPortal({ user, onLogout }) {
             {subscription && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14, marginBottom: 24 }}>
                 {[
-                  ["📄","Applications Used", subscription.applications_used, C.info],
-                  ["📊","Monthly Limit", subscription.monthly_limit ?? "Unlimited", C.primary],
-                  ["✅","Plan", subscription.plan_name || "Free", subscription.plan_name === "Free" ? C.warning : C.success],
+                  ["📦","Plan", subscription.plan_name || "Free Trial", subscription.plan_slug === "pro" ? C.success : C.warning],
+                  ["📄","Apps Used", `${subscription.applications_used} / ${subscription.max_applications === 0 ? "∞" : (subscription.max_applications ?? 5)}`, C.info],
+                  ["💰","Commission/Lead", subscription.commission_per_lead ? `₹${Number(subscription.commission_per_lead).toLocaleString("en-IN")}` : "₹3,000", C.primary],
                 ].map(([icon,label,value,color]) => (
                   <StatCard key={label} icon={icon} label={label} value={value ?? "—"} color={color} />
                 ))}
@@ -5680,7 +6072,7 @@ function FinancerPortal({ user, onLogout }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: C.bg }}>
-                      {["Dealer","City","Association","Actions"].map(h => (
+                      {["Dealer","City","Vehicles","Association","Actions"].map(h => (
                         <th key={h} style={{ padding: "10px 14px", textAlign: "left", color: C.textMid, fontWeight: 600, fontSize: 11, borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>
                       ))}
                     </tr>
@@ -5690,28 +6082,32 @@ function FinancerPortal({ user, onLogout }) {
                       <tr key={d.id} style={{ borderBottom: `1px solid ${C.border}` }}>
                         <td style={{ padding: "12px 14px" }}>
                           <div style={{ fontWeight: 600, color: C.text }}>{d.dealer_name}</div>
-                          <div style={{ fontSize: 11, color: C.textDim }}>{d.city}</div>
+                          <div style={{ fontSize: 11, color: C.textDim }}>{d.city}, {d.state}</div>
                         </td>
                         <td style={{ padding: "12px 14px", color: C.textMid }}>{d.city}</td>
+                        <td style={{ padding: "12px 14px", color: C.textMid }}>{d.vehicle_count ?? 0}</td>
                         <td style={{ padding: "12px 14px" }}>
-                          <Badge label={d.association_status || "none"} color={d.association_status === "approved" ? C.success : d.association_status === "rejected" ? C.danger : d.association_status === "pending" ? C.warning : C.textDim} />
+                          <Badge label={d.association_status || "not applied"} color={d.association_status === "approved" ? C.success : d.association_status === "rejected" ? C.danger : d.association_status === "pending" ? C.warning : C.textDim} />
                         </td>
                         <td style={{ padding: "12px 14px" }}>
                           <div style={{ display: "flex", gap: 6 }}>
                             {d.association_status === "pending" && (
                               <>
-                                <Btn label="Approve" size="sm" color={C.success} onClick={() => handleApproveDealer(d.id, "approve")} />
-                                <Btn label="Reject" size="sm" color={C.danger} onClick={() => handleApproveDealer(d.id, "reject")} />
+                                <Btn label="✅ Approve" size="sm" color={C.success} onClick={() => handleApproveDealer(d.id, "approve")} />
+                                <Btn label="✗ Reject" size="sm" color={C.danger} onClick={() => handleApproveDealer(d.id, "reject")} />
                               </>
                             )}
                             {d.association_status === "approved" && (
-                              <Btn label="Suspend" size="sm" color={C.warning} onClick={() => handleApproveDealer(d.id, "suspend")} />
+                              <Btn label="⛔ Suspend" size="sm" color={C.warning} onClick={() => handleApproveDealer(d.id, "suspend")} />
+                            )}
+                            {(d.association_status === "rejected" || d.association_status === "suspended" || !d.association_status) && (
+                              <Btn label="+ Approve" size="sm" outline color={C.success} onClick={() => handleApproveDealer(d.id, "approve")} />
                             )}
                           </div>
                         </td>
                       </tr>
                     ))}
-                    {dealers.length === 0 && <tr><td colSpan={4} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No dealers found</td></tr>}
+                    {dealers.length === 0 && <tr><td colSpan={5} style={{ padding: 32, textAlign: "center", color: C.textDim }}>No verified dealers found yet. Wait for admin to verify dealers.</td></tr>}
                   </tbody>
                 </table>
               )}

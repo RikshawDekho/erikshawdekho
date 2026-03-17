@@ -241,7 +241,7 @@ class FinancerDocumentAdmin(admin.ModelAdmin):
 @admin.register(FinancerPlan)
 class FinancerPlanAdmin(admin.ModelAdmin):
     list_display = ['name', 'slug', 'price_per_year', 'max_dealer_associations',
-                    'max_finance_applications', 'success_commission_pct', 'is_active']
+                    'max_finance_applications', 'commission_per_lead', 'is_active']
     list_editable = ['is_active']
 
 

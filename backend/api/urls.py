@@ -116,7 +116,15 @@ urlpatterns = [
     path('dealer/finance-applications/<int:app_id>/documents/',views.finance_application_documents,     name='finance-app-documents'),
 
     # Admin: financer management
-    path('admin-portal/financers/',                            views.admin_financers,                   name='admin-financers'),
-    path('admin-portal/financers/<int:financer_id>/',          views.admin_financers,                   name='admin-financer-detail'),
-    path('admin-portal/finance-applications/',                 views.admin_finance_applications,        name='admin-finance-applications'),
+    path('admin-portal/financers/',                                    views.admin_financers,                   name='admin-financers'),
+    path('admin-portal/financers/<int:financer_id>/',                  views.admin_financers,                   name='admin-financer-detail'),
+    path('admin-portal/financers/<int:financer_id>/reset-password/',   views.admin_reset_financer_password,     name='admin-reset-financer-password'),
+    path('admin-portal/financers/<int:financer_id>/manage/',           views.admin_manage_financer,             name='admin-manage-financer'),
+    path('admin-portal/finance-applications/',                         views.admin_finance_applications,        name='admin-finance-applications'),
+
+    # Admin: dealer management (plan + deactivate)
+    path('admin-portal/dealers/<int:dealer_id>/manage/',               views.admin_manage_dealer,               name='admin-manage-dealer'),
+
+    # Admin: leads analytics
+    path('admin-portal/leads-analytics/',                              views.admin_leads_analytics,             name='admin-leads-analytics'),
 ]

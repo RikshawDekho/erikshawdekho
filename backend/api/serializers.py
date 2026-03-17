@@ -2,7 +2,7 @@ import re as _re
 from rest_framework import serializers
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.db.models import Avg
+from django.db.models import Avg, Q
 from django.utils import timezone
 from datetime import timedelta
 from .models import (
@@ -130,7 +130,8 @@ class RegisterSerializer(serializers.Serializer):
         if len(digits) != 10 or not digits[0] in '6789':
             raise serializers.ValidationError("Enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).")
         clean = digits
-        if DealerProfile.objects.filter(phone__endswith=clean).exists():
+        # Normalize: check both stored-as-10 and stored-as-+91XXXXXXXXXX
+        if DealerProfile.objects.filter(Q(phone=clean) | Q(phone=f'+91{clean}') | Q(phone=f'91{clean}')).exists():
             raise serializers.ValidationError("An account with this mobile number already exists.")
         return clean
 
@@ -247,13 +248,21 @@ class PublicDealerSerializer(serializers.ModelSerializer):
                   'description', 'logo', 'avg_rating', 'review_count', 'vehicle_count']
 
     def get_avg_rating(self, obj):
-        avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']
-        return round(avg, 1) if avg else None
+        # Use annotation if available (avoids extra query)
+        if hasattr(obj, '_avg_rating'):
+            avg = obj._avg_rating
+        else:
+            avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']
+        return round(float(avg), 1) if avg else None
 
     def get_review_count(self, obj):
+        if hasattr(obj, '_review_count'):
+            return obj._review_count
         return obj.reviews.count()
 
     def get_vehicle_count(self, obj):
+        if hasattr(obj, '_vehicle_count'):
+            return obj._vehicle_count
         return obj.vehicles.filter(is_active=True, stock_status__in=['in_stock', 'low_stock']).count()
 
 
@@ -352,8 +361,8 @@ class FinancerRegisterSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         email = validated_data['email']
-        username = email.split('@')[0]
-        base = username
+        base = _re.sub(r'[^a-zA-Z0-9]', '', email.split('@')[0]).lower()[:20] or 'financer'
+        username = base
         n = 1
         while User.objects.filter(username=username).exists():
             username = f"{base}{n}"
@@ -388,19 +397,26 @@ class CustomerRegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError("Email already registered.")
         return value.lower()
 
+    def validate_full_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Full name cannot be blank.")
+        return value
+
     def create(self, validated_data):
         email = validated_data['email']
-        username = email.split('@')[0]
-        base = username
+        base = _re.sub(r'[^a-zA-Z0-9]', '', email.split('@')[0]).lower()[:20] or 'customer'
+        username = base
         n = 1
         while User.objects.filter(username=username).exists():
             username = f"{base}{n}"
             n += 1
+        parts = validated_data['full_name'].split()
         user = User.objects.create_user(
             username=username, email=email,
             password=validated_data['password'],
-            first_name=validated_data['full_name'].split()[0] if validated_data['full_name'] else '',
-            last_name=' '.join(validated_data['full_name'].split()[1:]) if len(validated_data['full_name'].split()) > 1 else '',
+            first_name=parts[0] if parts else '',
+            last_name=' '.join(parts[1:]) if len(parts) > 1 else '',
         )
         UserProfile.objects.create(user=user, user_type='customer', phone=validated_data['phone'], city=validated_data.get('city', ''))
         CustomerProfile.objects.create(

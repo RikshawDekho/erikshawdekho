@@ -1,6 +1,8 @@
 /**
  * FooterNew — Updated footer with 3-ecosystem navigation + i18n
+ * Support contact is fetched from /api/platform/settings/ so admin changes take effect immediately.
  */
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useI18n } from "../i18n";
 import { ROLE_C, TYPO, RADIUS, LAYOUT } from "../theme";
@@ -8,9 +10,35 @@ import { BRANDING } from "../branding";
 
 const G = ROLE_C.driver;
 
+// Cache the fetched settings so every footer mount doesn't re-fetch
+let _cachedSettings = null;
+
+async function fetchPlatformSettings() {
+  if (_cachedSettings) return _cachedSettings;
+  try {
+    const res = await fetch("/api/platform/settings/");
+    if (res.ok) {
+      _cachedSettings = await res.json();
+      return _cachedSettings;
+    }
+  } catch {}
+  return null;
+}
+
 export default function FooterNew() {
   const { t } = useI18n();
-  const supportNumber = BRANDING.support.phone || (BRANDING.support.whatsappDigits ? `+${BRANDING.support.whatsappDigits}` : "WhatsApp");
+  const [settings, setSettings] = useState(null);
+
+  useEffect(() => {
+    fetchPlatformSettings().then(s => { if (s) setSettings(s); });
+  }, []);
+
+  const supportEmail   = settings?.support_email   || BRANDING.support.email;
+  const supportPhone   = settings?.support_phone   || BRANDING.support.phone || "";
+  const supportWA      = settings?.support_whatsapp || BRANDING.support.whatsappDigits || supportPhone;
+  const supportName    = settings?.support_name    || BRANDING.platformName;
+
+  const displayPhone = supportPhone || (supportWA ? `+${supportWA}` : null);
 
   return (
     <footer style={{ background: "#111827", color: "#d1d5db", marginTop: "auto", fontFamily: TYPO.body }}>
@@ -65,9 +93,35 @@ export default function FooterNew() {
         <div>
           <div style={{ fontWeight: 700, color: "#f9fafb", marginBottom: 14, fontSize: 14 }}>{t("footer.contact")}</div>
           <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 2 }}>
-            <div>📧 {BRANDING.support.email}</div>
-            <div>📱 WhatsApp: {supportNumber}</div>
-            <div>🕐 Mon–Sat, 9 AM – 7 PM IST</div>
+            {supportEmail && (
+              <div>
+                <a href={`mailto:${supportEmail}`} style={{ color: "#9ca3af", textDecoration: "none" }}
+                  onMouseEnter={e => e.target.style.color = G}
+                  onMouseLeave={e => e.target.style.color = "#9ca3af"}>
+                  📧 {supportEmail}
+                </a>
+              </div>
+            )}
+            {displayPhone && (
+              <div>
+                <a href={`tel:${displayPhone.replace(/\D/g,'')}`} style={{ color: "#9ca3af", textDecoration: "none" }}
+                  onMouseEnter={e => e.target.style.color = G}
+                  onMouseLeave={e => e.target.style.color = "#9ca3af"}>
+                  📱 {displayPhone}
+                </a>
+              </div>
+            )}
+            {supportWA && (
+              <div>
+                <a href={`https://wa.me/${String(supportWA).replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                  style={{ color: "#9ca3af", textDecoration: "none" }}
+                  onMouseEnter={e => e.target.style.color = "#25d366"}
+                  onMouseLeave={e => e.target.style.color = "#9ca3af"}>
+                  💬 WhatsApp Support
+                </a>
+              </div>
+            )}
+            <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>🕐 Mon–Sat, 9 AM – 7 PM IST</div>
           </div>
         </div>
       </div>
