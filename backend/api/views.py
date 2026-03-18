@@ -388,7 +388,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def marketplace_vehicles(request):
-    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_demo=False).select_related('brand','dealer')
+    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_verified=True, dealer__is_demo=False).select_related('brand','dealer')
     fuel = request.query_params.get('fuel_type')
     search = request.query_params.get('search')
     featured = request.query_params.get('featured')
