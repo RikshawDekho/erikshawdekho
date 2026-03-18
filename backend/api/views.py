@@ -1944,6 +1944,8 @@ def financer_dealer_list(request):
         fp = request.user.financer_profile
     except (AttributeError, FinancerProfile.DoesNotExist):
         return Response({'error': 'Not a financer account'}, status=403)
+    if not fp.is_verified:
+        return Response({'error': 'Your financer account must be verified by admin before you can manage dealers.'}, status=403)
 
     search = request.query_params.get('search', '')
     city   = request.query_params.get('city', '')
@@ -1988,6 +1990,8 @@ def financer_approve_dealer(request, dealer_id):
         fp = request.user.financer_profile
     except (AttributeError, FinancerProfile.DoesNotExist):
         return Response({'error': 'Not a financer account'}, status=403)
+    if not fp.is_verified:
+        return Response({'error': 'Your financer account must be verified by admin before you can approve dealers.'}, status=403)
 
     try:
         dealer = DealerProfile.objects.get(pk=dealer_id, is_verified=True)
@@ -2113,6 +2117,8 @@ def financer_required_documents(request):
         fp = request.user.financer_profile
     except (AttributeError, FinancerProfile.DoesNotExist):
         return Response({'error': 'Not a financer account'}, status=403)
+    if not fp.is_verified:
+        return Response({'error': 'Your financer account must be verified by admin before you can manage document requirements.'}, status=403)
 
     if request.method == 'POST':
         doc_type    = request.data.get('doc_type', '').strip()
@@ -2446,6 +2452,8 @@ def financer_applications(request):
         fp = request.user.financer_profile
     except (AttributeError, FinancerProfile.DoesNotExist):
         return Response({'error': 'Not a financer account'}, status=403)
+    if not fp.is_verified:
+        return Response({'error': 'Your financer account must be verified by admin before you can view applications.'}, status=403)
 
     search    = request.query_params.get('search', '')
     app_status = request.query_params.get('status', '')
@@ -2503,6 +2511,8 @@ def financer_update_application_status(request, app_id):
         fp = request.user.financer_profile
     except (AttributeError, FinancerProfile.DoesNotExist):
         return Response({'error': 'Not a financer account'}, status=403)
+    if not fp.is_verified:
+        return Response({'error': 'Your financer account must be verified by admin before you can update applications.'}, status=403)
 
     try:
         app = FinanceApplication.objects.get(pk=app_id, financer=fp)
