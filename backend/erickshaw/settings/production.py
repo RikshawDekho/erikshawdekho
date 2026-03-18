@@ -28,7 +28,7 @@ ALLOWED_HOSTS = [
 _db_url = os.environ.get('PROD_DATABASE_URL') or os.environ.get('DATABASE_URL')
 if not _db_url:
     raise RuntimeError("PROD_DATABASE_URL or DATABASE_URL must be set in production")
-DATABASES = {'default': dj_database_url.parse(_db_url, conn_max_age=600)}
+DATABASES = {'default': dj_database_url.parse(_db_url, conn_max_age=0)}
 
 # ── Email: SMTP ────────────────────────────────────────────────────
 EMAIL_BACKEND       = 'django.core.mail.backends.smtp.EmailBackend'
