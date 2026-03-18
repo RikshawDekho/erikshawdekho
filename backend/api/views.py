@@ -402,7 +402,7 @@ def marketplace_vehicles(request):
     qs_priority = qs.filter(dealer__plan__priority_ranking=True)
     qs_free = qs.exclude(dealer__plan__priority_ranking=True)
     combined = list(qs_priority.order_by('-is_featured', '-created_at')[:40]) + list(qs_free.order_by('-is_featured', '-created_at')[:20])
-    serializer = PublicVehicleSerializer(combined[:60], many=True)
+    serializer = PublicVehicleSerializer(combined[:60], many=True, context={'request': request})
     return Response({'results': serializer.data, 'count': qs.count()})
 
 
@@ -743,7 +743,7 @@ def dealer_detail(request, dealer_id):
     reviews  = dealer.reviews.all()[:10]
     return Response({
         'dealer':   PublicDealerSerializer(dealer).data,
-        'vehicles': PublicVehicleSerializer(vehicles, many=True).data,
+        'vehicles': PublicVehicleSerializer(vehicles, many=True, context={'request': request}).data,
         'reviews':  DealerReviewSerializer(reviews, many=True).data,
     })
 
@@ -1867,7 +1867,7 @@ def vehicle_detail_public(request, vehicle_id):
         v = Vehicle.objects.select_related('dealer', 'brand').get(pk=vehicle_id, is_active=True)
     except Vehicle.DoesNotExist:
         return Response({'error': 'Vehicle not found'}, status=404)
-    return Response(PublicVehicleSerializer(v).data)
+    return Response(PublicVehicleSerializer(v, context={'request': request}).data)
 
 
 @api_view(['GET'])
@@ -1882,7 +1882,7 @@ def vehicles_compare(request):
     if not ids:
         return Response({'error': 'Provide vehicle IDs via ?ids=1,2,3'}, status=400)
     vehicles = Vehicle.objects.filter(pk__in=ids, is_active=True).select_related('dealer', 'brand')
-    return Response(PublicVehicleSerializer(vehicles, many=True).data)
+    return Response(PublicVehicleSerializer(vehicles, many=True, context={'request': request}).data)
 
 
 @api_view(['GET'])

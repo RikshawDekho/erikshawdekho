@@ -1,5 +1,5 @@
 // ErikshawDekho Service Worker — PWA offline + update support
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const STATIC_CACHE = `erikshaw-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `erikshaw-runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
@@ -55,14 +55,11 @@ self.addEventListener("fetch", (event) => {
   if (!sameOrigin && !isApiRequest(url)) return;
 
   if (isNavigationRequest(request)) {
+    // Always network-first for HTML; never cache navigation responses (avoids stale JS bundle refs after deploy)
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          cacheRuntime(request, response.clone());
-          return response;
-        })
         .catch(async () => {
-          return (await caches.match(request)) || (await caches.match("/")) || (await caches.match(OFFLINE_URL));
+          return (await caches.match("/")) || (await caches.match(OFFLINE_URL));
         })
     );
     return;

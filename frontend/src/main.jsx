@@ -44,33 +44,61 @@ if ('serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
 
+      // Show "New version available" banner to the user
+      function showUpdateBanner(worker) {
+        // Avoid duplicate banners
+        if (document.getElementById('pwa-update-banner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'pwa-update-banner';
+        banner.style.cssText = [
+          'position:fixed', 'bottom:80px', 'left:50%', 'transform:translateX(-50%)',
+          'z-index:9999', 'background:#16a34a', 'color:#fff',
+          'padding:12px 20px', 'border-radius:12px', 'box-shadow:0 4px 20px rgba(0,0,0,0.3)',
+          'display:flex', 'align-items:center', 'gap:12px', 'font-family:inherit',
+          'font-size:14px', 'font-weight:600', 'white-space:nowrap',
+          'max-width:calc(100vw - 32px)',
+        ].join(';');
+        banner.innerHTML = `
+          <span>🔄 नया अपडेट available है</span>
+          <button id="pwa-update-btn" style="background:#fff;color:#16a34a;border:none;padding:6px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;">Update करें</button>
+          <button id="pwa-dismiss-btn" style="background:rgba(255,255,255,0.2);color:#fff;border:none;padding:6px 10px;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+        `;
+        document.body.appendChild(banner);
+        document.getElementById('pwa-update-btn').addEventListener('click', () => {
+          worker.postMessage({ type: 'SKIP_WAITING' });
+          banner.remove();
+        });
+        document.getElementById('pwa-dismiss-btn').addEventListener('click', () => banner.remove());
+      }
+
+      // If a new SW is already waiting (page was open when update came in), show banner immediately
       if (registration.waiting) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        showUpdateBanner(registration.waiting);
       }
 
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         if (!newWorker) return;
-
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            newWorker.postMessage({ type: 'SKIP_WAITING' });
+            showUpdateBanner(newWorker);
           }
         });
       });
 
-      if (navigator.serviceWorker.controller) {
-        let refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (refreshing) return;
-          refreshing = true;
-          window.location.reload();
-        });
-      }
+      // When new SW takes control, reload to get fresh assets
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
 
-      window.setInterval(() => {
-        registration.update().catch(() => {});
-      }, 60 * 60 * 1000);
+      // Check for updates every 30 minutes (also on visibility change)
+      window.setInterval(() => { registration.update().catch(() => {}); }, 30 * 60 * 1000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') registration.update().catch(() => {});
+      });
     } catch {
       // Keep startup resilient even if SW registration fails.
     }

@@ -40,6 +40,7 @@ const translations = {
   // ─── Dealer Section ────────────────────────────────────
   "dealer.title":          { en: "Dealer / Showroom",          hi: "डीलर / शोरूम" },
   "dealer.subtitle":       { en: "Login Required",             hi: "लॉगिन आवश्यक" },
+  "dealer.subtitle_find":  { en: "Near You",                   hi: "आपके पास" },
   "dealer.desc":           { en: "Manage your showroom CRM, track leads, generate invoices, grow your business.", hi: "अपनी showroom manage करें, leads track करें, invoices बनाएँ, business बढ़ाएँ।" },
   "dealer.portal":         { en: "Dealer Portal →",            hi: "डीलर पोर्टल →" },
   "dealer.leads":          { en: "Lead Management",            hi: "लीड मैनेजमेंट" },

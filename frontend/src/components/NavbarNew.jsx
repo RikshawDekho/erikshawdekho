@@ -97,13 +97,22 @@ export default function Navbar() {
   return (
     <>
       <style>{`
-        .eco-tab { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: ${RADIUS.md}px; font-weight: 700; font-size: 13px; text-decoration: none; transition: all 0.18s; border: 2px solid transparent; cursor: pointer; }
+        .eco-tab { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: ${RADIUS.md}px; font-weight: 700; font-size: 13px; text-decoration: none; transition: all 0.18s; border: 2px solid transparent; cursor: pointer; white-space: nowrap; }
         .eco-tab:hover { transform: translateY(-1px); }
         @keyframes slideDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
         .mobile-menu { animation: slideDown 0.2s ease; }
         .bottom-tab { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; font-size: 10px; font-weight: 700; text-decoration: none; transition: all 0.15s; flex: 1; border: none; background: none; cursor: pointer; }
         @media (min-width: 769px) { .mobile-bottom-nav { display: none !important; } }
-        @media (max-width: 768px) { .desktop-nav { display: none !important; } .hamburger-btn { display: flex !important; } body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); } }
+        @media (max-width: 768px) {
+          .desktop-nav { display: none !important; }
+          .hamburger-btn { display: flex !important; }
+          .navbar-right-btns .install-btn { display: none !important; }
+          .navbar-right-btns .refresh-btn { display: none !important; }
+          body { padding-bottom: calc(60px + env(safe-area-inset-bottom, 8px)); }
+        }
+        @supports (height: 100dvh) {
+          @media (max-width: 768px) { body { min-height: 100dvh; } }
+        }
       `}</style>
 
       {/* ── Top Nav ── */}
@@ -120,10 +129,14 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop: Ecosystem Tabs */}
-          <div className="desktop-nav" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div className="desktop-nav" style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <Link to="/driver/marketplace" className="eco-tab"
               style={{ background: activeEco === "driver" ? `${G}12` : "transparent", color: activeEco === "driver" ? G : "#6b7280", borderColor: activeEco === "driver" ? `${G}40` : "transparent" }}>
               🛺 {t("nav.driver")}
+            </Link>
+            <Link to="/driver/dealers" className="eco-tab"
+              style={{ background: loc.pathname === "/driver/dealers" ? `${G}12` : "transparent", color: loc.pathname === "/driver/dealers" ? G : "#6b7280", borderColor: loc.pathname === "/driver/dealers" ? `${G}40` : "transparent" }}>
+              📍 {t("nav.dealers")}
             </Link>
             <Link to="/dealer" className="eco-tab"
               style={{ background: activeEco === "dealer" ? `${D}12` : "transparent", color: activeEco === "dealer" ? D : "#6b7280", borderColor: activeEco === "dealer" ? `${D}40` : "transparent" }}>
@@ -136,12 +149,13 @@ export default function Navbar() {
           </div>
 
           {/* Right: Language + Refresh + Hamburger */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="navbar-right-btns" style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             <LanguageSwitcher />
 
             {canInstall && !isInstalled && (
               <button onClick={promptInstall}
                 title="Install app"
+                className="install-btn"
                 style={{
                   background: "none", border: "1px solid #e5e7eb", borderRadius: RADIUS.sm,
                   padding: "6px 10px", cursor: "pointer", fontSize: 13, color: "#6b7280",
@@ -153,9 +167,10 @@ export default function Navbar() {
               </button>
             )}
 
-            {/* Hard Refresh */}
+            {/* Hard Refresh (desktop only) */}
             <button onClick={hardRefresh}
               title={t("action.hard_refresh")}
+              className="refresh-btn"
               style={{
                 background: "none", border: "1px solid #e5e7eb", borderRadius: RADIUS.sm,
                 padding: "6px 10px", cursor: "pointer", fontSize: 14, color: "#6b7280",
@@ -178,19 +193,23 @@ export default function Navbar() {
 
         {/* Mobile dropdown menu */}
         {open && (
-          <div className="mobile-menu" style={{ background: "#fff", borderTop: "1px solid #e5e7eb", padding: "12px 16px 16px" }}>
-            <Link to="/driver/marketplace" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0", color: activeEco === "driver" ? G : "#374151", fontWeight: 700, fontSize: 15, textDecoration: "none" }} onClick={() => setOpen(false)}>
+          <div className="mobile-menu" style={{ background: "#fff", borderTop: "1px solid #e5e7eb", padding: "8px 16px 12px" }}>
+            <Link to="/driver/marketplace" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", color: activeEco === "driver" && loc.pathname !== "/driver/dealers" ? G : "#374151", fontWeight: 700, fontSize: 15, textDecoration: "none", borderBottom: "1px solid #f3f4f6" }} onClick={() => setOpen(false)}>
               🛺 {t("nav.driver")}
               <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>— {t("driver.subtitle")}</span>
             </Link>
-            <Link to="/driver/learn" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", color: loc.pathname.startsWith("/driver/") ? G : "#374151", fontWeight: 700, fontSize: 14, textDecoration: "none" }} onClick={() => setOpen(false)}>
+            <Link to="/driver/dealers" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", color: loc.pathname === "/driver/dealers" ? G : "#374151", fontWeight: 700, fontSize: 14, textDecoration: "none", borderBottom: "1px solid #f3f4f6" }} onClick={() => setOpen(false)}>
+              📍 {t("nav.dealers")}
+              <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>— {t("dealer.subtitle_find")}</span>
+            </Link>
+            <Link to="/driver/learn" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", color: loc.pathname.startsWith("/driver/learn") ? G : "#374151", fontWeight: 700, fontSize: 14, textDecoration: "none", borderBottom: "1px solid #f3f4f6" }} onClick={() => setOpen(false)}>
               🎓 {t("nav.learn")}
             </Link>
-            <Link to="/dealer" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0", color: activeEco === "dealer" ? D : "#374151", fontWeight: 700, fontSize: 15, textDecoration: "none" }} onClick={() => setOpen(false)}>
+            <Link to="/dealer" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", color: activeEco === "dealer" ? D : "#374151", fontWeight: 700, fontSize: 15, textDecoration: "none", borderBottom: "1px solid #f3f4f6" }} onClick={() => setOpen(false)}>
               🏪 {t("nav.dealer")}
               <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>— {t("dealer.subtitle")}</span>
             </Link>
-            <Link to="/financer" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0", color: activeEco === "financer" ? P : "#374151", fontWeight: 700, fontSize: 15, textDecoration: "none" }} onClick={() => setOpen(false)}>
+            <Link to="/financer" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", color: activeEco === "financer" ? P : "#374151", fontWeight: 700, fontSize: 15, textDecoration: "none" }} onClick={() => setOpen(false)}>
               🏦 {t("nav.financer")}
               <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>— {t("financer.subtitle")}</span>
             </Link>

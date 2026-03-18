@@ -226,6 +226,18 @@ class PublicVehicleSerializer(serializers.ModelSerializer):
     dealer_address  = serializers.CharField(source='dealer.address', read_only=True)
     dealer_state    = serializers.CharField(source='dealer.state', read_only=True)
     dealer_verified = serializers.BooleanField(source='dealer.is_verified', read_only=True)
+    thumbnail       = serializers.SerializerMethodField()
+
+    def get_thumbnail(self, obj):
+        # Prefer uploaded file; fall back to external URL (seeded/demo vehicles)
+        if obj.thumbnail:
+            request = self.context.get('request')
+            try:
+                url = obj.thumbnail.url
+                return request.build_absolute_uri(url) if request else url
+            except Exception:
+                pass
+        return obj.thumbnail_url or ''
 
     class Meta:
         model  = Vehicle
