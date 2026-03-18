@@ -56,9 +56,11 @@ CSRF_TRUSTED_ORIGINS = [
     *[h.strip() for h in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if h.strip()],
 ]
 
-# ── Security headers (full production — HSTS pre-loaded) ──────────
-SECURE_SSL_REDIRECT            = True
-SECURE_REDIRECT_EXEMPT         = [r'^health/$']   # Railway healthcheck is plain HTTP internally
+# ── Security headers ───────────────────────────────────────────────
+# Railway terminates HTTPS at its load balancer and forwards plain HTTP
+# to the container. SECURE_SSL_REDIRECT must be False or Django redirects
+# every request to HTTPS → infinite loop → 502. Railway handles SSL.
+SECURE_SSL_REDIRECT            = False
 SECURE_PROXY_SSL_HEADER        = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_HSTS_SECONDS            = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
