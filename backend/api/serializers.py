@@ -6,7 +6,7 @@ from django.db.models import Avg, Q
 from django.utils import timezone
 from datetime import timedelta
 from .models import (
-    DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan,
+    DealerProfile, Brand, VehicleType, Vehicle, VehicleImage, Lead, Sale, Customer, Task, FinanceLoan,
     DealerApplication, DealerReview, UserProfile, VideoResource, BlogPost, Plan,
     FinancerProfile, FinancerDocument, CustomerProfile,
 )
@@ -34,9 +34,33 @@ class BrandSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class VehicleTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VehicleType
+        fields = ['id', 'name', 'slug', 'is_default']
+
+
+class VehicleImageSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    def get_url(self, obj):
+        request = self.context.get('request')
+        try:
+            url = obj.image.url
+            return request.build_absolute_uri(url) if request else url
+        except Exception:
+            return ''
+
+    class Meta:
+        model = VehicleImage
+        fields = ['id', 'url', 'order']
+
+
 class VehicleSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source='brand.name', read_only=True)
     dealer_name = serializers.CharField(source='dealer.dealer_name', read_only=True)
+    gallery_images = VehicleImageSerializer(source='images', many=True, read_only=True)
+
     class Meta:
         model = Vehicle
         fields = '__all__'
@@ -227,6 +251,7 @@ class PublicVehicleSerializer(serializers.ModelSerializer):
     dealer_state    = serializers.CharField(source='dealer.state', read_only=True)
     dealer_verified = serializers.BooleanField(source='dealer.is_verified', read_only=True)
     thumbnail       = serializers.SerializerMethodField()
+    gallery_images  = serializers.SerializerMethodField()
 
     def get_thumbnail(self, obj):
         # Prefer uploaded file; fall back to external URL (seeded/demo vehicles)
@@ -239,12 +264,23 @@ class PublicVehicleSerializer(serializers.ModelSerializer):
                 pass
         return obj.thumbnail_url or ''
 
+    def get_gallery_images(self, obj):
+        request = self.context.get('request')
+        imgs = []
+        for img in obj.images.all():
+            try:
+                url = img.image.url
+                imgs.append({'id': img.id, 'url': request.build_absolute_uri(url) if request else url, 'order': img.order})
+            except Exception:
+                pass
+        return imgs
+
     class Meta:
         model  = Vehicle
         fields = ['id', 'brand_name', 'dealer_id', 'dealer_name', 'dealer_city',
                   'dealer_phone', 'dealer_address', 'dealer_state', 'dealer_verified',
                   'model_name', 'fuel_type', 'vehicle_type', 'price', 'stock_status',
-                  'stock_quantity', 'thumbnail', 'year', 'is_featured', 'is_used',
+                  'stock_quantity', 'thumbnail', 'gallery_images', 'year', 'is_featured', 'is_used',
                   'range_km', 'battery_capacity', 'max_speed', 'payload_kg',
                   'seating_capacity', 'warranty_years', 'hsn_code', 'description']
 

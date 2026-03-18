@@ -123,6 +123,19 @@ class Brand(models.Model):
         return self.name
 
 
+class VehicleType(models.Model):
+    """Dealer-managed vehicle categories (e.g. Passenger Rickshaw, Cargo Loader, custom types)."""
+    name       = models.CharField(max_length=100, unique=True)
+    slug       = models.CharField(max_length=50, unique=True)  # stored in Vehicle.vehicle_type
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-is_default', 'name']
+
+    def __str__(self):
+        return self.name
+
+
 class Vehicle(models.Model):
     FUEL_CHOICES = [
         ('electric', 'Electric'),
@@ -131,6 +144,7 @@ class Vehicle(models.Model):
         ('lpg', 'LPG'),
         ('diesel', 'Diesel'),
     ]
+    # TYPE_CHOICES kept for display labels only; vehicle_type is now a free CharField
     TYPE_CHOICES = [
         ('passenger', 'Passenger Rickshaw'),
         ('cargo', 'Cargo Loader'),
@@ -145,7 +159,7 @@ class Vehicle(models.Model):
     dealer = models.ForeignKey(DealerProfile, on_delete=models.CASCADE, related_name='vehicles')
     brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True)
     model_name = models.CharField(max_length=200)
-    vehicle_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='passenger')
+    vehicle_type = models.CharField(max_length=100, default='passenger')
     fuel_type = models.CharField(max_length=20, choices=FUEL_CHOICES)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     stock_quantity = models.IntegerField(default=0)
@@ -372,6 +386,22 @@ class FinanceLoan(models.Model):
         return f"{self.customer_name} - ₹{self.loan_amount}"
 
 
+# ─── VEHICLE GALLERY ───────────────────────────────────────────────
+
+class VehicleImage(models.Model):
+    """Additional gallery images for a vehicle listing (beyond the primary thumbnail)."""
+    vehicle  = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='images')
+    image    = models.ImageField(upload_to='vehicles/gallery/')
+    order    = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f"Image #{self.order} for {self.vehicle}"
+
+
 # ─── DEALER APPLICATION ────────────────────────────────────────────
 
 class DealerApplication(models.Model):
@@ -484,6 +514,23 @@ class PlatformSettings(models.Model):
     support_email    = models.EmailField(default="support@erikshawdekho.com")
     support_name     = models.CharField(max_length=100, default="eRickshawDekho Support")
     homepage_intro_video_url = models.URLField(blank=True, default="")
+
+    # ── Homepage Content (admin-editable) ─────────────────────────
+    announcement_text   = models.CharField(max_length=300, blank=True, default="",
+                                           help_text="Top announcement bar text. Leave blank to hide.")
+    announcement_link   = models.URLField(blank=True, default="",
+                                          help_text="Optional link for the announcement bar.")
+    hero_title_hi       = models.CharField(max_length=200, blank=True, default="ई-रिक्शा चाहिए?",
+                                           help_text="Hero heading in Hindi")
+    hero_title_en       = models.CharField(max_length=200, blank=True, default="Looking for E-Rickshaw?",
+                                           help_text="Hero heading in English")
+    hero_subtitle_hi    = models.CharField(max_length=300, blank=True,
+                                           default="भारत के verified dealers से सीधे best price पाएँ — बिल्कुल मुफ्त",
+                                           help_text="Hero subtitle in Hindi")
+    hero_subtitle_en    = models.CharField(max_length=300, blank=True,
+                                           default="Get best prices directly from verified dealers across India — completely free",
+                                           help_text="Hero subtitle in English")
+
     created_at       = models.DateTimeField(auto_now_add=True)
     updated_at       = models.DateTimeField(auto_now=True)
 

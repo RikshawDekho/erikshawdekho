@@ -47,7 +47,11 @@ function FinancerLoginForm({ onSuccess }) {
       });
       const data = await res.json();
       if (res.ok && data.access) {
-        onSuccess(data);
+        if (data.user?.user_type && data.user.user_type !== "financer") {
+          setErr(`This portal is for NBFC/Financer accounts only. Your account type is "${data.user.user_type}". Please use the correct portal.`);
+        } else {
+          onSuccess(data);
+        }
       } else {
         setErr(data.detail || data.error || "Login failed. Check credentials.");
       }

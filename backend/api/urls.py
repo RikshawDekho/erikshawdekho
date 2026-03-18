@@ -11,6 +11,7 @@ router.register(r'customers',     views.CustomerViewSet,    basename='customer')
 router.register(r'tasks',         views.TaskViewSet,        basename='task')
 router.register(r'finance/loans', views.FinanceLoanViewSet, basename='loan')
 router.register(r'brands',        views.BrandViewSet,       basename='brand')
+router.register(r'vehicle-types', views.VehicleTypeViewSet,  basename='vehicle-type')
 router.register(r'videos',        views.VideoResourceViewSet, basename='video-resource')
 router.register(r'blogs',         views.BlogPostViewSet,      basename='blog-post')
 
@@ -34,9 +35,10 @@ urlpatterns = [
     path('reports/',                views.reports,           name='reports'),
 
     # ── Public marketplace ────────────────────────────────────────
-    path('marketplace/',            views.marketplace_vehicles, name='marketplace'),
-    path('stats/',                  views.platform_stats,    name='platform-stats'),
-    path('public/enquiry/',         views.public_enquiry,    name='public-enquiry'),
+    path('marketplace/',            views.marketplace_vehicles,    name='marketplace'),
+    path('stats/',                  views.platform_stats,          name='platform-stats'),
+    path('public/homepage/',        views.public_homepage_content, name='public-homepage'),
+    path('public/enquiry/',         views.public_enquiry,          name='public-enquiry'),
 
     # ── Public dealer directory ───────────────────────────────────
     path('dealers/',                          views.dealer_list,           name='dealer-list'),
@@ -93,6 +95,10 @@ urlpatterns = [
 
     # ── Free tier usage ────────────────────────────────────────────
     path('dealer/free-tier-usage/',     views.free_tier_usage,        name='free-tier-usage'),
+
+    # ── Vehicle gallery images ──────────────────────────────────────
+    path('vehicles/<int:vehicle_id>/images/',               views.vehicle_images, name='vehicle-images'),
+    path('vehicles/<int:vehicle_id>/images/<int:image_id>/',views.vehicle_images, name='vehicle-image-delete'),
 
     # ── Financer Ecosystem v3 ──────────────────────────────────────
     # Financer: dealer associations

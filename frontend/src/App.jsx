@@ -202,7 +202,8 @@ const api = {
     updateLoan: (id,d) => apiFetch(`/finance/loans/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
   },
   reports:  (p="") => apiFetch(`/reports/${p}`),
-  brands:   ()     => apiFetch("/brands/"),
+  brands:      ()     => apiFetch("/brands/"),
+  vehicleTypes: ()    => fetch("/api/vehicle-types/").then(r => r.json()),
   videos: {
     list:   (p="") => apiFetch(`/videos/${p}`),
     create: (d)    => apiFetch("/videos/", { method: "POST", body: JSON.stringify(d) }),
@@ -767,9 +768,9 @@ function AuthPage({ onAuth }) {
       const serverMsg = errObj.detail || errObj.non_field_errors?.[0] || errObj.non_field_errors
         || Object.values(errObj).flat().join(" ")
         || "Something went wrong. Please try again.";
-      // Show toast for auth failures
+      // Show toast for auth failures — use actual server message when available
       if (mode === "login") {
-        toast("Login failed. Check your username and password.", "error");
+        toast(serverMsg || "Login failed. Check your username and password.", "error");
       } else {
         toast("Registration failed. " + serverMsg, "error");
       }
@@ -1506,11 +1507,21 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [totalPages, setTotalPages] = useState(1);
   const [brands, setBrands] = useState([]);
   const [form, setForm] = useState({ brand_id: "", model_name: "", fuel_type: "electric", vehicle_type: "passenger", price: "", stock_quantity: "", year: 2024, description: "", thumbnail: null, is_used: false, range_km: "", battery_capacity: "", max_speed: "", seating_capacity: "3", payload_kg: "", warranty_years: "1", hsn_code: "8703", thumbnail_url: "" });
+  const [galleryFiles, setGalleryFiles] = useState([]);  // multiple gallery images for new vehicle
   const [saving, setSaving] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [newBrandName, setNewBrandName] = useState("");
+  const [vehicleTypes, setVehicleTypes] = useState([
+    { slug: "passenger", name: "Passenger Rickshaw" },
+    { slug: "cargo",     name: "Cargo Loader" },
+    { slug: "auto",      name: "Auto Rickshaw" },
+  ]);
+  const [showAddVType, setShowAddVType] = useState(false);
+  const [newVTypeName, setNewVTypeName] = useState("");
   const [editVehicle, setEditVehicle] = useState(null);
   const [editForm, setEditForm] = useState({});
+  const [editGalleryImages, setEditGalleryImages] = useState([]); // existing gallery images for edit
+  const [editGalleryFiles, setEditGalleryFiles] = useState([]);   // new files to upload for edit
   const [editSaving, setEditSaving] = useState(false);
   const [viewVehicle, setViewVehicle] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
@@ -1536,11 +1547,15 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    Promise.all([api.brands().catch(() => null), api.dashboard().catch(() => null)])
-      .then(([brandsData, dashData]) => {
-        if (brandsData) setBrands(brandsData.results || brandsData);
-        if (dashData) setStats({ total: dashData.total_vehicles, inStock: dashData.in_stock, sold: 0, lowStock: 0 });
-      });
+    Promise.all([
+      api.brands().catch(() => null),
+      api.dashboard().catch(() => null),
+      api.vehicleTypes().catch(() => null),
+    ]).then(([brandsData, dashData, typesData]) => {
+      if (brandsData) setBrands(brandsData.results || brandsData);
+      if (dashData) setStats({ total: dashData.total_vehicles, inStock: dashData.in_stock, sold: 0, lowStock: 0 });
+      if (typesData) setVehicleTypes((typesData.results || typesData).map(t => ({ slug: t.slug, name: t.name })));
+    });
   }, []);
 
   const setF = k => v => setFilters(p => ({ ...p, [k]: v }));
@@ -1572,7 +1587,14 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         payload = { ...rest, ...specFields, brand: brand_id, stock_quantity: form.stock_quantity || 1 };
         if (turl) payload.thumbnail_url = turl;
       }
-      await api.vehicles.create(payload);
+      const created = await api.vehicles.create(payload);
+      // Upload gallery images if any were selected
+      if (galleryFiles.length > 0 && created?.id) {
+        const fd = new FormData();
+        galleryFiles.forEach(f => fd.append("images", f));
+        await apiFetch(`/vehicles/${created.id}/images/`, { method: "POST", body: fd });
+      }
+      setGalleryFiles([]);
       toast("Vehicle added successfully!", "success");
       onAddClose(); load();
     } catch (err) {
@@ -1585,6 +1607,8 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const openEdit = (v) => {
     setEditVehicle(v);
     setEditForm({ model_name: v.model_name, fuel_type: v.fuel_type, vehicle_type: v.vehicle_type || "passenger", price: v.price, stock_quantity: v.stock_quantity, year: v.year, description: v.description || "", thumbnail: null, is_used: v.is_used || false, range_km: v.range_km || "", battery_capacity: v.battery_capacity || "", max_speed: v.max_speed || "", seating_capacity: v.seating_capacity || "3", payload_kg: v.payload_kg || "", warranty_years: v.warranty_years || "1", hsn_code: v.hsn_code || "8703", thumbnail_url: v.thumbnail_url || "" });
+    setEditGalleryImages(v.gallery_images || []);
+    setEditGalleryFiles([]);
   };
 
   const saveEdit = async (e) => {
@@ -1612,6 +1636,13 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         if (turl) payload.thumbnail_url = turl;
       }
       await api.vehicles.update(editVehicle.id, payload);
+      // Upload any new gallery images
+      if (editGalleryFiles.length > 0) {
+        const fd = new FormData();
+        editGalleryFiles.forEach(f => fd.append("images", f));
+        await apiFetch(`/vehicles/${editVehicle.id}/images/`, { method: "POST", body: fd });
+      }
+      setEditGalleryFiles([]);
       toast("Vehicle updated successfully!", "success");
       setEditVehicle(null); load();
     } catch (err) {
@@ -1725,7 +1756,11 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
               </Field>
               <Field label="Model Name" required><Input value={form.model_name} onChange={setForm_("model_name")} placeholder="e.g. YatriKing Pro" /></Field>
               <Field label="Vehicle Type" required>
-                <Select value={form.vehicle_type} onChange={setForm_("vehicle_type")} options={[{value:"passenger",label:"Passenger Rickshaw"},{value:"cargo",label:"Cargo Loader"},{value:"auto",label:"Auto Rickshaw"}]} />
+                <Select value={form.vehicle_type} onChange={v => { if (v === "__new_type__") setShowAddVType(true); else setForm_("vehicle_type")(v); }}
+                  options={[
+                    ...vehicleTypes.map(t => ({ value: t.slug, label: t.name })),
+                    { value: "__new_type__", label: "+ Add New Type..." },
+                  ]} />
               </Field>
               <Field label="Fuel Type" required>
                 <Select value={form.fuel_type} onChange={setForm_("fuel_type")} options={[{value:"electric",label:"Electric"},{value:"petrol",label:"Petrol"},{value:"cng",label:"CNG"},{value:"lpg",label:"LPG"},{value:"diesel",label:"Diesel"}]} />
@@ -1744,12 +1779,12 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                 <Select value={form.is_used ? "used" : "new"} onChange={v => setForm(p => ({ ...p, is_used: v === "used" }))} options={[{value:"new",label:"New"},{value:"used",label:"Used / Refurbished"}]} />
               </Field>
             </div>
-            <Field label="Vehicle Photo" style={{ marginTop: 8 }}>
+            <Field label="Main Photo (Thumbnail)" style={{ marginTop: 8 }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: "block", padding: "14px", border: `2px dashed ${C.border}`, borderRadius: 8, cursor: "pointer", textAlign: "center", background: C.bg }}>
                     <div style={{ fontSize: 24, marginBottom: 4 }}>📷</div>
-                    <div style={{ fontSize: 12, color: C.textMid }}>Click to upload vehicle photo</div>
+                    <div style={{ fontSize: 12, color: C.textMid }}>Click to upload main photo</div>
                     <input type="file" accept="image/*" onChange={e => setForm_("thumbnail")(e.target.files[0] || null)} style={{ display: "none" }} />
                   </label>
                   <div style={{ marginTop: 8, fontSize: 12, color: C.textDim }}>Or paste image URL:</div>
@@ -1760,6 +1795,24 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                     style={{ width: 120, height: 90, objectFit: "cover", borderRadius: 8, border: `1.5px solid ${C.border}` }} />
                 )}
               </div>
+            </Field>
+            <Field label={`Additional Photos (${galleryFiles.length}/8)`} style={{ marginTop: 8 }}>
+              <label style={{ display: "block", padding: "12px", border: `2px dashed ${C.border}`, borderRadius: 8, cursor: "pointer", textAlign: "center", background: C.bg }}>
+                <div style={{ fontSize: 20, marginBottom: 2 }}>🖼️</div>
+                <div style={{ fontSize: 12, color: C.textMid }}>Click to select up to 8 gallery photos</div>
+                <input type="file" accept="image/*" multiple onChange={e => setGalleryFiles(Array.from(e.target.files).slice(0, 8))} style={{ display: "none" }} />
+              </label>
+              {galleryFiles.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  {galleryFiles.map((f, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      <img src={URL.createObjectURL(f)} alt={f.name} style={{ width: 72, height: 56, objectFit: "cover", borderRadius: 6, border: `1.5px solid ${C.border}` }} />
+                      <button type="button" onClick={() => setGalleryFiles(p => p.filter((_, idx) => idx !== i))}
+                        style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: C.danger, color: "#fff", border: "none", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Field>
             <Field label="Description">
               <TextArea value={form.description} onChange={setForm_("description")} rows={3} placeholder="Vehicle description, key specs, features..." />
@@ -1781,8 +1834,12 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                 <Input value={editForm.model_name} onChange={v => setEditForm(p => ({ ...p, model_name: v }))} />
               </Field>
               <Field label="Vehicle Type">
-                <Select value={editForm.vehicle_type} onChange={v => setEditForm(p => ({ ...p, vehicle_type: v }))}
-                  options={[{value:"passenger",label:"Passenger Rickshaw"},{value:"cargo",label:"Cargo Loader"},{value:"auto",label:"Auto Rickshaw"}]} />
+                <Select value={editForm.vehicle_type}
+                  onChange={v => { if (v === "__new_type__") setShowAddVType(true); else setEditForm(p => ({ ...p, vehicle_type: v })); }}
+                  options={[
+                    ...vehicleTypes.map(t => ({ value: t.slug, label: t.name })),
+                    { value: "__new_type__", label: "+ Add New Type..." },
+                  ]} />
               </Field>
               <Field label="Fuel Type">
                 <Select value={editForm.fuel_type} onChange={v => setEditForm(p => ({ ...p, fuel_type: v }))}
@@ -1808,11 +1865,11 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                 <Select value={editForm.is_used ? "used" : "new"} onChange={v => setEditForm(p => ({ ...p, is_used: v === "used" }))} options={[{value:"new",label:"New"},{value:"used",label:"Used / Refurbished"}]} />
               </Field>
             </div>
-            <Field label="Update Photo" style={{ marginTop: 8 }}>
+            <Field label="Update Main Photo" style={{ marginTop: 8 }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: "block", padding: "10px", border: `2px dashed ${C.border}`, borderRadius: 8, cursor: "pointer", textAlign: "center", background: C.bg, fontSize: 12, color: C.textMid }}>
-                    📷 Click to upload new photo
+                    📷 Click to upload new main photo
                     <input type="file" accept="image/*" onChange={e => setEditForm(p => ({ ...p, thumbnail: e.target.files[0] || null }))} style={{ display: "none" }} />
                   </label>
                   <div style={{ marginTop: 6, fontSize: 12, color: C.textDim }}>Or update image URL:</div>
@@ -1823,6 +1880,38 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                     style={{ width: 100, height: 75, objectFit: "cover", borderRadius: 8, border: `1.5px solid ${C.border}` }} />
                 )}
               </div>
+            </Field>
+            <Field label={`Gallery Photos (${editGalleryImages.length} existing)`} style={{ marginTop: 8 }}>
+              {editGalleryImages.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  {editGalleryImages.map(img => (
+                    <div key={img.id} style={{ position: "relative" }}>
+                      <img src={img.url} alt="gallery" style={{ width: 72, height: 56, objectFit: "cover", borderRadius: 6, border: `1.5px solid ${C.border}` }} />
+                      <button type="button" onClick={async () => {
+                        try {
+                          await apiFetch(`/vehicles/${editVehicle.id}/images/${img.id}/`, { method: "DELETE" });
+                          setEditGalleryImages(p => p.filter(x => x.id !== img.id));
+                        } catch { toast("Failed to delete image", "error"); }
+                      }} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: C.danger, color: "#fff", border: "none", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label style={{ display: "block", padding: "10px", border: `2px dashed ${C.border}`, borderRadius: 8, cursor: "pointer", textAlign: "center", background: C.bg, fontSize: 12, color: C.textMid }}>
+                🖼️ Add more gallery photos (up to {8 - editGalleryImages.length} more)
+                <input type="file" accept="image/*" multiple onChange={e => setEditGalleryFiles(Array.from(e.target.files).slice(0, 8 - editGalleryImages.length))} style={{ display: "none" }} />
+              </label>
+              {editGalleryFiles.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  {editGalleryFiles.map((f, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      <img src={URL.createObjectURL(f)} alt={f.name} style={{ width: 72, height: 56, objectFit: "cover", borderRadius: 6, border: `1.5px solid ${C.border}` }} />
+                      <button type="button" onClick={() => setEditGalleryFiles(p => p.filter((_, idx) => idx !== i))}
+                        style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: C.danger, color: "#fff", border: "none", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Field>
             <Field label="Description">
               <TextArea value={editForm.description} onChange={v => setEditForm(p => ({ ...p, description: v }))} rows={3} placeholder="Vehicle description..." />
@@ -1898,6 +1987,35 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
                   setForm(f => ({ ...f, brand_id: r.id }));
                   setShowAddBrand(false); setNewBrandName("");
                 } catch { alert("Failed to create brand. Try again."); }
+              }} style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, background: C.primary, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Vehicle Type Modal */}
+      {showAddVType && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: C.surface, borderRadius: 12, padding: 24, maxWidth: 340, width: "100%", margin: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Add New Vehicle Type</div>
+            <div style={{ fontSize: 12, color: C.textMid, marginBottom: 12 }}>e.g. School Van, Delivery Cart, Garbage Van…</div>
+            <input value={newVTypeName} onChange={e => setNewVTypeName(e.target.value)} placeholder="Type name" autoFocus
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, marginBottom: 16, boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setShowAddVType(false); setNewVTypeName(""); }} style={{ flex: 1, padding: 10, border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              <button onClick={async () => {
+                const name = newVTypeName.trim();
+                if (!name) return;
+                try {
+                  const r = await apiFetch("/vehicle-types/", { method: "POST", body: JSON.stringify({ name }) });
+                  const newType = { slug: r.slug, name: r.name };
+                  setVehicleTypes(prev => [...prev, newType]);
+                  // Apply to whichever form is currently open
+                  setForm(f => ({ ...f, vehicle_type: r.slug }));
+                  setEditForm(f => ({ ...f, vehicle_type: r.slug }));
+                  setShowAddVType(false); setNewVTypeName("");
+                  toast(`Vehicle type "${name}" added!`, "success");
+                } catch { toast("Failed to create type. Try again.", "error"); }
               }} style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, background: C.primary, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Create</button>
             </div>
           </div>
@@ -5150,6 +5268,7 @@ const ADMIN_NAV = [
   { id: "fin_apps",      label: "Finance Apps",   icon: "💳" },
   { id: "analytics",     label: "Leads Analytics",icon: "📈" },
   { id: "enquiries",     label: "Enquiries",      icon: "💬" },
+  { id: "homepage",      label: "Homepage",       icon: "🏠" },
   { id: "settings",      label: "Settings",       icon: "⚙️" },
 ];
 
@@ -5193,6 +5312,81 @@ function AdminSettingsPanel({ toast }) {
         ))}
         <Btn label={saving ? "Saving..." : "💾 Save Settings"} color={C.primary} disabled={saving} onClick={save} />
       </Card>
+    </div>
+  );
+}
+
+function AdminHomepagePanel({ toast }) {
+  const C = useC();
+  const [form, setForm] = useState({
+    announcement_text: "", announcement_link: "",
+    hero_title_hi: "", hero_title_en: "",
+    hero_subtitle_hi: "", hero_subtitle_en: "",
+    support_phone: "", support_whatsapp: "", support_email: "",
+  });
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API}/public/homepage/`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setForm(p => ({ ...p, ...d })); setLoaded(true); })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiFetch("/admin-portal/settings/", { method: "PATCH", body: JSON.stringify(form) });
+      toast("Homepage content saved!", "success");
+    } catch { toast("Failed to save.", "error"); }
+    setSaving(false);
+  };
+
+  if (!loaded) return <Spinner />;
+  const inp = { width: "100%", padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, boxSizing: "border-box" };
+  const Section = ({ title, children }) => (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>{title}</div>
+      {children}
+    </Card>
+  );
+  const Field = ({ label, k, placeholder, as = "input" }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 12, color: C.textMid, marginBottom: 4 }}>{label}</div>
+      {as === "textarea"
+        ? <textarea value={form[k] || ""} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))}
+            placeholder={placeholder} rows={2}
+            style={{ ...inp, resize: "vertical", minHeight: 60 }} />
+        : <input value={form[k] || ""} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))}
+            placeholder={placeholder} style={inp} />
+      }
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 680 }}>
+      <Section title="📢 Announcement Bar">
+        <div style={{ fontSize: 12, color: C.textMid, marginBottom: 12 }}>Leave text blank to hide the announcement bar on homepage.</div>
+        <Field k="announcement_text" label="Announcement Text (Hindi preferred)" placeholder="🎉 अब 500+ verified dealers available — free enquiry करें!" as="textarea" />
+        <Field k="announcement_link" label="Link (optional)" placeholder="https://erikshawdekho.com/..." />
+      </Section>
+
+      <Section title="🦸 Hero Section Text">
+        <Field k="hero_title_hi" label="Main Heading (Hindi)" placeholder="ई-रिक्शा चाहिए?" />
+        <Field k="hero_title_en" label="Main Heading (English)" placeholder="Looking for E-Rickshaw?" />
+        <Field k="hero_subtitle_hi" label="Subtitle (Hindi)" placeholder="Verified dealers से best price पाएँ — बिल्कुल मुफ्त" as="textarea" />
+        <Field k="hero_subtitle_en" label="Subtitle (English)" placeholder="Get best prices from verified dealers — completely free" as="textarea" />
+      </Section>
+
+      <Section title="📞 Contact Info (shown on homepage)">
+        <Field k="support_phone" label="Support Phone" placeholder="+91-99999-99999" />
+        <Field k="support_whatsapp" label="WhatsApp Number (digits only, with country code)" placeholder="919999999999" />
+        <Field k="support_email" label="Support Email" placeholder="support@erikshawdekho.com" />
+      </Section>
+
+      <Btn label={saving ? "Saving..." : "💾 Save Homepage Content"} color={C.primary} disabled={saving} onClick={save} />
+      <div style={{ marginTop: 10, fontSize: 12, color: C.textMid }}>Changes appear on the public homepage immediately.</div>
     </div>
   );
 }
@@ -5861,6 +6055,9 @@ function AdminPortal({ user, onLogout }) {
             {!loading && !analytics && <Card><div style={{ textAlign: "center", padding: 40, color: C.textDim }}>Click Apply to load analytics data.</div></Card>}
           </div>
         )}
+
+        {/* Homepage Content */}
+        {page === "homepage" && <AdminHomepagePanel toast={toast} />}
 
         {/* Settings */}
         {page === "settings" && <AdminSettingsPanel toast={toast} />}
@@ -6923,6 +7120,8 @@ export default function App({ skipLanding = false }) {
               @media (max-width: 768px) {
                 .erd-topbar-name { display: none !important; }
                 .erd-topbar-add { display: none !important; }
+                .erd-fab-add { display: flex !important; }
+                .erd-wa-fab { right: 16px !important; }
                 .erd-stat-grid { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
                 .erd-two-col { grid-template-columns: 1fr !important; }
                 .erd-three-col { grid-template-columns: 1fr 1fr !important; }
@@ -6976,9 +7175,18 @@ export default function App({ skipLanding = false }) {
               </main>
             </div>
 
+            {/* Floating Add Vehicle button — mobile only, inventory page only */}
+            {page === "inventory" && (
+              <button className="erd-fab-add" onClick={() => setShowAddVehicle(true)}
+                style={{ display: "none", position: "fixed", bottom: 80, right: 16, zIndex: 1001, width: 52, height: 52, borderRadius: "50%", background: C_LIVE.primary, color: "#fff", border: "none", fontSize: 26, cursor: "pointer", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(22,163,74,0.5)", fontFamily: "inherit" }}
+                title="Add Vehicle">
+                +
+              </button>
+            )}
             {/* Floating WhatsApp Support */}
             <a href={`https://wa.me/${platformSettings.support_whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent(`Hi I need help with my dealer account on ${BRANDING.platformName}`)}`} target="_blank" rel="noreferrer"
-              style={{ position: "fixed", bottom: 80, right: 16, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(37,211,102,0.4)", textDecoration: "none", fontSize: 26 }}>
+              style={{ position: "fixed", bottom: 80, right: 76, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(37,211,102,0.4)", textDecoration: "none", fontSize: 26 }}
+              className="erd-wa-fab">
               💬
             </a>
             {showUpgradeModal && <ContactSupportModal onClose={() => setShowUpgradeModal(false)} onNavigate={setPage} />}

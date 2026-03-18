@@ -126,8 +126,14 @@ export default function FooterNew() {
         </div>
       </div>
 
-      <div style={{ borderTop: "1px solid #1f2937", padding: "16px 24px", textAlign: "center", fontSize: 12, color: "#6b7280", borderRadius: `${RADIUS.sm}px ${RADIUS.sm}px 0 0` }}>
-        © {new Date().getFullYear()} {BRANDING.platformName}. {t("footer.copyright")} | {t("footer.designed")}
+      <div style={{ borderTop: "1px solid #1f2937", padding: "20px 24px", textAlign: "center", fontSize: 12, color: "#6b7280" }}>
+        <div style={{ marginBottom: 6 }}>
+          © {new Date().getFullYear()} {BRANDING.platformName}. {t("footer.copyright")} | {t("footer.designed")}
+        </div>
+        <div style={{ fontSize: 11, color: "#4b5563", lineHeight: 1.8 }}>
+          ErikshawDekho LLC, Registered in the United States of America.
+          &nbsp;·&nbsp; Operations: India
+        </div>
       </div>
     </footer>
   );

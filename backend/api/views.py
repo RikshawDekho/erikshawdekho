@@ -14,7 +14,7 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
-    DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan,
+    DealerProfile, Brand, VehicleType, Vehicle, VehicleImage, Lead, Sale, Customer, Task, FinanceLoan,
     DealerApplication, DealerReview, UserProfile, PublicEnquiry, VideoResource,
     BlogPost, DealerAPIKey, PlatformSettings, FinancerProfile, FinancerDocument,
     CustomerProfile, FinancerPlan, FinancerSubscription, FinancerDealerAssociation,
@@ -22,7 +22,7 @@ from .models import (
     FinanceApplicationRemark, Plan,
 )
 from .serializers import (
-    VehicleSerializer, VehicleListSerializer, LeadSerializer, SaleSerializer,
+    VehicleSerializer, VehicleListSerializer, VehicleImageSerializer, VehicleTypeSerializer, LeadSerializer, SaleSerializer,
     CustomerSerializer, TaskSerializer, FinanceLoanSerializer, BrandSerializer,
     DealerProfileSerializer, RegisterSerializer, DriverRegisterSerializer,
     DealerApplicationSerializer, DealerReviewSerializer,
@@ -147,6 +147,13 @@ def login_view(request):
             pass
     user = authenticate(username=login_username, password=password)
     if not user:
+        # Check if user exists but is deactivated (authenticate() returns None for inactive users)
+        try:
+            inactive_user = User.objects.get(username=login_username)
+            if not inactive_user.is_active:
+                return Response({"error": f"Your account has been deactivated. Please contact {_support_email()}"}, status=403)
+        except User.DoesNotExist:
+            pass
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
     if not user.is_active:
         return Response({"error": f"Your account has been deactivated. Please contact {_support_email()}"}, status=403)
@@ -382,6 +389,43 @@ class VehicleViewSet(viewsets.ModelViewSet):
         vehicle.is_active = False
         vehicle.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─── VEHICLE GALLERY IMAGES ──────────────────────────────────────
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def vehicle_images(request, vehicle_id, image_id=None):
+    """Upload (POST) or delete (DELETE) gallery images for a vehicle owned by the dealer."""
+    try:
+        vehicle = Vehicle.objects.get(pk=vehicle_id, dealer=request.user.dealer_profile, is_active=True)
+    except (Vehicle.DoesNotExist, AttributeError):
+        return Response({'error': 'Vehicle not found.'}, status=404)
+
+    if request.method == 'DELETE':
+        if image_id is None:
+            return Response({'error': 'image_id required.'}, status=400)
+        try:
+            img = VehicleImage.objects.get(pk=image_id, vehicle=vehicle)
+            img.image.delete(save=False)
+            img.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except VehicleImage.DoesNotExist:
+            return Response({'error': 'Image not found.'}, status=404)
+
+    # POST — upload one or more images
+    files = request.FILES.getlist('images')
+    if not files:
+        return Response({'error': 'No images provided.'}, status=400)
+    max_images = 8
+    existing = VehicleImage.objects.filter(vehicle=vehicle).count()
+    if existing + len(files) > max_images:
+        return Response({'error': f'Maximum {max_images} gallery images allowed per vehicle. You already have {existing}.'}, status=400)
+    created = []
+    for i, f in enumerate(files):
+        img = VehicleImage.objects.create(vehicle=vehicle, image=f, order=existing + i)
+        created.append(VehicleImageSerializer(img, context={'request': request}).data)
+    return Response({'images': created}, status=status.HTTP_201_CREATED)
 
 
 # Public marketplace endpoint
@@ -663,6 +707,26 @@ class BrandViewSet(viewsets.ModelViewSet):
         if self.request.method in ['GET', 'HEAD', 'OPTIONS']:
             return [AllowAny()]
         return [IsAuthenticated()]
+
+
+class VehicleTypeViewSet(viewsets.ModelViewSet):
+    """Manage vehicle categories. GET is public; create/update/delete requires auth."""
+    serializer_class = VehicleTypeSerializer
+
+    def get_queryset(self):
+        return VehicleType.objects.all()
+
+    def get_permissions(self):
+        if self.request.method in ['GET', 'HEAD', 'OPTIONS']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        name = serializer.validated_data.get('name', '').strip()
+        # Auto-generate slug from name if not provided
+        import re
+        slug = serializer.validated_data.get('slug') or re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')[:50]
+        serializer.save(slug=slug)
 
 
 # ─── REPORTS ──────────────────────────────────────────────────────
@@ -978,6 +1042,25 @@ def platform_stats(request):
         'dealer_count':  DealerProfile.objects.filter(is_verified=True).count(),
         'vehicle_count': Vehicle.objects.filter(is_active=True).count(),
         'city_count':    DealerProfile.objects.filter(is_verified=True).values('city').distinct().count(),
+    })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_homepage_content(request):
+    """Return admin-controlled homepage content for the public site."""
+    s = PlatformSettings.get()
+    return Response({
+        'announcement_text':  s.announcement_text,
+        'announcement_link':  s.announcement_link,
+        'hero_title_hi':      s.hero_title_hi,
+        'hero_title_en':      s.hero_title_en,
+        'hero_subtitle_hi':   s.hero_subtitle_hi,
+        'hero_subtitle_en':   s.hero_subtitle_en,
+        'support_phone':      s.support_phone,
+        'support_whatsapp':   s.support_whatsapp,
+        'support_email':      s.support_email,
+        'support_name':       s.support_name,
     })
 
 
@@ -1766,7 +1849,9 @@ def admin_update_settings(request):
     if not _is_admin(request.user):
         return Response({"error": "Admin only"}, status=403)
     s = PlatformSettings.get()
-    for field in ["support_phone", "support_whatsapp", "support_email", "support_name", "homepage_intro_video_url"]:
+    for field in ["support_phone", "support_whatsapp", "support_email", "support_name", "homepage_intro_video_url",
+                  "announcement_text", "announcement_link",
+                  "hero_title_hi", "hero_title_en", "hero_subtitle_hi", "hero_subtitle_en"]:
         if field in request.data:
             setattr(s, field, request.data[field])
     s.save()

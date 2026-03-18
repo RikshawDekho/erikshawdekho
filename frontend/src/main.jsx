@@ -30,6 +30,7 @@ if (import.meta.env.PROD) {
 }
 
 // ─── New ecosystem pages ─────────────────────────────────
+import DriverLandingPage from './pages/DriverLandingPage.jsx'
 import LandingEntryPage from './pages/LandingEntryPage.jsx'
 import DriverHomePage from './pages/DriverHomePage.jsx'
 import DriverMarketplacePage from './pages/DriverMarketplacePage.jsx'
@@ -110,8 +111,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <I18nProvider>
         <Routes>
-          {/* Landing: branded entry with 3 ecosystem cards */}
-          <Route path="/"                    element={<LandingEntryPage />} />
+          {/* Main homepage: driver-first with products + enquiry form */}
+          <Route path="/"                    element={<DriverLandingPage />} />
+          {/* Role selector: 3 ecosystem cards (for dealers/financers) */}
+          <Route path="/welcome"             element={<LandingEntryPage />} />
 
           {/* Driver ecosystem — no login, Hindi default */}
           <Route path="/driver"              element={<DriverHomePage />} />
@@ -127,7 +130,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/financer"            element={<FinancerPage />} />
 
           {/* Backward compatibility redirects */}
-          <Route path="/home"        element={<Navigate to="/driver" replace />} />
+          <Route path="/home"        element={<Navigate to="/" replace />} />
           <Route path="/marketplace" element={<Navigate to="/driver/marketplace" replace />} />
           <Route path="/dealers"     element={<Navigate to="/driver/dealers" replace />} />
           <Route path="/learn"       element={<Navigate to="/driver/learn" replace />} />
