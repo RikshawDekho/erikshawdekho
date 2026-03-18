@@ -2529,6 +2529,16 @@ def financer_update_application_status(request, app_id):
     app.reviewed_at = timezone.now()
     app.save(update_fields=['status', 'status_notes', 'reviewed_at', 'updated_at'])
 
+    # Sync applications_used on subscription so the counter stays accurate
+    try:
+        sub = fp.subscription
+        sub.applications_used = FinanceApplication.objects.filter(
+            financer=fp, status__in=['submitted', 'under_review', 'approved', 'disbursed']
+        ).count()
+        sub.save(update_fields=['applications_used'])
+    except Exception:
+        pass
+
     # Notify dealer via push notification
     try:
         from api.notifications import send_push_notification
@@ -2560,6 +2570,13 @@ def financer_update_application_status(request, app_id):
 @permission_classes([AllowAny])
 def financer_plans_list(request):
     """List available financer subscription plans with pricing."""
+    if not FinancerPlan.objects.filter(is_active=True).exists():
+        # Auto-seed plans if table is empty (e.g. fresh DB before ensure_financer_plans runs)
+        from django.core.management import call_command
+        try:
+            call_command('ensure_financer_plans', verbosity=0)
+        except Exception:
+            pass
     plans = FinancerPlan.objects.filter(is_active=True)
     data = [{
         'id': p.id,
@@ -2585,17 +2602,22 @@ def financer_subscription_status(request):
 
     try:
         sub = fp.subscription
+        apps_used = FinanceApplication.objects.filter(
+            financer=fp, status__in=['submitted', 'under_review', 'approved', 'disbursed']
+        ).count()
+        max_apps = sub.plan.max_finance_applications
+        is_expired = bool(sub.expires_at and sub.expires_at < timezone.now())
         return Response({
             'plan_name': sub.plan.name,
             'plan_slug': sub.plan.slug,
             'price_per_year': str(sub.plan.price_per_year),
-            'max_applications': sub.plan.max_finance_applications,
+            'max_applications': max_apps,
             'max_dealer_associations': sub.plan.max_dealer_associations,
             'commission_per_lead': str(sub.plan.commission_per_lead),
-            'applications_used': sub.applications_used,
-            'is_within_limit': sub.is_within_limit,
+            'applications_used': apps_used,
+            'is_within_limit': (max_apps == 0 or apps_used < max_apps) and not is_expired,
             'expires_at': sub.expires_at.isoformat() if sub.expires_at else None,
-            'is_active': sub.is_active,
+            'is_active': sub.is_active and not is_expired,
         })
     except FinancerSubscription.DoesNotExist:
         # Financer on implicit free tier
