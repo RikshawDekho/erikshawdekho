@@ -12,7 +12,7 @@ const DEFAULTS = {
   platformName: "ErikshawDekho",
   platformTagline: "India's Most Trusted E-Rickshaw Platform",
   supportEmail: "support@erikshawdekho.com",
-  supportPhone: "+91-XXXXXXXXXX",
+  supportPhone: "",  // Set via VITE_SUPPORT_PHONE env var — leave empty to hide
   supportWhatsApp: "919876543210",
   platformUrl: IS_DEMO_ENV ? "https://demo.erikshawdekho.com" : "https://www.erikshawdekho.com",
   invoiceEmail: "info@erikshawdekho.com",

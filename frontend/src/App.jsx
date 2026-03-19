@@ -1,4 +1,5 @@
 ﻿import React, { Component, useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
+import { GoogleLogin } from '@react-oauth/google';
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SalesPage } from './SalesPage';
 import NavbarNew from './components/NavbarNew';
@@ -151,10 +152,17 @@ async function apiFetch(path, opts = {}, _retry = false) {
         }
       } catch (_) { /* fall through to logout */ }
     }
-    localStorage.clear();
-    window.location.reload();
+    // Auth endpoints (login, register, google) return 401 for wrong credentials —
+    // don't treat that as a session expiry. Only auto-logout for protected API calls.
+    if (!path.startsWith('/auth/')) {
+      localStorage.clear();
+      window.location.reload();
+    }
   }
-  if (!res.ok) throw await res.json();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw { ...body, _status: res.status };
+  }
   if (res.status === 204) return null;
   return res.json();
 }
@@ -167,11 +175,12 @@ const api = {
   marketplace:(p="") => apiFetch(`/marketplace/${p}`),
 
   vehicles: {
-    list:   (p="") => apiFetch(`/vehicles/${p}`),
-    get:    (id)   => apiFetch(`/vehicles/${id}/`),
-    create: (d)    => apiFetch("/vehicles/", { method: "POST", body: d instanceof FormData ? d : JSON.stringify(d) }),
-    update: (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
-    delete: (id)   => apiFetch(`/vehicles/${id}/`, { method: "DELETE" }),
+    list:    (p="") => apiFetch(`/vehicles/${p}`),
+    get:     (id)   => apiFetch(`/vehicles/${id}/`),
+    create:  (d)    => apiFetch("/vehicles/", { method: "POST", body: d instanceof FormData ? d : JSON.stringify(d) }),
+    update:  (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
+    delete:  (id)   => apiFetch(`/vehicles/${id}/`, { method: "DELETE" }),
+    feature: (id)   => apiFetch(`/vehicles/${id}/feature/`, { method: "POST" }),
   },
   leads: {
     list:   (p="") => apiFetch(`/leads/${p}`),
@@ -222,7 +231,7 @@ const api = {
     updateFcm:   (d) => apiFetch("/notifications/fcm-token/", { method: "PATCH", body: JSON.stringify(d) }),
   },
   profile: {
-    update: (d) => apiFetch("/auth/me/", { method: "PATCH", body: JSON.stringify(d) }),
+    update: (d) => apiFetch("/auth/me/", { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
   },
   enquiry: (d) => apiFetch("/public/enquiry/", { method: "POST", body: JSON.stringify(d) }),
   enquiries: {
@@ -252,11 +261,14 @@ const api = {
     financeApps:            (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
     financerDocs:           (id)       => apiFetch(`/admin-portal/financers/${id}/documents/`),
     reviewFinancerDoc:      (id,did,d) => apiFetch(`/admin-portal/financers/${id}/documents/${did}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    vehicles:               (p="")     => apiFetch(`/admin-portal/vehicles/${p}`),
+    featureVehicle:         (id,d)     => apiFetch(`/admin-portal/vehicles/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
   },
   auth: {
     forgotPassword:    (d) => apiFetch("/auth/forgot-password/",       { method: "POST", body: JSON.stringify(d) }),
     resetPassword:     (d) => apiFetch("/auth/reset-password/",        { method: "POST", body: JSON.stringify(d) }),
     resetPasswordPhone:(d) => apiFetch("/auth/reset-password-phone/",  { method: "POST", body: JSON.stringify(d) }),
+    google:            (d) => apiFetch("/auth/google/",                { method: "POST", body: JSON.stringify(d) }),
   },
   dealer: {
     plans:           ()       => apiFetch("/plans/"),
@@ -715,7 +727,10 @@ function AuthPage({ onAuth }) {
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [authStatus, setAuthStatus] = useState(null);
-  const [loginHint, setLoginHint] = useState(null); // null | "wrong_password" | "no_account" | "duplicate_email"
+  const [loginHint, setLoginHint] = useState(null); // null | "wrong_password" | "no_account" | "duplicate_email" | "rate_limited"
+  const [shake, setShake] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [pincodeData, setPincodeData] = useState(null); // { city, state, suggestions: [] }
   const [pincodeLoading, setPincodeLoading] = useState(false);
   // Forgot password state
@@ -740,8 +755,9 @@ function AuthPage({ onAuth }) {
 
   const set = (k) => (v) => {
     setForm(p => ({ ...p, [k]: v }));
+    // Clear only the field-specific error, not the auth status banner —
+    // the banner should stay visible until user re-submits (Google pattern)
     setFieldErrors(p => ({ ...p, [k]: "" }));
-    setAuthStatus(null);
   };
 
   const lookupPincode = async (pin) => {
@@ -769,6 +785,44 @@ function AuthPage({ onAuth }) {
       setFieldErrors(p => ({ ...p, pincode: "Could not verify pincode. Please enter city manually." }));
     }
     setPincodeLoading(false);
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setGoogleLoading(true);
+    setAuthStatus(null);
+    setLoginHint(null);
+    setFieldErrors({});
+    try {
+      const data = await api.auth.google({ credential: credentialResponse.credential });
+      if (data.new_user) {
+        // New user — pre-fill register form and switch to register tab
+        setMode("register");
+        setForm(p => ({ ...p, email: data.email || "", dealer_name: data.name || "" }));
+        toast("Google account verified! Please complete your dealer registration.", "success");
+        return;
+      }
+      // Existing user — complete login
+      localStorage.setItem("erd_access", data.access);
+      if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
+      setAuthStatus("success");
+      const name = data.user?.dealer_name || data.user?.username || data.user?.email || "";
+      toast(`Welcome back, ${name}! Signing you in...`, "success");
+      setTimeout(() => onAuth(data), 800);
+    } catch (err) {
+      setAuthStatus("error");
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      const errObj = typeof err === "object" ? err : {};
+      const msg = errObj.error || errObj.detail || "Google sign-in failed. Please try again.";
+      setFieldErrors({ _banner: msg });
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    setFieldErrors({ _banner: "Google sign-in was cancelled or failed. Please try again." });
+    setAuthStatus("error");
   };
 
   const validate = () => {
@@ -821,24 +875,26 @@ function AuthPage({ onAuth }) {
       setTimeout(() => onAuth(data), 800);
     } catch (err) {
       setAuthStatus("error");
+      // Shake the card to signal error (Google-style)
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
       const errObj = typeof err === "object" ? err : {};
       // Extract clean message (exclude boolean fields like account_exists)
       const serverMsg = errObj.error || errObj.detail || errObj.non_field_errors?.[0]
         || Object.values(errObj).filter(v => typeof v === "string").flat().join(" ")
         || "Something went wrong. Please try again.";
       // Determine contextual hint
-      if (mode === "login") {
+      if (errObj._status === 429) {
+        setLoginHint("rate_limited");
+      } else if (mode === "login") {
         if (errObj.account_exists === false) setLoginHint("no_account");
         else if (errObj.account_exists === true) setLoginHint("wrong_password");
       } else {
-        // Check for duplicate email in register
         const emailErr = Array.isArray(errObj.email) ? errObj.email[0] : errObj.email;
         if (emailErr && /already/i.test(emailErr)) setLoginHint("duplicate_email");
       }
-      toast(mode === "login" ? serverMsg : ("Registration failed. " + serverMsg), "error");
-      // Set inline banner + field errors
-      const inlineErrs = {};
-      inlineErrs._banner = serverMsg;
+      // Set inline field errors — no toast for auth failures (inline is cleaner)
+      const inlineErrs = { _banner: serverMsg };
       Object.keys(errObj).filter(k => !["error","detail","non_field_errors","account_exists"].includes(k)).forEach(k => {
         inlineErrs[k] = Array.isArray(errObj[k]) ? errObj[k][0] : (typeof errObj[k] === "string" ? errObj[k] : "");
       });
@@ -885,25 +941,36 @@ function AuthPage({ onAuth }) {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* Support info bar — above sticky navbar */}
+      {(BRANDING.support.phone || BRANDING.support.email || BRANDING.support.whatsappDigits) && (
+        <div style={{ background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", padding: "5px 16px", display: "flex", justifyContent: "center", alignItems: "center", flexShrink: 0 }}>
+          <style>{`
+            .auth-support-item { display:inline-flex;align-items:center;gap:4px;color:#15803d;text-decoration:none;font-weight:600;font-size:12px;padding:0 10px;white-space:nowrap; }
+            .auth-support-item:hover { color:#14532d; }
+            .auth-support-sep { color:#bbf7d0;font-size:14px;font-weight:300;flex-shrink:0; }
+            .auth-support-label { display:inline; }
+            @media(max-width:480px) { .auth-support-label { display:none; } .auth-support-item { padding:0 8px;font-size:14px; } }
+          `}</style>
+          {BRANDING.support.phone && (
+            <a href={`tel:${BRANDING.support.phone}`} className="auth-support-item">
+              📞 <span className="auth-support-label">{BRANDING.support.phone}</span>
+            </a>
+          )}
+          {BRANDING.support.phone && <span className="auth-support-sep">|</span>}
+          <a href={`mailto:${BRANDING.support.email}`} className="auth-support-item">
+            ✉ <span className="auth-support-label">{BRANDING.support.email}</span>
+          </a>
+          {BRANDING.support.whatsappDigits && (<>
+            <span className="auth-support-sep">|</span>
+            <a href={`https://wa.me/${BRANDING.support.whatsappDigits}`} target="_blank" rel="noopener noreferrer" className="auth-support-item">
+              💬 <span className="auth-support-label">WhatsApp</span>
+            </a>
+          </>)}
+        </div>
+      )}
+
       {/* Navbar */}
       <NavbarNew />
-
-      {/* Support info bar */}
-      <div style={{ background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", padding: "8px 24px", display: "flex", justifyContent: "center", alignItems: "center", gap: 32, flexWrap: "wrap", fontSize: 13, color: "#15803d" }}>
-        {BRANDING.support.phone && (
-          <a href={`tel:${BRANDING.support.phone}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
-            📞 {BRANDING.support.phone}
-          </a>
-        )}
-        <a href={`mailto:${BRANDING.support.email}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
-          ✉ {BRANDING.support.email}
-        </a>
-        {BRANDING.support.whatsappDigits && (
-          <a href={`https://wa.me/${BRANDING.support.whatsappDigits}`} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
-            💬 WhatsApp Support
-          </a>
-        )}
-      </div>
 
       {/* Green gradient auth section */}
       <div style={{ flex: 1, background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
@@ -1035,50 +1102,60 @@ function AuthPage({ onAuth }) {
         )}
 
         {(mode === "login" || mode === "register") && (
-        <Card padding={32}>
+        <style>{`
+          @keyframes authShake {
+            0%,100%{transform:translateX(0)}
+            15%{transform:translateX(-7px)}
+            30%{transform:translateX(7px)}
+            45%{transform:translateX(-5px)}
+            60%{transform:translateX(5px)}
+            75%{transform:translateX(-3px)}
+            90%{transform:translateX(3px)}
+          }
+        `}</style>
+        )}
+        {(mode === "login" || mode === "register") && (
+        <Card padding={32} style={{ animation: shake ? "authShake 0.5s ease" : "none" }}>
           <div style={{ display: "flex", marginBottom: 24, background: C.bg, borderRadius: 8, padding: 4 }}>
             {["login", "register"].map(m => (
-              <button key={m} onClick={() => { setMode(m); setFieldErrors({}); setAuthStatus(null); }} style={{ flex: 1, padding: "8px 0", border: "none", borderRadius: 6, background: mode === m ? C.primary : "transparent", color: mode === m ? "#fff" : C.textMid, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              <button key={m} onClick={() => { setMode(m); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ flex: 1, padding: "8px 0", border: "none", borderRadius: 6, background: mode === m ? C.primary : "transparent", color: mode === m ? "#fff" : C.textMid, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
                 {m === "login" ? "Sign In" : "Register"}
               </button>
             ))}
           </div>
 
-          {/* Status banner */}
+          {/* Status banner — clean, left-bordered, Google-style */}
           {authStatus === "error" && fieldErrors._banner && (
-            <div style={{ background: `${C.danger}12`, border: `1.5px solid ${C.danger}44`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.danger, marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontWeight: 600, marginBottom: loginHint ? 10 : 0 }}>
-                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✕</span>
-                <span>{fieldErrors._banner}</span>
-              </div>
+            <div style={{ borderLeft: `4px solid ${C.danger}`, background: `${C.danger}08`, borderRadius: "0 8px 8px 0", padding: "12px 14px", fontSize: 13, color: "#1e293b", marginBottom: 16, lineHeight: 1.5 }}>
+              <div style={{ fontWeight: 600, color: C.danger, marginBottom: loginHint ? 8 : 0 }}>{fieldErrors._banner}</div>
               {loginHint === "no_account" && (
-                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { setMode("register"); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Create an account →
-                  </button>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: "#475569" }}>Don't have an account?</span>
+                  <button onClick={() => { setMode("register"); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: "none", border: `1.5px solid ${C.primary}`, borderRadius: 20, padding: "4px 14px", fontSize: 12, fontWeight: 700, color: C.primary, cursor: "pointer", fontFamily: "inherit" }}>Create account</button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support</a>
                 </div>
               )}
               {loginHint === "wrong_password" && (
-                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Reset Password →
-                  </button>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: "#475569" }}>Forgot your password?</span>
+                  <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); setLoginHint(null); }} style={{ background: "none", border: `1.5px solid ${C.primary}`, borderRadius: 20, padding: "4px 14px", fontSize: 12, fontWeight: 700, color: C.primary, cursor: "pointer", fontFamily: "inherit" }}>Reset password</button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support</a>
                 </div>
               )}
               {loginHint === "duplicate_email" && (
-                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { setMode("login"); setForm(p => ({ ...p, username: form.email })); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Sign in instead →
-                  </button>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Registration Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: "#475569" }}>Already have an account?</span>
+                  <button onClick={() => { setMode("login"); setForm(p => ({ ...p, username: form.email })); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: "none", border: `1.5px solid ${C.primary}`, borderRadius: 20, padding: "4px 14px", fontSize: 12, fontWeight: 700, color: C.primary, cursor: "pointer", fontFamily: "inherit" }}>Sign in instead</button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Registration Help`} style={{ fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support</a>
+                </div>
+              )}
+              {loginHint === "rate_limited" && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "#92400e" }}>
+                  Please wait a few minutes before trying again.
                 </div>
               )}
               {!loginHint && (
-                <div style={{ marginTop: 8 }}>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "underline" }}>Contact support if the issue persists →</a>
-                </div>
+                <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-block", marginTop: 4, fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support if this continues →</a>
               )}
             </div>
           )}
@@ -1092,33 +1169,49 @@ function AuthPage({ onAuth }) {
           <form onSubmit={submit}>
             {mode === "login" && (
               <Field label="Email or Username" required>
-                <Input value={form.username} onChange={set("username")} placeholder="Username / Email / Mobile Number" autoComplete="username" />
+                <Input value={form.username} onChange={set("username")} placeholder="Username / Email / Mobile Number" autoComplete="username"
+                  style={loginHint === "no_account" ? { border: `1.5px solid ${C.danger}` } : {}} />
                 <FieldErr k="username" />
               </Field>
             )}
             {mode === "register" && (
               <>
-                <Field label="Dealership / Showroom Name *" required>
+                <Field label="Dealership / Showroom Name" required>
                   <Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="e.g. Sharma eRickshaw Centre" />
                   <FieldErr k="dealer_name" />
                 </Field>
-                <Field label="Email Address *" required>
+                <Field label="Email Address" required>
                   <Input value={form.email} onChange={set("email")} type="email" placeholder="dealer@example.com" />
                   <FieldErr k="email" />
                 </Field>
-                <Field label="Mobile Number *" required>
+                <Field label="Mobile Number" required>
                   <Input value={form.phone} onChange={v => { set("phone")(v.replace(/\D/g, "").slice(0, 10)); }} placeholder="10-digit Indian number (starts with 6-9)" />
                   <FieldErr k="phone" />
                 </Field>
               </>
             )}
             <Field label="Password" required>
-              <Input value={form.password} onChange={set("password")} type="password" placeholder={mode === "register" ? "Min 8 chars, include a number" : "Your password"} autoComplete={mode === "login" ? "current-password" : "new-password"} />
+              <div style={{ position: "relative" }}>
+                <Input value={form.password} onChange={set("password")} type={showPassword ? "text" : "password"} placeholder={mode === "register" ? "Min 8 chars, include a number" : "Your password"} autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  style={{ ...(loginHint === "wrong_password" ? { border: `1.5px solid ${C.danger}` } : {}), paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowPassword(v => !v)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: C.textMid, fontSize: 16, padding: 2, lineHeight: 1 }}
+                  title={showPassword ? "Hide password" : "Show password"}>
+                  {showPassword ? "🙈" : "👁"}
+                </button>
+              </div>
               <FieldErr k="password" />
             </Field>
             {mode === "register" && (
-              <Field label="Confirm Password *" required>
-                <Input value={form.confirm_password} onChange={set("confirm_password")} type="password" placeholder="Repeat your password" />
+              <Field label="Confirm Password" required>
+                <div style={{ position: "relative" }}>
+                  <Input value={form.confirm_password} onChange={set("confirm_password")} type={showPassword ? "text" : "password"} placeholder="Repeat your password"
+                    style={{ paddingRight: 44 }} />
+                  <button type="button" onClick={() => setShowPassword(v => !v)}
+                    style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: C.textMid, fontSize: 16, padding: 2, lineHeight: 1 }}>
+                    {showPassword ? "🙈" : "👁"}
+                  </button>
+                </div>
                 <FieldErr k="confirm_password" />
               </Field>
             )}
@@ -1156,8 +1249,33 @@ function AuthPage({ onAuth }) {
               size="lg"
             />
           </form>
-          {mode === "login" && (
-            <div style={{ textAlign: "center", marginTop: 12 }}>
+
+          {/* Google Sign-In — shown for both login and register */}
+          <div style={{ margin: "20px 0 4px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <span style={{ fontSize: 12, color: C.textMid, whiteSpace: "nowrap" }}>or continue with</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+            {googleLoading ? (
+              <div style={{ textAlign: "center", color: C.textMid, fontSize: 13, padding: "10px 0" }}>Verifying with Google…</div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                  useOneTap={false}
+                  shape="rectangular"
+                  size="large"
+                  width="320"
+                  text={mode === "login" ? "signin_with" : "signup_with"}
+                />
+              </div>
+            )}
+          </div>
+
+          {mode === "login" && !loginHint && (
+            <div style={{ textAlign: "center", marginTop: 8 }}>
               <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); }} style={{ background: "none", border: "none", color: C.primary, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
                 Forgot password?
               </button>
@@ -1168,8 +1286,15 @@ function AuthPage({ onAuth }) {
       </div>
       </div>
 
-      {/* Footer */}
-      <FooterNew />
+      {/* Minimal footer — full FooterNew is too heavy for a login page */}
+      <div style={{ background: "#111827", color: "#6b7280", fontSize: 12, padding: "16px 24px", display: "flex", justifyContent: "center", alignItems: "center", flexWrap: "wrap", gap: "8px 24px" }}>
+        <span>© {new Date().getFullYear()} {BRANDING.platformName}</span>
+        <a href="/" style={{ color: "#9ca3af", textDecoration: "none" }}>Home</a>
+        <a href="/driver/marketplace" style={{ color: "#9ca3af", textDecoration: "none" }}>Marketplace</a>
+        <a href="/driver/dealers" style={{ color: "#9ca3af", textDecoration: "none" }}>Find Dealers</a>
+        <a href={`mailto:${BRANDING.support.email}`} style={{ color: "#9ca3af", textDecoration: "none" }}>Support</a>
+        <a href="/install.html" style={{ color: "#9ca3af", textDecoration: "none" }}>Install App</a>
+      </div>
     </div>
   );
 }
@@ -1771,11 +1896,25 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     }
   };
 
+  const handleFeatureToggle = async (v) => {
+    try {
+      const result = await api.vehicles.feature(v.id);
+      setVehicles(p => p.map(x => x.id === v.id ? { ...x, is_featured: result.is_featured } : x));
+      toast(result.is_featured ? `"${v.model_name}" featured on homepage!` : `"${v.model_name}" removed from featured.`, "success");
+    } catch (err) {
+      toast(err?.error || "Failed to update featured status.", "error");
+    }
+  };
+
+  const isProDealer = plan && (plan.type === "pro" || plan.type === "early_dealer") && plan.is_active;
+
   const cols = [
     { label: "ID",       render: r => <span style={{ color: C.textDim, fontSize: 12 }}>{r.id}</span> },
-    { label: "Thumbnail",render: r => (r.thumbnail || r.thumbnail_url)
-        ? <img src={r.thumbnail || r.thumbnail_url} alt={r.model_name} style={{ width: 56, height: 40, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.border}` }} />
-        : <div style={{ width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛺</div> },
+    { label: "Thumbnail",render: r => (
+        <div style={{ position: "relative", width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, overflow: "hidden" }}>
+          🛺
+          {(r.thumbnail || r.thumbnail_url) && <img src={r.thumbnail || r.thumbnail_url} alt={r.model_name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
+        </div>) },
     { label: "Model",    render: r => <div><div style={{ fontWeight: 600 }}>{r.model_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.brand_name}</div></div> },
     { label: "Brand",    key:    "brand_name" },
     { label: "Fuel",     render: r => <Badge label={r.fuel_type} color={FUEL_COLOR[r.fuel_type]} /> },
@@ -1787,6 +1926,13 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         <Btn label="View"   size="sm" outline color={C.info}    onClick={() => setViewVehicle(r)} />
         <Btn label="Edit"   size="sm" outline color={C.primary} onClick={() => openEdit(r)} />
         <Btn label="Delete" size="sm" outline color={C.danger}  onClick={() => setDeleteId(r.id)} />
+        {isProDealer && (
+          <button onClick={() => handleFeatureToggle(r)}
+            title={r.is_featured ? "Remove from homepage featured" : "Feature on homepage (max 3)"}
+            style={{ padding: "4px 10px", borderRadius: 6, border: `1.5px solid ${r.is_featured ? C.warning : C.border}`, background: r.is_featured ? `${C.warning}20` : "transparent", color: r.is_featured ? C.warning : C.textMid, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
+            {r.is_featured ? "⭐" : "☆"}
+          </button>
+        )}
       </div>
     )},
   ];
@@ -3509,6 +3655,10 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
   const [prefsLoading, setPrefsLoading] = useState(true);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
+  const [showroomMode, setShowroomMode] = useState(false);
+  const [logoFile, setLogoFile] = useState(null);
+  const [coverFile, setCoverFile] = useState(null);
+  const [showroomSaving, setShowroomSaving] = useState(false);
 
   const loadData = () => {
     Promise.all([api.me(), api.dashboard()]).then(([me, dash]) => {
@@ -3616,6 +3766,78 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{val || "—"}</div>
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Showroom Branding card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>🏪 Showroom Branding</div>
+            <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>Upload your logo and cover image for the dealer directory</div>
+          </div>
+          <Btn label={showroomMode ? "Cancel" : "✏ Edit"} color={C.primary} outline size="sm" onClick={() => { setShowroomMode(m => !m); setLogoFile(null); setCoverFile(null); }} />
+        </div>
+
+        {/* Preview existing images */}
+        {!showroomMode && (
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 120 }}>
+              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>LOGO</div>
+              <div style={{ width: 72, height: 72, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 30 }}>
+                {dealer?.logo ? <img src={dealer.logo} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🏪"}
+              </div>
+            </div>
+            <div style={{ flex: 3, minWidth: 200 }}>
+              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>COVER IMAGE</div>
+              <div style={{ height: 80, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 30 }}>
+                {dealer?.cover_image ? <img src={dealer.cover_image} alt="cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🖼️"}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showroomMode && (
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <Field label="Logo (square, max 2MB)">
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 22, flexShrink: 0 }}>
+                    {logoFile ? <img src={URL.createObjectURL(logoFile)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : dealer?.logo ? <img src={dealer.logo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🏪"}
+                  </div>
+                  <label style={{ flex: 1, padding: "7px 12px", border: `1.5px dashed ${C.primary}`, borderRadius: 7, cursor: "pointer", fontSize: 12, color: C.primary, textAlign: "center", fontFamily: "inherit" }}>
+                    {logoFile ? logoFile.name : "Choose file"}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => setLogoFile(e.target.files[0] || null)} />
+                  </label>
+                </div>
+              </Field>
+              <Field label="Cover Image (16:9 recommended, max 5MB)">
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ height: 60, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.bg, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>
+                    {coverFile ? <img src={URL.createObjectURL(coverFile)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : dealer?.cover_image ? <img src={dealer.cover_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🖼️"}
+                  </div>
+                  <label style={{ padding: "7px 12px", border: `1.5px dashed ${C.primary}`, borderRadius: 7, cursor: "pointer", fontSize: 12, color: C.primary, textAlign: "center", fontFamily: "inherit" }}>
+                    {coverFile ? coverFile.name : "Choose file"}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => setCoverFile(e.target.files[0] || null)} />
+                  </label>
+                </div>
+              </Field>
+            </div>
+            <Btn label={showroomSaving ? "Uploading..." : "Save Branding"} color={C.primary} disabled={showroomSaving || (!logoFile && !coverFile)} onClick={async () => {
+              if (!logoFile && !coverFile) return;
+              setShowroomSaving(true);
+              try {
+                const fd = new FormData();
+                if (logoFile) fd.append("logo", logoFile);
+                if (coverFile) fd.append("cover_image", coverFile);
+                await api.profile.update(fd);
+                toast("Showroom branding updated!", "success");
+                setShowroomMode(false); setLogoFile(null); setCoverFile(null);
+                loadData();
+              } catch { toast("Failed to upload images.", "error"); }
+              setShowroomSaving(false);
+            }} />
           </div>
         )}
       </Card>
@@ -4141,7 +4363,7 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
               <Field label="आपका नाम / Your Name" required>
                 <Input value={enquiryForm.customer_name} onChange={v2 => setEnquiryForm(p => ({ ...p, customer_name: v2 }))} placeholder="Ramesh Kumar" required />
               </Field>
-              <Field label="Mobile Number *" required>
+              <Field label="Mobile Number" required>
                 <Input value={enquiryForm.phone} onChange={v2 => setEnquiryForm(p => ({ ...p, phone: v2 }))} placeholder="9876543210" type="tel" required />
               </Field>
               <Field label="Pin Code / पिन कोड">
@@ -5385,6 +5607,7 @@ const ADMIN_NAV = [
   { id: "dealers",       label: "Dealers",        icon: "🏪" },
   { id: "financers",     label: "Financers",      icon: "🏦" },
   { id: "users",         label: "Users",          icon: "👥" },
+  { id: "vehicles",      label: "Vehicles",       icon: "🛺" },
   { id: "applications",  label: "Applications",   icon: "📋" },
   { id: "fin_apps",      label: "Finance Apps",   icon: "💳" },
   { id: "analytics",     label: "Leads Analytics",icon: "📈" },
@@ -5517,6 +5740,14 @@ function AdminPortal({ user, onLogout }) {
   const { isDark, toggle } = useContext(ThemeCtx);
   const toast = useToast();
   const [page, setPage] = useState("overview");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [winWidth, setWinWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1024);
+  useEffect(() => {
+    const onResize = () => setWinWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const isMobile = winWidth < 768;
   const [stats, setStats] = useState(null);
   const [dealers, setDealers] = useState([]);
   const [users, setUsers] = useState([]);
@@ -5550,6 +5781,10 @@ function AdminPortal({ user, onLogout }) {
   const [selectedFinancerDocs, setSelectedFinancerDocs] = useState(null);
   const [financerDocList, setFinancerDocList] = useState([]);
   const [loadingFinancerDocs, setLoadingFinancerDocs] = useState(false);
+  const [adminVehicles, setAdminVehicles] = useState([]);
+  const [vehicleSearch, setVehicleSearch] = useState("");
+  const debouncedVehicleSearch = useDebounce(vehicleSearch, 350);
+  const [vehicleFeaturedFilter, setVehicleFeaturedFilter] = useState("");
 
   useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
 
@@ -5568,6 +5803,7 @@ function AdminPortal({ user, onLogout }) {
       applications: () => api.admin.applications(qs).then(d => { setApplications(d.results || []); setTotalPages(d.total_pages || 1); }),
       fin_apps:     () => api.admin.financeApps(qs).then(d => { setFinApps(d.results || d || []); setTotalPages(d.total_pages || 1); }),
       enquiries:    () => api.admin.enquiries(qs).then(d => { setEnquiries(d.results || []); setTotalPages(d.total_pages || 1); }),
+      vehicles:     () => { const vp = new URLSearchParams({ page: pg }); if (debouncedVehicleSearch) vp.set("search", debouncedVehicleSearch); if (vehicleFeaturedFilter) vp.set("featured", vehicleFeaturedFilter); return api.admin.vehicles(`?${vp}`).then(d => { setAdminVehicles(d.results || []); setTotalPages(d.total_pages || 1); }); },
       analytics:    () => {
         const ap = new URLSearchParams({ period: analyticsPeriod });
         if (analyticsFrom) ap.set("date_from", analyticsFrom);
@@ -5576,7 +5812,7 @@ function AdminPortal({ user, onLogout }) {
       },
     };
     (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
-  }, [page, pg, debouncedSearch, dateFrom, dateTo, appFilter, analyticsPeriod, analyticsFrom, analyticsTo]);
+  }, [page, pg, debouncedSearch, dateFrom, dateTo, appFilter, analyticsPeriod, analyticsFrom, analyticsTo, debouncedVehicleSearch, vehicleFeaturedFilter]);
 
   useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
 
@@ -5658,46 +5894,74 @@ function AdminPortal({ user, onLogout }) {
     } catch (e) { toast(e?.error || "Failed", "error"); }
   };
 
+  const toggleFeature = async (v) => {
+    const next = !v.is_featured;
+    try {
+      await api.admin.featureVehicle(v.id, { is_featured: next });
+      setAdminVehicles(p => p.map(x => x.id === v.id ? { ...x, is_featured: next } : x));
+      toast(next ? `"${v.model_name}" is now featured!` : `"${v.model_name}" unfeatured.`, "success");
+    } catch { toast("Failed to update", "error"); }
+  };
+
   const sidebarStyle = { width: 200, minWidth: 200, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 };
+
+  const SidebarContent = () => (
+    <>
+      <div style={{ padding: "16px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 34, height: 34, background: `linear-gradient(135deg,${C.danger},#b91c1c)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>⚙️</div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Admin Portal</div>
+            <div style={{ fontSize: 10, color: C.textDim }}>Super Admin</div>
+          </div>
+        </div>
+        {isMobile && <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.textMid, padding: 4 }}>✕</button>}
+      </div>
+      <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto" }}>
+        {ADMIN_NAV.map(n => (
+          <button key={n.id} onClick={() => { setPage(n.id); setPg(1); setSearch(""); setMobileNavOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: page === n.id ? `${C.danger}15` : "transparent", border: "none", borderRadius: 8, color: page === n.id ? C.danger : C.textMid, fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 2, borderLeft: page === n.id ? `3px solid ${C.danger}` : "3px solid transparent" }}>
+            <span>{n.icon}</span>{n.label}
+          </button>
+        ))}
+      </nav>
+      <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
+        <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          {isDark ? "☀️" : "🌙"} {isDark ? "Light Mode" : "Dark Mode"}
+        </button>
+        <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          🚪 Logout
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
-      {/* Admin Sidebar */}
-      <div style={sidebarStyle}>
-        <div style={{ padding: "16px 14px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 34, height: 34, background: `linear-gradient(135deg,${C.danger},#b91c1c)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>⚙️</div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Admin Portal</div>
-              <div style={{ fontSize: 10, color: C.textDim }}>Super Admin</div>
-            </div>
+      {/* Mobile overlay nav */}
+      {isMobile && mobileNavOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex" }}>
+          <div style={{ width: 260, background: C.surface, display: "flex", flexDirection: "column", height: "100vh", boxShadow: "4px 0 24px rgba(0,0,0,0.18)" }}>
+            <SidebarContent />
           </div>
+          <div style={{ flex: 1, background: "rgba(0,0,0,0.4)" }} onClick={() => setMobileNavOpen(false)} />
         </div>
-        <nav style={{ flex: 1, padding: "10px 8px" }}>
-          {ADMIN_NAV.map(n => (
-            <button key={n.id} onClick={() => { setPage(n.id); setPg(1); setSearch(""); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: page === n.id ? `${C.danger}15` : "transparent", border: "none", borderRadius: 8, color: page === n.id ? C.danger : C.textMid, fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 2, borderLeft: page === n.id ? `3px solid ${C.danger}` : "3px solid transparent" }}>
-              <span>{n.icon}</span>{n.label}
-            </button>
-          ))}
-        </nav>
-        <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
-          <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            {isDark ? "☀️" : "🌙"} {isDark ? "Light Mode" : "Dark Mode"}
-          </button>
-          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            🚪 Logout
-          </button>
-        </div>
-      </div>
+      )}
+      {/* Desktop Sidebar */}
+      {!isMobile && <div style={sidebarStyle}><SidebarContent /></div>}
 
       {/* Main */}
-      <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
+      <div style={{ flex: 1, overflow: "auto", padding: isMobile ? 12 : 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
-              {ADMIN_NAV.find(n => n.id === page)?.icon} {ADMIN_NAV.find(n => n.id === page)?.label || "Overview"}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {isMobile && (
+              <button onClick={() => setMobileNavOpen(true)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 18, cursor: "pointer", color: C.text, lineHeight: 1 }}>☰</button>
+            )}
+            <div>
+              <div style={{ fontSize: isMobile ? 16 : 22, fontWeight: 800, color: C.text }}>
+                {ADMIN_NAV.find(n => n.id === page)?.icon} {ADMIN_NAV.find(n => n.id === page)?.label || "Overview"}
+              </div>
+              <div style={{ fontSize: 12, color: C.textDim }}>Logged in as: <b>{user?.username}</b></div>
             </div>
-            <div style={{ fontSize: 12, color: C.textDim }}>Logged in as: <b>{user?.username}</b></div>
           </div>
         </div>
 
@@ -6174,6 +6438,69 @@ function AdminPortal({ user, onLogout }) {
               </div>
             )}
             {!loading && !analytics && <Card><div style={{ textAlign: "center", padding: 40, color: C.textDim }}>Click Apply to load analytics data.</div></Card>}
+          </div>
+        )}
+
+        {/* Vehicles */}
+        {page === "vehicles" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={vehicleSearch} onChange={e => { setVehicleSearch(e.target.value); setPg(1); }}
+                  placeholder="Search vehicle or dealer..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <select value={vehicleFeaturedFilter} onChange={e => { setVehicleFeaturedFilter(e.target.value); setPg(1); }}
+                  style={{ padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface }}>
+                  <option value="">All Vehicles</option>
+                  <option value="true">Featured Only</option>
+                  <option value="false">Not Featured</option>
+                </select>
+              </div>
+            </Card>
+
+            {loading ? <Spinner /> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.surface, borderBottom: `2px solid ${C.border}` }}>
+                      {["Image","Model","Brand","Fuel","Price","Dealer","City","Status","Featured","Action"].map(h => (
+                        <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 700, color: C.textMid, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminVehicles.map(v => (
+                      <tr key={v.id} style={{ borderBottom: `1px solid ${C.border}`, background: v.is_featured ? `${C.warning}08` : "transparent" }}>
+                        <td style={{ padding: "8px 12px" }}>
+                          <div style={{ width: 48, height: 36, borderRadius: 6, background: `${C.primary}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, overflow: "hidden", position: "relative" }}>
+                            🛺
+                            {v.thumbnail_url && <img src={v.thumbnail_url} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
+                          </div>
+                        </td>
+                        <td style={{ padding: "8px 12px", fontWeight: 600, color: C.text }}>{v.model_name}</td>
+                        <td style={{ padding: "8px 12px", color: C.textMid }}>{v.brand_name}</td>
+                        <td style={{ padding: "8px 12px" }}><span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, background: `${C.primary}15`, color: C.primary, fontWeight: 600 }}>{v.fuel_type}</span></td>
+                        <td style={{ padding: "8px 12px", color: C.primary, fontWeight: 700 }}>₹{Number(v.price).toLocaleString("en-IN")}</td>
+                        <td style={{ padding: "8px 12px", color: C.textMid }}>{v.dealer_name}</td>
+                        <td style={{ padding: "8px 12px", color: C.textDim, fontSize: 12 }}>📍 {v.dealer_city}</td>
+                        <td style={{ padding: "8px 12px" }}><span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, background: v.stock_status === "in_stock" ? `${C.success}20` : `${C.warning}20`, color: v.stock_status === "in_stock" ? C.success : C.warning, fontWeight: 600 }}>{v.stock_status}</span></td>
+                        <td style={{ padding: "8px 12px", textAlign: "center", fontSize: 18 }}>{v.is_featured ? "⭐" : <span style={{ color: C.textDim, fontSize: 14 }}>—</span>}</td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <button onClick={() => toggleFeature(v)}
+                            style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${v.is_featured ? C.danger : C.warning}`, background: v.is_featured ? `${C.danger}10` : `${C.warning}10`, color: v.is_featured ? C.danger : C.warning, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                            {v.is_featured ? "Unfeature" : "⭐ Feature"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {adminVehicles.length === 0 && (
+                      <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No vehicles found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
           </div>
         )}
 

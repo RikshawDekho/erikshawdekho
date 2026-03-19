@@ -2,7 +2,7 @@
  * DriverLandingPage — ErikshawDekho homepage
  * Green-first interactive theme, mobile-first, Hindi-friendly
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
@@ -54,29 +54,30 @@ function TopContactBar({ phone, whatsapp, email }) {
   if (!phone && !email) return null;
   const digits = (whatsapp || phone || "").replace(/\D/g, "");
   return (
-    <div style={{
-      background: "#f0fdf4", borderBottom: `1px solid ${G3}`,
-      padding: "7px 20px", display: "flex", justifyContent: "flex-end",
-      alignItems: "center", gap: 20, fontSize: 12, fontFamily: TYPO.body,
-    }}>
-      {phone && (
-        <a href={`tel:${phone}`} style={{ color: "#374151", textDecoration: "none", display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
-          📞 {phone}
-        </a>
-      )}
-      {(whatsapp || phone) && (
-        <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer"
-          style={{ color: G, textDecoration: "none", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ background: G, color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>💬</span>
-          WhatsApp
-        </a>
-      )}
-      {email && (
-        <a href={`mailto:${email}`} style={{ color: "#64748b", textDecoration: "none" }}>
-          ✉ {email}
-        </a>
-      )}
-    </div>
+    <>
+      <style>{`
+        .tcb-root { background:#f0fdf4; border-bottom:1px solid ${G3}; padding:7px 20px; display:flex; justify-content:flex-end; align-items:center; gap:20px; font-size:12px; font-family:${TYPO.body}; flex-wrap:nowrap; overflow:hidden; }
+        .tcb-phone { color:#374151; text-decoration:none; display:flex; align-items:center; gap:4px; font-weight:500; white-space:nowrap; }
+        .tcb-wa    { color:${G}; text-decoration:none; font-weight:700; display:flex; align-items:center; gap:4px; white-space:nowrap; }
+        .tcb-email { color:#64748b; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
+        @media (max-width: 640px) { .tcb-phone { display:none !important; } .tcb-email { display:none !important; } }
+        @media (max-width: 400px) { .tcb-root  { display:none !important; } }
+      `}</style>
+      <div className="tcb-root">
+        {phone && (
+          <a href={`tel:${phone}`} className="tcb-phone">📞 {phone}</a>
+        )}
+        {(whatsapp || phone) && (
+          <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer" className="tcb-wa">
+            <span style={{ background: G, color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>💬</span>
+            WhatsApp
+          </a>
+        )}
+        {email && (
+          <a href={`mailto:${email}`} className="tcb-email">✉ {email}</a>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -185,10 +186,8 @@ function VehicleCard({ v, lang, onEnquire }) {
       <div style={{ height: 3, background: hovered ? `linear-gradient(90deg,${G},${G2})` : "transparent", transition: "all 0.25s" }} />
       {/* Image */}
       <div style={{ height: 165, background: "#f1f5f9", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {v.thumbnail
-          ? <img src={v.thumbnail} alt={v.model_name} style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.3s", transform: hovered ? "scale(1.04)" : "scale(1)" }} />
-          : <span style={{ fontSize: 56, filter: "grayscale(0.2)" }}>🛺</span>
-        }
+        <span style={{ fontSize: 56, filter: "grayscale(0.2)" }}>🛺</span>
+        {v.thumbnail && <img src={v.thumbnail} alt={v.model_name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.3s", transform: hovered ? "scale(1.04)" : "scale(1)" }} onError={e => { e.target.style.display = "none"; }} />}
         {v.is_featured && (
           <div style={{ position: "absolute", top: 10, left: 10, background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#fff", padding: "3px 10px", borderRadius: RADIUS.pill, fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>
             ⭐ {hi ? "फीचर्ड" : "Featured"}
@@ -359,68 +358,30 @@ function VehicleEnquiryModal({ vehicle, lang, onClose }) {
   );
 }
 
-// ─── HorizontalCarousel ───────────────────────────────────────────────────────
-// Uses CSS translateX (not scrollLeft) so overflow:hidden works correctly.
-// Renders children twice for seamless infinite loop.
-function HorizontalCarousel({ children, speed = 32, bgColor = "#fff" }) {
-  const innerRef    = useRef(null);
-  const animRef     = useRef(null);
-  const posRef      = useRef(0);
-  const pausedRef   = useRef(false);
-  const touchStartX = useRef(null);
-
-  useEffect(() => {
-    let last = null;
-    const step = (ts) => {
-      if (!pausedRef.current) {
-        if (last !== null) posRef.current += (ts - last) / 1000 * speed;
-        const inner = innerRef.current;
-        if (inner) {
-          const half = inner.scrollWidth / 2; // half = one copy width
-          if (half > 0 && posRef.current >= half) posRef.current -= half;
-          inner.style.transform = `translateX(-${posRef.current}px)`;
-        }
-      }
-      last = ts;
-      animRef.current = requestAnimationFrame(step);
-    };
-    animRef.current = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(animRef.current);
-  }, [speed]);
-
-  const pause  = () => { pausedRef.current = true; };
-  const resume = () => { pausedRef.current = false; };
-
-  const onTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; pause(); };
-  const onTouchMove  = (e) => {
-    if (touchStartX.current === null) return;
-    posRef.current += touchStartX.current - e.touches[0].clientX;
-    touchStartX.current = e.touches[0].clientX;
-    if (innerRef.current) {
-      const half = innerRef.current.scrollWidth / 2;
-      if (posRef.current < 0) posRef.current += half;
-      if (posRef.current >= half) posRef.current -= half;
-      innerRef.current.style.transform = `translateX(-${posRef.current}px)`;
-    }
-  };
-  const onTouchEnd = () => { touchStartX.current = null; setTimeout(resume, 600); };
-
+// ─── HorizontalScrollRow ─────────────────────────────────────────────────────
+// Apple HIG + Material Design 3 standard for card rows:
+//   • User-controlled touch scroll (never auto-scrolls product cards)
+//   • scroll-snap-type: x mandatory → each swipe snaps to next card
+//   • Left edge always clean at 16px; right peek of ~25% signals "more"
+//   • Scrollbar hidden on all browsers
+function HorizontalScrollRow({ children }) {
   return (
-    <div style={{ position: "relative" }}>
-      {/* Left + right gradient fades to mask partial cards at edges */}
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 48, background: `linear-gradient(to right, ${bgColor}, transparent)`, zIndex: 2, pointerEvents: "none" }} />
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 48, background: `linear-gradient(to left, ${bgColor}, transparent)`, zIndex: 2, pointerEvents: "none" }} />
-      <div style={{ overflow: "hidden", cursor: "grab", userSelect: "none" }}
-        onMouseEnter={pause} onMouseLeave={resume}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
-      >
-        {/* Two copies of children — when first copy scrolls off, second is already in view */}
-        <div ref={innerRef} style={{ display: "flex", gap: 16, width: "max-content", willChange: "transform", paddingLeft: 20 }}>
-          {children}
-          {children}
-        </div>
+    <>
+      <style>{`.erd-hscroll::-webkit-scrollbar{display:none}`}</style>
+      <div className="erd-hscroll" style={{
+        overflowX: "scroll",
+        scrollSnapType: "x mandatory",
+        WebkitOverflowScrolling: "touch",
+        display: "flex",
+        gap: 12,
+        paddingLeft: 16,
+        paddingRight: 16,
+        paddingBottom: 8,
+        scrollbarWidth: "none",
+      }}>
+        {children}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -447,7 +408,7 @@ export default function DriverLandingPage() {
   const [content, setContent]           = useState({});
   const [stats, setStats]               = useState({ dealer_count: 0, vehicle_count: 0, city_count: 0 });
   const [vehicles, setVehicles]         = useState([]);
-  const [loadingVeh, setLoadingVeh]     = useState(true);
+  const [, setLoadingVeh]               = useState(true);
   const [enquireVehicle, setEnquireVehicle] = useState(null);
   const [dealers, setDealers]           = useState([]);
 
@@ -496,7 +457,6 @@ export default function DriverLandingPage() {
   return (
     <div className="dlp-root" style={{ fontFamily: TYPO.body, minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap');
         *, *::before, *::after { box-sizing: border-box; }
         @keyframes fadeUp { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
         @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
@@ -527,6 +487,8 @@ export default function DriverLandingPage() {
           .quick-grid      { grid-template-columns: repeat(3, 1fr) !important; gap: 8px !important; }
           .fuel-row        { gap: 8px !important; }
           .fuel-pill       { padding: 11px 16px !important; font-size: 13px !important; }
+          .dlp-root section { padding-left: 12px !important; padding-right: 12px !important; }
+          .erd-hscroll     { padding-left: 12px !important; padding-right: 12px !important; }
         }
       `}</style>
 
@@ -684,35 +646,33 @@ export default function DriverLandingPage() {
               {hi ? "Verified dealers की top-rated listings" : "Top-rated listings from verified dealers"}
             </p>
           </div>
-          <div style={{ paddingLeft: 20 }}>
-            <HorizontalCarousel speed={28}>
+          <HorizontalScrollRow>
               {vehicles.filter(v => v.is_featured).map(v => (
                 <div key={v.id} onClick={() => setEnquireVehicle(v)} style={{
-                  width: 200, flexShrink: 0, background: "#fff", borderRadius: RADIUS.xl,
+                  width: "min(74vw, 260px)", flexShrink: 0, scrollSnapAlign: "start",
+                  background: "#fff", borderRadius: RADIUS.xl,
                   border: `1.5px solid ${G}30`, boxShadow: "0 2px 12px rgba(22,163,74,0.10)",
                   overflow: "hidden", cursor: "pointer", transition: "transform 0.2s, box-shadow 0.2s",
                 }}
                   onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(22,163,74,0.18)"; }}
                   onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(22,163,74,0.10)"; }}
                 >
-                  <div style={{ height: 120, background: "#f1f5f9", position: "relative", overflow: "hidden" }}>
-                    {(v.thumbnail || v.thumbnail_url)
-                      ? <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36 }}>🛺</div>}
+                  <div style={{ height: 148, background: "#f1f5f9", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 44 }}>
+                    🛺
+                    {(v.thumbnail || v.thumbnail_url) && <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
                     <div style={{ position: "absolute", top: 8, left: 8, background: `linear-gradient(135deg,${G},${G2})`, color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20 }}>⭐ FEATURED</div>
                   </div>
-                  <div style={{ padding: "10px 12px 14px" }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: "#1e293b", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.brand_name} {v.model_name}</div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{v.city || v.dealer_city || ""}</div>
-                    <div style={{ fontWeight: 800, fontSize: 15, color: G }}>{v.price ? fmtINR(v.price) : (hi ? "कीमत जानें" : "Get Price")}</div>
-                    <div style={{ marginTop: 8, padding: "6px 0", background: `linear-gradient(135deg,${G},${G2})`, color: "#fff", borderRadius: RADIUS.md, textAlign: "center", fontSize: 12, fontWeight: 700 }}>
+                  <div style={{ padding: "12px 14px 16px" }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.brand_name} {v.model_name}</div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{v.city || v.dealer_city || ""}</div>
+                    <div style={{ fontWeight: 800, fontSize: 17, color: G, marginBottom: 10 }}>{v.price ? fmtINR(v.price) : (hi ? "कीमत जानें" : "Get Price")}</div>
+                    <div style={{ padding: "8px 0", background: `linear-gradient(135deg,${G},${G2})`, color: "#fff", borderRadius: RADIUS.md, textAlign: "center", fontSize: 13, fontWeight: 700 }}>
                       {hi ? "एंक्वायरी करें" : "Enquire"}
                     </div>
                   </div>
                 </div>
               ))}
-            </HorizontalCarousel>
-          </div>
+          </HorizontalScrollRow>
         </section>
       )}
 
@@ -730,12 +690,12 @@ export default function DriverLandingPage() {
               {hi ? "आपके पास के trusted showrooms" : "Trusted showrooms near you"}
             </p>
           </div>
-          <div style={{ paddingLeft: 20 }}>
-            <HorizontalCarousel speed={22}>
+          <HorizontalScrollRow>
               {dealers.map(d => (
                 <Link key={d.id} to={`/driver/dealers`} style={{ textDecoration: "none" }}>
                   <div style={{
-                    width: 170, flexShrink: 0, background: "#fff", borderRadius: RADIUS.xl,
+                    width: "min(42vw, 168px)", flexShrink: 0, scrollSnapAlign: "start",
+                    background: "#fff", borderRadius: RADIUS.xl,
                     border: "1.5px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
                     padding: "16px 14px", textAlign: "center", cursor: "pointer", transition: "all 0.2s",
                   }}
@@ -756,70 +716,37 @@ export default function DriverLandingPage() {
                   </div>
                 </Link>
               ))}
-            </HorizontalCarousel>
-          </div>
+          </HorizontalScrollRow>
         </section>
       )}
 
-      {/* 6. Vehicle Preview (3 cards) ──────────────────────────────────────── */}
-      <section style={{ padding: "48px 20px 52px", background: "#f8fafc" }}>
-        <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto" }}>
-          {/* Heading */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 10 }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <div style={{ width: 4, height: 28, background: `linear-gradient(180deg,${G},${G2})`, borderRadius: 4 }} />
-                <h2 style={{ fontFamily: TYPO.hindi, fontSize: 24, fontWeight: 800, color: "#1e293b", margin: 0 }}>
-                  {hi ? "ई-रिक्शा ब्राउज़ करें" : "Browse E-Rickshaws"}
-                </h2>
-              </div>
-              <div style={{ fontSize: 13, color: "#64748b", paddingLeft: 14 }}>
-                {hi ? "Verified dealers से best price पाएँ" : "Get best price from verified dealers"}
-              </div>
-            </div>
-            <Link to="/driver/marketplace" style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "10px 20px", background: G, color: "#fff",
-              borderRadius: RADIUS.lg, fontWeight: 700, fontSize: 14,
-              textDecoration: "none", boxShadow: `0 4px 12px ${G}40`,
-              transition: "all 0.2s",
-            }}
-              onMouseEnter={e => e.currentTarget.style.background = G2}
-              onMouseLeave={e => e.currentTarget.style.background = G}
-            >
-              {hi ? "सभी देखें →" : "View All →"}
-            </Link>
-          </div>
-
-          {/* 3-card preview */}
-          {loadingVeh ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 20 }}>
-              {Array(3).fill(0).map((_, i) => <SkeletonCard key={i} />)}
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 20 }}>
-                {vehicles.slice(0, 3).map(v => <VehicleCard key={v.id} v={v} lang={lang} onEnquire={setEnquireVehicle} />)}
-              </div>
-              {vehicles.length > 3 && (
-                <div style={{ textAlign: "center", marginTop: 32 }}>
-                  <Link to="/driver/marketplace" style={{
-                    display: "inline-flex", alignItems: "center", gap: 8,
-                    padding: "14px 36px", background: "#fff", color: G,
-                    border: `2px solid ${G}`, borderRadius: RADIUS.lg,
-                    fontSize: 15, fontWeight: 700, textDecoration: "none",
-                    fontFamily: hi ? TYPO.hindi : TYPO.body,
-                    transition: "all 0.2s",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = G; e.currentTarget.style.color = "#fff"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = G; }}
-                  >
-                    🛺 {hi ? `${vehicles.length - 3}+ और गाड़ियाँ देखें` : `Browse ${vehicles.length - 3}+ More Vehicles`}
-                  </Link>
-                </div>
-              )}
-            </>
-          )}
+      {/* 6. Marketplace CTA ─────────────────────────────────────────────────── */}
+      <section style={{ padding: "40px 20px 48px", background: "#f8fafc" }}>
+        <div style={{
+          maxWidth: 480, margin: "0 auto",
+          background: `linear-gradient(135deg, #052e16 0%, ${G} 60%, ${G2} 100%)`,
+          borderRadius: 20, padding: "32px 28px", textAlign: "center",
+          boxShadow: `0 12px 40px ${G}40`,
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🛺</div>
+          <h2 style={{ fontFamily: TYPO.hindi, fontSize: 22, fontWeight: 800, color: "#fff", margin: "0 0 8px" }}>
+            {hi ? `${vehicles.length}+ E-Rickshaw Available` : `${vehicles.length}+ E-Rickshaws Available`}
+          </h2>
+          <p style={{ color: "rgba(255,255,255,0.8)", fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>
+            {hi ? "Verified dealers से compare करें, best price पाएँ — बिल्कुल free" : "Compare from verified dealers, get best price — completely free"}
+          </p>
+          <Link to="/driver/marketplace" style={{
+            display: "block", padding: "14px 0",
+            background: "#fff", color: G,
+            borderRadius: RADIUS.lg, fontWeight: 800, fontSize: 16,
+            textDecoration: "none", boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+            transition: "transform 0.15s, box-shadow 0.15s",
+          }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.2)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)"; }}
+          >
+            {hi ? "सभी गाड़ियाँ देखें →" : "Browse All Vehicles →"}
+          </Link>
         </div>
       </section>
 

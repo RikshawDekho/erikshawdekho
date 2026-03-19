@@ -75,6 +75,17 @@ SESSION_COOKIE_SAMESITE        = 'Lax'
 CSRF_COOKIE_HTTPONLY           = False  # Must be readable by JS (DRF)
 CSRF_COOKIE_SAMESITE           = 'Lax'
 
+# ── Cloudinary (media file storage) ───────────────────────────────
+_cloudinary_url = os.environ.get('CLOUDINARY_URL', '')
+if _cloudinary_url:
+    import cloudinary
+    cloudinary.config(
+        cloudinary_url=_cloudinary_url,
+        secure=True,
+    )
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+    CLOUDINARY_STORAGE = {'CLOUDINARY_URL': _cloudinary_url}
+
 # ── Sentry ─────────────────────────────────────────────────────────
 _SENTRY_DSN = os.environ.get('SENTRY_DSN', '')
 if _SENTRY_DSN:

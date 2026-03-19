@@ -19,6 +19,7 @@ urlpatterns = [
     path('', include(router.urls)),
 
     # ── Auth ──────────────────────────────────────────────────────
+    path('auth/google/',            views.google_auth,       name='google-auth'),
     path('auth/register/',          views.register,          name='register'),
     path('auth/register/driver/',   views.register_driver,   name='register-driver'),
     path('auth/login/',             views.login_view,        name='login'),
@@ -138,4 +139,8 @@ urlpatterns = [
 
     # Admin: leads analytics
     path('admin-portal/leads-analytics/',                              views.admin_leads_analytics,             name='admin-leads-analytics'),
+
+    # Admin: vehicles management (featured toggle)
+    path('admin-portal/vehicles/',                                     views.admin_vehicles,                    name='admin-vehicles'),
+    path('admin-portal/vehicles/<int:vehicle_id>/',                    views.admin_vehicles,                    name='admin-vehicle-detail'),
 ]

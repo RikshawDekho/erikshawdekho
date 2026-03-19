@@ -131,6 +131,101 @@ def register_driver(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+def google_auth(request):
+    """
+    Sign in / Sign up with Google OAuth.
+    Accepts a Google ID token (from @react-oauth/google credential).
+    - If user exists by email → return JWT + user info (login).
+    - If user is new → return { new_user: true, email, name, photo } so
+      frontend can redirect to the register flow with details pre-filled.
+    """
+    credential = request.data.get('credential')  # Google ID token JWT
+    if not credential:
+        return Response({'error': 'Google credential is required.'}, status=400)
+
+    # Verify the Google ID token using google-auth library
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        import os as _os
+        client_id = _os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+        if not client_id:
+            return Response({'error': 'Google login is not configured on this server.'}, status=503)
+        id_info = google_id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            client_id,
+        )
+    except Exception as e:
+        return Response({'error': f'Invalid Google token: {e}'}, status=401)
+
+    email = (id_info.get('email') or '').lower().strip()
+    name  = id_info.get('name') or ''
+    photo = id_info.get('picture') or ''
+
+    if not email or not id_info.get('email_verified'):
+        return Response({'error': 'Google account email is not verified.'}, status=400)
+
+    # Look up existing user by email
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        # New user — tell frontend to open register form with details pre-filled
+        return Response({
+            'new_user': True,
+            'email': email,
+            'name': name,
+            'photo': photo,
+        }, status=200)
+
+    if not user.is_active:
+        return Response({'error': f'Your account has been deactivated. Please contact {_support_email()}'}, status=403)
+
+    # Existing user — return JWT tokens (same structure as login_view)
+    dealer   = getattr(user, 'dealer_profile', None)
+    financer = getattr(user, 'financer_profile', None)
+    profile  = getattr(user, 'profile', None)          # UserProfile related_name='profile'
+    profile_type = profile.user_type if profile else None
+
+    NON_ADMIN_TYPES = {'financer', 'customer', 'driver'}
+    if user.is_superuser:
+        user_type = 'admin'
+    elif profile_type in NON_ADMIN_TYPES:
+        user_type = profile_type
+    elif user.is_staff:
+        user_type = 'admin'
+    elif profile_type:
+        user_type = profile_type
+    else:
+        user_type = 'dealer' if dealer else 'driver'
+
+    display_name = name or (
+        dealer.dealer_name if dealer else (
+            financer.company_name if financer else user.get_full_name() or user.username
+        )
+    )
+    return Response({
+        **_jwt_response(user),
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'user_type': user_type,
+            'name': display_name,
+        },
+        'dealer': {
+            'id':   dealer.id          if dealer else None,
+            'name': dealer.dealer_name if dealer else display_name,
+            'city': dealer.city        if dealer else '',
+        },
+        **(({'financer': {'id': financer.id, 'company_name': financer.company_name}} if financer else {})),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def login_view(request):
     """Authenticate user (dealer or driver) and return JWT tokens."""
     import re as _re
@@ -244,6 +339,11 @@ def me(request):
                     if f == 'dealer_name' and not str(val).strip():
                         continue
                     setattr(dealer, f, str(val).strip() if isinstance(val, str) else val)
+            # Handle file uploads (logo, cover_image)
+            if 'logo' in request.FILES:
+                dealer.logo = request.FILES['logo']
+            if 'cover_image' in request.FILES:
+                dealer.cover_image = request.FILES['cover_image']
             dealer.save()
 
     def _d(field, default=''):
@@ -256,6 +356,19 @@ def me(request):
         user_type = profile.user_type
     else:
         user_type = 'dealer' if dealer else 'driver'
+
+    def _img_url(field):
+        """Return absolute URL for an ImageField, or None."""
+        img = _d(field, None)
+        if not img:
+            return None
+        try:
+            url = img.url
+            if url.startswith('http'):
+                return url
+            return request.build_absolute_uri(url)
+        except Exception:
+            return None
 
     return Response({
         'user': {
@@ -275,6 +388,8 @@ def me(request):
             'address':              _d('address'),
             'description':          _d('description'),
             'is_verified':          _d('is_verified', False),
+            'logo':                 _img_url('logo'),
+            'cover_image':          _img_url('cover_image'),
             'sales_manager_name':   _d('sales_manager_name', 'Authorised Signatory'),
             'bank_name':            _d('bank_name', 'HDFC Bank Ltd.'),
             'bank_account_number':  _d('bank_account_number', ''),
@@ -391,7 +506,9 @@ class VehicleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        dealer = self.request.user.dealer_profile
+        dealer = getattr(self.request.user, 'dealer_profile', None)
+        if dealer is None:
+            return Vehicle.objects.none()
         qs = Vehicle.objects.filter(dealer=dealer, is_active=True).select_related('brand')
         brand = self.request.query_params.get('brand')
         fuel = self.request.query_params.get('fuel_type')
@@ -428,6 +545,35 @@ class VehicleViewSet(viewsets.ModelViewSet):
         vehicle.is_active = False
         vehicle.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'])
+    def feature(self, request, pk=None):
+        """Toggle is_featured for dealer's own vehicle. Pro plan only, max 3 featured."""
+        vehicle = self.get_object()
+        dealer = vehicle.dealer
+
+        # Only Pro dealers can self-feature (plan_type is on DealerProfile directly)
+        plan_type = getattr(dealer, 'plan_type', 'free')
+        if plan_type not in ('pro', 'early_dealer'):
+            return Response(
+                {'error': 'Upgrade to Pro plan to feature vehicles on the homepage.', 'code': 'pro_required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        next_featured = not vehicle.is_featured
+
+        if next_featured:
+            # Check max 3 featured per dealer
+            already_featured = Vehicle.objects.filter(dealer=dealer, is_featured=True, is_active=True).count()
+            if already_featured >= 3:
+                return Response(
+                    {'error': 'You can feature a maximum of 3 vehicles. Unfeature one first.', 'code': 'feature_limit'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        vehicle.is_featured = next_featured
+        vehicle.save(update_fields=['is_featured'])
+        return Response({'id': vehicle.id, 'is_featured': vehicle.is_featured})
 
 
 # ─── VEHICLE GALLERY IMAGES ──────────────────────────────────────
@@ -471,22 +617,34 @@ def vehicle_images(request, vehicle_id, image_id=None):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def marketplace_vehicles(request):
-    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_verified=True, dealer__is_demo=False).select_related('brand','dealer')
-    fuel = request.query_params.get('fuel_type')
-    search = request.query_params.get('search')
-    featured = request.query_params.get('featured')
-    city = request.query_params.get('city')
+    from django.core.cache import cache
+    fuel = request.query_params.get('fuel_type', '')
+    search = request.query_params.get('search', '')
+    featured = request.query_params.get('featured', '')
+    city = request.query_params.get('city', '')
+    ordering = request.query_params.get('ordering', '')
+
+    # Cache only unfiltered / simple requests (30s) to keep data fresh
+    cache_key = f'marketplace:{fuel}:{featured}:{city}:{ordering}' if not search else None
+    if cache_key:
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
+
+    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_verified=True, dealer__is_demo=False).select_related('brand','dealer','dealer__plan').prefetch_related('images')
     if fuel:     qs = qs.filter(fuel_type=fuel)
     if search:   qs = qs.filter(Q(model_name__icontains=search)|Q(brand__name__icontains=search))
     if featured: qs = qs.filter(is_featured=True)
     if city:     qs = qs.filter(dealer__city__icontains=city)
     # Priority: early_dealer plan first, then featured, then newest
-    qs = qs.select_related('dealer__plan')
     qs_priority = qs.filter(dealer__plan__priority_ranking=True)
     qs_free = qs.exclude(dealer__plan__priority_ranking=True)
     combined = list(qs_priority.order_by('-is_featured', '-created_at')[:40]) + list(qs_free.order_by('-is_featured', '-created_at')[:20])
     serializer = PublicVehicleSerializer(combined[:60], many=True, context={'request': request})
-    return Response({'results': serializer.data, 'count': qs.count()})
+    result = {'results': serializer.data, 'count': qs.count()}
+    if cache_key:
+        cache.set(cache_key, result, timeout=30)
+    return Response(result)
 
 
 # ─── LEADS ────────────────────────────────────────────────────────
@@ -826,22 +984,29 @@ def reports(request):
 @permission_classes([AllowAny])
 def dealer_list(request):
     """Public listing of verified dealers, searchable by city/state."""
+    from django.core.cache import cache
     from django.db.models import Avg as _Avg, Count as _Count
+    city   = request.query_params.get('city', '')
+    state  = request.query_params.get('state', '')
+    search = request.query_params.get('search', '')
+    cache_key = f'dealer_list:{city}:{state}:{search}'
+    cached = cache.get(cache_key)
+    if cached:
+        return Response(cached)
     qs = DealerProfile.objects.filter(is_verified=True, is_demo=False).annotate(
         _avg_rating=_Avg('reviews__rating'),
         _review_count=_Count('reviews', distinct=True),
         _vehicle_count=_Count('vehicles', filter=Q(vehicles__is_active=True, vehicles__stock_status__in=['in_stock','low_stock']), distinct=True),
     )
-    city   = request.query_params.get('city')
-    state  = request.query_params.get('state')
-    search = request.query_params.get('search')
     if city:   qs = qs.filter(city__icontains=city)
     if state:  qs = qs.filter(state__icontains=state)
     if search: qs = qs.filter(Q(dealer_name__icontains=search) | Q(city__icontains=search))
-    return Response({
+    result = {
         'results': PublicDealerSerializer(qs[:30], many=True).data,
         'count':   qs.count(),
-    })
+    }
+    cache.set(cache_key, result, timeout=60)
+    return Response(result)
 
 
 @api_view(['GET'])
@@ -1103,20 +1268,30 @@ def dealer_enquiries(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def platform_stats(request):
-    """Aggregate numbers shown on the public homepage."""
-    return Response({
-        'dealer_count':  DealerProfile.objects.filter(is_verified=True).count(),
-        'vehicle_count': Vehicle.objects.filter(is_active=True).count(),
-        'city_count':    DealerProfile.objects.filter(is_verified=True).values('city').distinct().count(),
-    })
+    """Aggregate numbers shown on the public homepage. Cached 10 minutes."""
+    from django.core.cache import cache
+    cached = cache.get('platform_stats')
+    if cached:
+        return Response(cached)
+    result = {
+        'dealer_count':  DealerProfile.objects.filter(is_verified=True, is_demo=False).count(),
+        'vehicle_count': Vehicle.objects.filter(is_active=True, dealer__is_demo=False).count(),
+        'city_count':    DealerProfile.objects.filter(is_verified=True, is_demo=False).values('city').distinct().count(),
+    }
+    cache.set('platform_stats', result, timeout=600)
+    return Response(result)
 
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def public_homepage_content(request):
-    """Return admin-controlled homepage content for the public site."""
+    """Return admin-controlled homepage content. Cached 5 minutes."""
+    from django.core.cache import cache
+    cached = cache.get('homepage_content')
+    if cached:
+        return Response(cached)
     s = PlatformSettings.get()
-    return Response({
+    result = {
         'announcement_text':  s.announcement_text,
         'announcement_link':  s.announcement_link,
         'hero_title_hi':      s.hero_title_hi,
@@ -1127,7 +1302,9 @@ def public_homepage_content(request):
         'support_whatsapp':   s.support_whatsapp,
         'support_email':      s.support_email,
         'support_name':       s.support_name,
-    })
+    }
+    cache.set('homepage_content', result, timeout=300)
+    return Response(result)
 
 
 # ─── DEALER UNREAD COUNT (bell icon) ──────────────────────────────
@@ -1167,20 +1344,24 @@ def admin_stats(request):
     if not _is_admin(request.user):
         return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
     from django.db.models import Sum
+    real_dealers = DealerProfile.objects.filter(is_demo=False)
+    real_vehicles = Vehicle.objects.filter(is_active=True, dealer__is_demo=False)
+    real_leads = Lead.objects.filter(dealer__is_demo=False)
+    real_sales = Sale.objects.filter(dealer__is_demo=False)
     return Response({
-        'total_dealers':       DealerProfile.objects.count(),
-        'verified_dealers':    DealerProfile.objects.filter(is_verified=True).count(),
-        'total_vehicles':      Vehicle.objects.filter(is_active=True).count(),
-        'total_leads':         Lead.objects.count(),
-        'total_sales':         Sale.objects.count(),
+        'total_dealers':       real_dealers.count(),
+        'verified_dealers':    real_dealers.filter(is_verified=True).count(),
+        'total_vehicles':      real_vehicles.count(),
+        'total_leads':         real_leads.count(),
+        'total_sales':         real_sales.count(),
         'total_enquiries':     PublicEnquiry.objects.count(),
         'unprocessed_enquiries': PublicEnquiry.objects.filter(is_processed=False).count(),
         'pending_applications':DealerApplication.objects.filter(status='pending').count(),
-        'total_revenue':       Sale.objects.aggregate(r=Sum('sale_price'))['r'] or 0,
-        'total_users':         User.objects.count(),
+        'total_revenue':       real_sales.aggregate(r=Sum('sale_price'))['r'] or 0,
+        'total_users':         User.objects.filter(is_superuser=False).count(),
         'total_financers':     FinancerProfile.objects.count(),
         'verified_financers':  FinancerProfile.objects.filter(is_verified=True).count(),
-        'free_trial_dealers':  DealerProfile.objects.filter(plan_type='free').count(),
+        'free_trial_dealers':  real_dealers.filter(plan_type='free').count(),
     })
 
 
@@ -1202,7 +1383,7 @@ def admin_users(request, user_id=None):
     # GET: list users with pagination
     search = request.query_params.get('search', '')
     user_type = request.query_params.get('user_type', '')
-    qs = User.objects.select_related('profile', 'dealer_profile').order_by('-date_joined')
+    qs = User.objects.select_related('profile', 'dealer_profile').exclude(dealer_profile__is_demo=True).order_by('-date_joined')
     if search:
         qs = qs.filter(Q(username__icontains=search) | Q(email__icontains=search))
     # Apply user_type filter at DB level so pagination counts are accurate
@@ -1259,7 +1440,7 @@ def admin_dealers(request, dealer_id=None):
     city   = request.query_params.get('city', '')
     verified = request.query_params.get('verified', '')
     from django.db.models import Count as _Count
-    qs = DealerProfile.objects.select_related('user').annotate(
+    qs = DealerProfile.objects.filter(is_demo=False).select_related('user').annotate(
         vehicle_count=_Count('vehicles', filter=Q(vehicles__is_active=True))
     ).order_by('-created_at')
     if search:   qs = qs.filter(Q(dealer_name__icontains=search) | Q(phone__icontains=search))
@@ -1921,6 +2102,9 @@ def admin_update_settings(request):
         if field in request.data:
             setattr(s, field, request.data[field])
     s.save()
+    # Invalidate homepage content cache so changes are reflected immediately
+    from django.core.cache import cache
+    cache.delete('homepage_content')
     return Response({"status": "ok"})
 
 
@@ -3153,6 +3337,62 @@ def admin_leads_analytics(request):
             'finance_apps': app_qs.count(),
         }
     })
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_vehicles(request, vehicle_id=None):
+    """List all vehicles or toggle is_featured on a specific vehicle (admin only)."""
+    if not _is_admin(request.user):
+        return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'PATCH':
+        if not vehicle_id:
+            return Response({'error': 'vehicle_id required'}, status=400)
+        try:
+            v = Vehicle.objects.get(id=vehicle_id)
+        except Vehicle.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
+        if 'is_featured' in request.data:
+            v.is_featured = request.data['is_featured']
+            v.save(update_fields=['is_featured'])
+        return Response({'id': v.id, 'is_featured': v.is_featured})
+
+    # GET — list all vehicles with dealer info, paginated
+    search   = request.query_params.get('search', '')
+    featured = request.query_params.get('featured', '')
+    page_num = int(request.query_params.get('page', 1))
+    page_size = 30
+
+    qs = Vehicle.objects.select_related('dealer', 'brand').filter(dealer__is_demo=False).order_by('-created_at')
+    if search:
+        qs = qs.filter(Q(model_name__icontains=search) | Q(dealer__dealer_name__icontains=search))
+    if featured == 'true':
+        qs = qs.filter(is_featured=True)
+    elif featured == 'false':
+        qs = qs.filter(is_featured=False)
+
+    total = qs.count()
+    qs = qs[(page_num - 1) * page_size: page_num * page_size]
+    data = [
+        {
+            'id': v.id,
+            'model_name': v.model_name,
+            'brand_name': v.brand.name if v.brand else '',
+            'fuel_type': v.fuel_type,
+            'price': str(v.price),
+            'stock_status': v.stock_status,
+            'is_featured': v.is_featured,
+            'is_active': v.is_active,
+            'dealer_id': v.dealer_id,
+            'dealer_name': v.dealer.dealer_name if v.dealer else '',
+            'dealer_city': v.dealer.city if v.dealer else '',
+            'thumbnail_url': (v.images.first().image.url if v.images.exists() else None),
+            'created_at': v.created_at.date().isoformat(),
+        }
+        for v in qs
+    ]
+    return Response({'results': data, 'count': total, 'total_pages': (total + page_size - 1) // page_size})
 
 
 # ═══════════════════════════════════════════════════════════════════

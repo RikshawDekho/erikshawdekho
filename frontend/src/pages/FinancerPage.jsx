@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
+import { GoogleLogin } from '@react-oauth/google';
 import Navbar from "../components/NavbarNew";
 import FooterNew from "../components/FooterNew";
 import { SectionSkeleton } from "../components/PageSkeleton";
@@ -30,57 +31,156 @@ function Badge({ status }) {
 }
 
 /* ─── Login Form ────────────────────────────────────────── */
-function FinancerLoginForm({ onSuccess }) {
+function FinancerLoginForm({ onSuccess, onSwitchToRegister }) {
   const [form, setForm] = useState({ username: "", password: "" });
-  const [err, setErr] = useState("");
+  const [errBanner, setErrBanner] = useState(null); // { msg, hint: null|"wrong_password"|"no_account"|"wrong_portal" }
   const [loading, setLoading] = useState(false);
-  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: RADIUS.sm, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", minHeight: CONTROL.md };
+  const [shake, setShake] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  const triggerShake = () => { setShake(true); setTimeout(() => setShake(false), 500); };
+  const inp = (highlight) => ({ width: "100%", padding: "12px 14px", paddingRight: 44, border: `1.5px solid ${highlight ? "#dc2626" : "#e5e7eb"}`, borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" });
+  const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 5 };
 
   const submit = async (e) => {
     e.preventDefault();
-    setErr(""); setLoading(true);
+    setErrBanner(null); setLoading(true);
     try {
       const res = await fetch(`${API}/auth/login/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       const data = await res.json();
       if (res.ok && data.access) {
-        if (data.user?.user_type && data.user.user_type !== "financer") {
-          setErr(`This portal is for NBFC/Financer accounts only. Your account type is "${data.user.user_type}". Please use the correct portal.`);
-        } else {
-          onSuccess(data);
-        }
+        if (data.user?.user_type && !["financer", "admin"].includes(data.user.user_type)) {
+          setErrBanner({ msg: `This portal is for NBFC/Financer accounts only. Your account type is "${data.user.user_type}".`, hint: "wrong_portal" });
+          triggerShake();
+        } else { onSuccess(data); }
       } else {
-        setErr(data.detail || data.error || "Login failed. Check credentials.");
+        const msg = data.error || data.detail || "Login failed. Check your credentials.";
+        const hint = res.status === 429 ? "rate_limited"
+          : data.account_exists === false ? "no_account"
+          : data.account_exists === true ? "wrong_password"
+          : null;
+        setErrBanner({ msg, hint });
+        triggerShake();
       }
-    } catch { setErr("Network error."); }
+    } catch { setErrBanner({ msg: "Network error. Please try again.", hint: null }); triggerShake(); }
     setLoading(false);
   };
 
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setGoogleLoading(true); setErrBanner(null);
+    try {
+      const res = await fetch(`${API}/auth/google/`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: credentialResponse.credential }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErrBanner({ msg: data.error || data.detail || "Google sign-in failed.", hint: null }); triggerShake(); return; }
+      if (data.new_user) { onSwitchToRegister({ email: data.email, name: data.name }); return; }
+      if (data.user?.user_type && !["financer", "admin"].includes(data.user.user_type)) {
+        setErrBanner({ msg: `This portal is for NBFC/Financer accounts only. Your account type is "${data.user.user_type}".`, hint: "wrong_portal" });
+        triggerShake(); return;
+      }
+      onSuccess(data);
+    } catch { setErrBanner({ msg: "Google sign-in failed. Please try again.", hint: null }); triggerShake(); }
+    setGoogleLoading(false);
+  };
+
   return (
-    <form onSubmit={submit} style={{ maxWidth: 400, margin: "0 auto" }}>
-      <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 20, textAlign: "center", color: "#111827" }}>🔐 Financer Login</div>
-      {err && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 13 }}>{err}</div>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-        <input style={inp} placeholder="Email or Username *" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} required />
-        <input style={inp} type="password" placeholder="Password *" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required />
+    <div style={{ maxWidth: 420, margin: "0 auto" }}>
+      <style>{`@keyframes fShake{0%,100%{transform:translateX(0)}15%{transform:translateX(-7px)}30%{transform:translateX(7px)}45%{transform:translateX(-5px)}60%{transform:translateX(5px)}75%{transform:translateX(-3px)}90%{transform:translateX(3px)}}`}</style>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 32, boxShadow: "0 4px 24px rgba(0,0,0,0.08)", animation: shake ? "fShake 0.5s ease" : "none" }}>
+        <h2 style={{ textAlign: "center", fontSize: 20, fontWeight: 700, color: "#111827", marginBottom: 24, letterSpacing: "-0.3px" }}>Sign in to Financer Portal</h2>
+
+        {errBanner && (
+          <div style={{ borderLeft: "4px solid #dc2626", background: "#fef2f2", borderRadius: "0 8px 8px 0", padding: "12px 14px", fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 600, color: "#dc2626", marginBottom: errBanner.hint ? 8 : 0 }}>{errBanner.msg}</div>
+            {errBanner.hint === "wrong_password" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                <span style={{ fontSize: 12, color: "#475569" }}>Forgot your password?</span>
+                <a href={`mailto:support@erikshawdekho.com?subject=Financer Password Reset Request&body=Please reset the password for my financer account: ${form.username}`}
+                  style={{ background: "none", border: `1.5px solid ${P}`, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700, color: P, cursor: "pointer", fontFamily: "inherit", textDecoration: "none" }}>
+                  Reset password
+                </a>
+              </div>
+            )}
+            {errBanner.hint === "no_account" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                <span style={{ fontSize: 12, color: "#475569" }}>Don't have an account?</span>
+                <button type="button" onClick={() => onSwitchToRegister({})} style={{ background: "none", border: `1.5px solid ${P}`, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700, color: P, cursor: "pointer", fontFamily: "inherit" }}>Create account</button>
+              </div>
+            )}
+            {errBanner.hint === "wrong_portal" && (
+              <div style={{ marginTop: 4 }}>
+                <a href="/dealer" style={{ fontSize: 12, color: P, fontWeight: 700, textDecoration: "underline" }}>Go to Dealer portal →</a>
+              </div>
+            )}
+            {errBanner.hint === "rate_limited" && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#92400e" }}>Please wait a few minutes before trying again.</div>
+            )}
+          </div>
+        )}
+
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={lbl}>Email or Username</label>
+            <input style={inp(errBanner?.hint === "no_account")} placeholder="your@email.com" value={form.username}
+              onChange={e => setForm(p => ({ ...p, username: e.target.value }))} autoComplete="username" required />
+          </div>
+          <div>
+            <label style={lbl}>Password</label>
+            <div style={{ position: "relative" }}>
+              <input style={inp(errBanner?.hint === "wrong_password")} type={showPw ? "text" : "password"} placeholder="Your password" value={form.password}
+                onChange={e => setForm(p => ({ ...p, password: e.target.value }))} autoComplete="current-password" required />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16, padding: 2, lineHeight: 1 }}
+                title={showPw ? "Hide password" : "Show password"}>
+                {showPw ? "🙈" : "👁"}
+              </button>
+            </div>
+          </div>
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Signing in…" : "Sign In"}
+          </button>
+        </form>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 16px" }}>
+          <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+          <span style={{ fontSize: 12, color: "#9ca3af", whiteSpace: "nowrap" }}>or continue with</span>
+          <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+        </div>
+        {googleLoading ? (
+          <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "10px 0" }}>Verifying with Google…</div>
+        ) : (
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <GoogleLogin onSuccess={handleGoogleSuccess} onError={() => { setErrBanner({ msg: "Google sign-in was cancelled or failed.", hint: null }); }}
+              useOneTap={false} shape="rectangular" size="large" width="356" text="signin_with" />
+          </div>
+        )}
+        {!errBanner?.hint && (
+          <div style={{ textAlign: "center", marginTop: 16 }}>
+            <button type="button" style={{ background: "none", border: "none", color: P, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+              Forgot password?
+            </button>
+          </div>
+        )}
       </div>
-      <button type="submit" disabled={loading}
-        style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: RADIUS.md, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1, minHeight: CONTROL.md }}>
-        {loading ? "Logging in..." : "Login →"}
-      </button>
-    </form>
+    </div>
   );
 }
 
 /* ─── Registration Form ─────────────────────────────────── */
-function FinancerRegForm({ onSuccess }) {
-  const [form, setForm] = useState({ email: "", password: "", company_name: "", contact_person: "", phone: "", city: "" });
+function FinancerRegForm({ onSuccess, prefillEmail, prefillName }) {
+  const [form, setForm] = useState({ email: prefillEmail || "", password: "", company_name: prefillName || "", contact_person: "", phone: "", city: "" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const inp = { width: "100%", padding: "11px 14px", border: "1.5px solid #e5e7eb", borderRadius: RADIUS.sm, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", minHeight: CONTROL.md };
+  const [showPw, setShowPw] = useState(false);
+  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 5 };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -89,8 +189,7 @@ function FinancerRegForm({ onSuccess }) {
     if (form.password.length < 8) { setErr("Password must be at least 8 characters."); setLoading(false); return; }
     try {
       const res = await fetch(`${API}/auth/register/financer/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       const data = await res.json();
@@ -101,22 +200,47 @@ function FinancerRegForm({ onSuccess }) {
   };
 
   return (
-    <form onSubmit={submit} style={{ maxWidth: 540, margin: "0 auto" }}>
-      <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 20, textAlign: "center", color: "#111827" }}>🏦 Financer Registration</div>
-      {err && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 13 }}>{err}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-        <input style={inp} type="email" placeholder="Email *" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} required />
-        <input style={inp} type="password" placeholder="Password * (min 8 chars)" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required minLength={8} />
-        <input style={inp} placeholder="Company Name *" value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value }))} required />
-        <input style={inp} placeholder="Contact Person" value={form.contact_person} onChange={e => setForm(p => ({ ...p, contact_person: e.target.value }))} />
-        <input style={inp} placeholder="Phone * (10 digits)" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} required maxLength={10} inputMode="numeric" />
-        <input style={inp} placeholder="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
+    <div style={{ maxWidth: 440, margin: "0 auto" }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 32, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+        <h2 style={{ textAlign: "center", fontSize: 20, fontWeight: 700, color: "#111827", marginBottom: 8, letterSpacing: "-0.3px" }}>Create Financer Account</h2>
+        <p style={{ textAlign: "center", color: "#6b7280", fontSize: 13, marginBottom: 24 }}>NBFC / Financer partner registration</p>
+        {err && (
+          <div style={{ borderLeft: "4px solid #dc2626", background: "#fef2f2", borderRadius: "0 8px 8px 0", padding: "12px 14px", fontSize: 13, marginBottom: 16, color: "#dc2626", fontWeight: 600 }}>{err}</div>
+        )}
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div><label style={lbl}>Email Address *</label>
+            <input style={inp} type="email" placeholder="your@company.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} autoComplete="email" required />
+          </div>
+          <div><label style={lbl}>Password *</label>
+            <div style={{ position: "relative" }}>
+              <input style={{ ...inp, paddingRight: 44 }} type={showPw ? "text" : "password"} placeholder="Min 8 characters" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} autoComplete="new-password" required minLength={8} />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16, padding: 2, lineHeight: 1 }}>
+                {showPw ? "🙈" : "👁"}
+              </button>
+            </div>
+          </div>
+          <div><label style={lbl}>Company / NBFC Name *</label>
+            <input style={inp} placeholder="e.g. Sharma Finance Pvt. Ltd." value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value }))} required />
+          </div>
+          <div><label style={lbl}>Contact Person</label>
+            <input style={inp} placeholder="Full name" value={form.contact_person} onChange={e => setForm(p => ({ ...p, contact_person: e.target.value }))} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div><label style={lbl}>Phone *</label>
+              <input style={inp} placeholder="10-digit number" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} required inputMode="numeric" />
+            </div>
+            <div><label style={lbl}>City</label>
+              <input style={inp} placeholder="e.g. Delhi" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
+            </div>
+          </div>
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.7 : 1, marginTop: 4 }}>
+            {loading ? "Creating account…" : "Create Account"}
+          </button>
+        </form>
       </div>
-      <button type="submit" disabled={loading}
-        style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: RADIUS.md, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1, minHeight: CONTROL.md }}>
-        {loading ? "Registering..." : "Register as Financer →"}
-      </button>
-    </form>
+    </div>
   );
 }
 
@@ -888,6 +1012,7 @@ function SupportTab() {
    ═══════════════════════════════════════════════════════════ */
 export default function FinancerPage() {
   const [mode, setMode] = useState("login"); // login | register | dashboard
+  const [prefillData, setPrefillData] = useState({}); // email/name pre-filled from Google new-user flow
   const [token, setToken] = useState(() => localStorage.getItem("erd_financer_token") || null);
   const [dashTab, setDashTab] = useState("profile");
   const [profile, setProfile] = useState(null);
@@ -988,17 +1113,22 @@ export default function FinancerPage() {
       <div style={{ maxWidth: LAYOUT.contentWidthNarrow, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
         {mode === "login" && (
           <div>
-            <FinancerLoginForm onSuccess={handleLoginSuccess} />
+            <FinancerLoginForm
+              onSuccess={handleLoginSuccess}
+              onSwitchToRegister={(data) => { setPrefillData(data); setMode("register"); }}
+            />
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#6b7280" }}>
-              Don't have an account? <button onClick={() => setMode("register")} style={{ background: "none", border: "none", color: P, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Register →</button>
+              Don't have an account?{" "}
+              <button onClick={() => { setPrefillData({}); setMode("register"); }} style={{ background: "none", border: "none", color: P, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Register →</button>
             </div>
           </div>
         )}
         {mode === "register" && (
           <div>
-            <FinancerRegForm onSuccess={handleRegSuccess} />
+            <FinancerRegForm onSuccess={handleRegSuccess} prefillEmail={prefillData.email} prefillName={prefillData.name} />
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#6b7280" }}>
-              Already registered? <button onClick={() => setMode("login")} style={{ background: "none", border: "none", color: P, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Login →</button>
+              Already registered?{" "}
+              <button onClick={() => setMode("login")} style={{ background: "none", border: "none", color: P, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Sign in →</button>
             </div>
           </div>
         )}

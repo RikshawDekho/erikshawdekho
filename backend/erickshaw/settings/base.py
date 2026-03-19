@@ -23,6 +23,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
+    'cloudinary_storage',
+    'cloudinary',
     'api',
 ]
 
@@ -98,6 +100,17 @@ CORS_ALLOW_CREDENTIALS = True
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE     = 'Asia/Kolkata'
 USE_I18N = USE_TZ = True
+
+# ── Cache ──────────────────────────────────────────────────────────
+# LocMemCache for dev; production overrides with Redis / Memcached if available
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'erikshawdekho-v1',
+        'TIMEOUT': 60,
+        'OPTIONS': {'MAX_ENTRIES': 2000},
+    }
+}
 
 # ── Static & Media ─────────────────────────────────────────────────
 STATIC_URL    = '/static/'
