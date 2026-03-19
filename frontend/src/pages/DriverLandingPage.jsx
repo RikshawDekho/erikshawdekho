@@ -487,6 +487,8 @@ export default function DriverLandingPage() {
           .quick-grid      { grid-template-columns: repeat(3, 1fr) !important; gap: 8px !important; }
           .fuel-row        { gap: 8px !important; }
           .fuel-pill       { padding: 11px 16px !important; font-size: 13px !important; }
+          .dlp-root section { padding-left: 12px !important; padding-right: 12px !important; }
+          .erd-hscroll     { padding-left: 12px !important; padding-right: 12px !important; }
         }
       `}</style>
 

@@ -5641,6 +5641,14 @@ function AdminPortal({ user, onLogout }) {
   const { isDark, toggle } = useContext(ThemeCtx);
   const toast = useToast();
   const [page, setPage] = useState("overview");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [winWidth, setWinWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1024);
+  useEffect(() => {
+    const onResize = () => setWinWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const isMobile = winWidth < 768;
   const [stats, setStats] = useState(null);
   const [dealers, setDealers] = useState([]);
   const [users, setUsers] = useState([]);
@@ -5784,44 +5792,63 @@ function AdminPortal({ user, onLogout }) {
 
   const sidebarStyle = { width: 200, minWidth: 200, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 };
 
-  return (
-    <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
-      {/* Admin Sidebar */}
-      <div style={sidebarStyle}>
-        <div style={{ padding: "16px 14px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 34, height: 34, background: `linear-gradient(135deg,${C.danger},#b91c1c)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>⚙️</div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Admin Portal</div>
-              <div style={{ fontSize: 10, color: C.textDim }}>Super Admin</div>
-            </div>
+  const SidebarContent = () => (
+    <>
+      <div style={{ padding: "16px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 34, height: 34, background: `linear-gradient(135deg,${C.danger},#b91c1c)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>⚙️</div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Admin Portal</div>
+            <div style={{ fontSize: 10, color: C.textDim }}>Super Admin</div>
           </div>
         </div>
-        <nav style={{ flex: 1, padding: "10px 8px" }}>
-          {ADMIN_NAV.map(n => (
-            <button key={n.id} onClick={() => { setPage(n.id); setPg(1); setSearch(""); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: page === n.id ? `${C.danger}15` : "transparent", border: "none", borderRadius: 8, color: page === n.id ? C.danger : C.textMid, fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 2, borderLeft: page === n.id ? `3px solid ${C.danger}` : "3px solid transparent" }}>
-              <span>{n.icon}</span>{n.label}
-            </button>
-          ))}
-        </nav>
-        <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
-          <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            {isDark ? "☀️" : "🌙"} {isDark ? "Light Mode" : "Dark Mode"}
-          </button>
-          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            🚪 Logout
-          </button>
-        </div>
+        {isMobile && <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.textMid, padding: 4 }}>✕</button>}
       </div>
+      <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto" }}>
+        {ADMIN_NAV.map(n => (
+          <button key={n.id} onClick={() => { setPage(n.id); setPg(1); setSearch(""); setMobileNavOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: page === n.id ? `${C.danger}15` : "transparent", border: "none", borderRadius: 8, color: page === n.id ? C.danger : C.textMid, fontWeight: page === n.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 2, borderLeft: page === n.id ? `3px solid ${C.danger}` : "3px solid transparent" }}>
+            <span>{n.icon}</span>{n.label}
+          </button>
+        ))}
+      </nav>
+      <div style={{ padding: "10px 8px", borderTop: `1px solid ${C.border}` }}>
+        <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          {isDark ? "☀️" : "🌙"} {isDark ? "Light Mode" : "Dark Mode"}
+        </button>
+        <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "transparent", border: "none", borderRadius: 8, color: C.textMid, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          🚪 Logout
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div style={{ display: "flex", background: C.bg, minHeight: "100vh", fontFamily: "'Nunito','Segoe UI',sans-serif", color: C.text }}>
+      {/* Mobile overlay nav */}
+      {isMobile && mobileNavOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex" }}>
+          <div style={{ width: 260, background: C.surface, display: "flex", flexDirection: "column", height: "100vh", boxShadow: "4px 0 24px rgba(0,0,0,0.18)" }}>
+            <SidebarContent />
+          </div>
+          <div style={{ flex: 1, background: "rgba(0,0,0,0.4)" }} onClick={() => setMobileNavOpen(false)} />
+        </div>
+      )}
+      {/* Desktop Sidebar */}
+      {!isMobile && <div style={sidebarStyle}><SidebarContent /></div>}
 
       {/* Main */}
-      <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
+      <div style={{ flex: 1, overflow: "auto", padding: isMobile ? 12 : 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
-              {ADMIN_NAV.find(n => n.id === page)?.icon} {ADMIN_NAV.find(n => n.id === page)?.label || "Overview"}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {isMobile && (
+              <button onClick={() => setMobileNavOpen(true)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 18, cursor: "pointer", color: C.text, lineHeight: 1 }}>☰</button>
+            )}
+            <div>
+              <div style={{ fontSize: isMobile ? 16 : 22, fontWeight: 800, color: C.text }}>
+                {ADMIN_NAV.find(n => n.id === page)?.icon} {ADMIN_NAV.find(n => n.id === page)?.label || "Overview"}
+              </div>
+              <div style={{ fontSize: 12, color: C.textDim }}>Logged in as: <b>{user?.username}</b></div>
             </div>
-            <div style={{ fontSize: 12, color: C.textDim }}>Logged in as: <b>{user?.username}</b></div>
           </div>
         </div>
 
