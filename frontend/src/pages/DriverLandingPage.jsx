@@ -185,10 +185,8 @@ function VehicleCard({ v, lang, onEnquire }) {
       <div style={{ height: 3, background: hovered ? `linear-gradient(90deg,${G},${G2})` : "transparent", transition: "all 0.25s" }} />
       {/* Image */}
       <div style={{ height: 165, background: "#f1f5f9", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {v.thumbnail
-          ? <img src={v.thumbnail} alt={v.model_name} style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.3s", transform: hovered ? "scale(1.04)" : "scale(1)" }} />
-          : <span style={{ fontSize: 56, filter: "grayscale(0.2)" }}>🛺</span>
-        }
+        <span style={{ fontSize: 56, filter: "grayscale(0.2)" }}>🛺</span>
+        {v.thumbnail && <img src={v.thumbnail} alt={v.model_name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.3s", transform: hovered ? "scale(1.04)" : "scale(1)" }} onError={e => { e.target.style.display = "none"; }} />}
         {v.is_featured && (
           <div style={{ position: "absolute", top: 10, left: 10, background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#fff", padding: "3px 10px", borderRadius: RADIUS.pill, fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>
             ⭐ {hi ? "फीचर्ड" : "Featured"}
@@ -657,10 +655,9 @@ export default function DriverLandingPage() {
                   onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(22,163,74,0.18)"; }}
                   onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(22,163,74,0.10)"; }}
                 >
-                  <div style={{ height: 148, background: "#f1f5f9", position: "relative", overflow: "hidden" }}>
-                    {(v.thumbnail || v.thumbnail_url)
-                      ? <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 44 }}>🛺</div>}
+                  <div style={{ height: 148, background: "#f1f5f9", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 44 }}>
+                    🛺
+                    {(v.thumbnail || v.thumbnail_url) && <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
                     <div style={{ position: "absolute", top: 8, left: 8, background: `linear-gradient(135deg,${G},${G2})`, color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20 }}>⭐ FEATURED</div>
                   </div>
                   <div style={{ padding: "12px 14px 16px" }}>

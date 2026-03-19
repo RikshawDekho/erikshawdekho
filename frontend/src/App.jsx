@@ -1895,9 +1895,11 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
 
   const cols = [
     { label: "ID",       render: r => <span style={{ color: C.textDim, fontSize: 12 }}>{r.id}</span> },
-    { label: "Thumbnail",render: r => (r.thumbnail || r.thumbnail_url)
-        ? <img src={r.thumbnail || r.thumbnail_url} alt={r.model_name} style={{ width: 56, height: 40, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.border}` }} />
-        : <div style={{ width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛺</div> },
+    { label: "Thumbnail",render: r => (
+        <div style={{ position: "relative", width: 56, height: 40, background: `${C.primary}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, overflow: "hidden" }}>
+          🛺
+          {(r.thumbnail || r.thumbnail_url) && <img src={r.thumbnail || r.thumbnail_url} alt={r.model_name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
+        </div>) },
     { label: "Model",    render: r => <div><div style={{ fontWeight: 600 }}>{r.model_name}</div><div style={{ fontSize: 11, color: C.textDim }}>{r.brand_name}</div></div> },
     { label: "Brand",    key:    "brand_name" },
     { label: "Fuel",     render: r => <Badge label={r.fuel_type} color={FUEL_COLOR[r.fuel_type]} /> },

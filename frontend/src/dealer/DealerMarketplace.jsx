@@ -82,9 +82,10 @@ function Marketplace() {
           {vehicles.map(v => (
             <Card key={v.id} style={{ transition: "all 0.2s", border: `1.5px solid ${C.border}`, cursor: "pointer" }}
               onClick={() => setDetailVehicle(v)}>
-              {(v.thumbnail || v.thumbnail_url)
-                ? <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 12 }} />
-                : <div style={{ height: 120, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>🛺</div>}
+              <div style={{ position: "relative", height: 120, borderRadius: 8, marginBottom: 12, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48, overflow: "hidden" }}>
+                🛺
+                {(v.thumbnail || v.thumbnail_url) && <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
+              </div>
               <div style={{ fontWeight: 700, fontSize: 14 }}>{v.model_name}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 6, flexWrap: "wrap" }}>
                 <Badge label={v.fuel_type} color={FUEL_COLOR[v.fuel_type]} />
