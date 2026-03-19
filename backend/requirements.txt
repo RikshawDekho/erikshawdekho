@@ -24,5 +24,7 @@ whitenoise==6.12.0
 twilio==9.4.5
 firebase-admin==6.6.0
 
-# build: 2026-03-15
+# build: 2026-03-19
 google-auth==2.40.1
+cloudinary==1.42.1
+django-cloudinary-storage==0.3.0
