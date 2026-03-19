@@ -92,6 +92,7 @@ urlpatterns = [
     path('public/vehicles/<int:vehicle_id>/', views.vehicle_detail_public, name='vehicle-detail-public'),
     path('public/vehicles/compare/',    views.vehicles_compare,       name='vehicles-compare'),
     path('public/dealers-by-brand/',    views.dealers_by_brand,       name='dealers-by-brand'),
+    path('public/dealers/',             views.public_dealers,         name='public-dealers'),
 
     # ── Free tier usage ────────────────────────────────────────────
     path('dealer/free-tier-usage/',     views.free_tier_usage,        name='free-tier-usage'),

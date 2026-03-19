@@ -133,18 +133,43 @@ def register_driver(request):
 @permission_classes([AllowAny])
 def login_view(request):
     """Authenticate user (dealer or driver) and return JWT tokens."""
+    import re as _re
     throttle = AuthThrottle()
     if not throttle.allow_request(request, None):
         return Response({'error': 'Too many login attempts. Try again later.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
     username = request.data.get('username')
     password = request.data.get('password')
-    # Support email login
+    # Support mobile number login
     login_username = username
-    if username and '@' in username:
-        try:
-            login_username = User.objects.get(email__iexact=username).username
-        except User.DoesNotExist:
-            pass
+    if username:
+        digits = _re.sub(r'\D', '', username)
+        if len(digits) == 12 and digits.startswith('91'):
+            digits = digits[2:]
+        if len(digits) == 10:
+            # Try DealerProfile first
+            dealer_profile = DealerProfile.objects.filter(
+                Q(phone=digits) | Q(phone=f'+91{digits}') | Q(phone=f'91{digits}')
+            ).select_related('user').first()
+            if dealer_profile:
+                login_username = dealer_profile.user.username
+            else:
+                # Try UserProfile
+                user_profile = UserProfile.objects.filter(phone=digits).select_related('user').first()
+                if user_profile:
+                    login_username = user_profile.user.username
+                else:
+                    # Try FinancerProfile
+                    financer_profile = FinancerProfile.objects.filter(
+                        Q(phone=digits) | Q(phone=f'+91{digits}') | Q(phone=f'91{digits}')
+                    ).select_related('user').first()
+                    if financer_profile:
+                        login_username = financer_profile.user.username
+        elif '@' in username:
+            # Support email login
+            try:
+                login_username = User.objects.get(email__iexact=username).username
+            except User.DoesNotExist:
+                pass
     user = authenticate(username=login_username, password=password)
     if not user:
         # Check if user exists but is deactivated (authenticate() returns None for inactive users)
@@ -152,9 +177,17 @@ def login_view(request):
             inactive_user = User.objects.get(username=login_username)
             if not inactive_user.is_active:
                 return Response({"error": f"Your account has been deactivated. Please contact {_support_email()}"}, status=403)
+            # User exists and is active — wrong password
+            return Response({
+                "error": "Incorrect password. Please try again or reset your password.",
+                "account_exists": True,
+            }, status=status.HTTP_401_UNAUTHORIZED)
         except User.DoesNotExist:
             pass
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({
+            "error": "No account found with this username, email, or mobile. Please register first.",
+            "account_exists": False,
+        }, status=status.HTTP_401_UNAUTHORIZED)
     if not user.is_active:
         return Response({"error": f"Your account has been deactivated. Please contact {_support_email()}"}, status=403)
     dealer = getattr(user, 'dealer_profile', None)
@@ -272,6 +305,9 @@ def dashboard(request):
         vehicles = Vehicle.objects.filter(dealer=dealer, is_active=True)
         total_v = vehicles.count()
         in_stock = vehicles.filter(stock_status='in_stock').count()
+        low_stock = vehicles.filter(stock_status='low_stock').count()
+        out_of_stock = vehicles.filter(stock_status='out_of_stock').count()
+        total_sold = Sale.objects.filter(dealer=dealer).aggregate(total=Sum('quantity'))['total'] or 0
         active_leads = Lead.objects.filter(dealer=dealer, status__in=['new','interested','follow_up']).count()
         new_sales = Sale.objects.filter(dealer=dealer, sale_date__gte=month_start).count()
         pending_tasks = Task.objects.filter(dealer=dealer, is_completed=False).count()
@@ -317,6 +353,9 @@ def dashboard(request):
         return Response({
             'total_vehicles': total_v,
             'in_stock': in_stock,
+            'low_stock': low_stock,
+            'out_of_stock': out_of_stock,
+            'total_sold': total_sold,
             'active_leads': active_leads,
             'new_sales': new_sales,
             'pending_tasks': pending_tasks,
@@ -708,6 +747,16 @@ class BrandViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return [IsAuthenticated()]
 
+    def create(self, request, *args, **kwargs):
+        name = request.data.get('name', '').strip()
+        if not name:
+            return Response({'name': ['Brand name is required.']}, status=400)
+        # Return existing brand if name already exists (case-insensitive)
+        existing = Brand.objects.filter(name__iexact=name).first()
+        if existing:
+            return Response(BrandSerializer(existing).data, status=200)
+        return super().create(request, *args, **kwargs)
+
 
 class VehicleTypeViewSet(viewsets.ModelViewSet):
     """Manage vehicle categories. GET is public; create/update/delete requires auth."""
@@ -901,9 +950,26 @@ def public_enquiry(request):
             broadcast_dealers = [vehicle.dealer]
             primary_dealer = vehicle.dealer
         elif city:
-            broadcast_dealers = list(DealerProfile.objects.filter(is_verified=True, city__icontains=city))
-            if not broadcast_dealers:
-                broadcast_dealers = list(DealerProfile.objects.filter(is_verified=True))
+            city_dealers = list(DealerProfile.objects.filter(is_verified=True, city__icontains=city))
+            if not city_dealers:
+                # City not matched — broadcast to all verified dealers
+                city_dealers = list(DealerProfile.objects.filter(is_verified=True))
+
+            # Narrow by brand if provided (dealers who stock that brand in their inventory)
+            if brand_name and city_dealers:
+                brand_dealer_ids = set(
+                    Vehicle.objects.filter(
+                        dealer__in=city_dealers,
+                        is_active=True,
+                        brand__name__icontains=brand_name,
+                    ).values_list('dealer_id', flat=True)
+                )
+                brand_matched = [d for d in city_dealers if d.pk in brand_dealer_ids]
+                # Only narrow if we found brand matches; otherwise keep all city dealers
+                if brand_matched:
+                    city_dealers = brand_matched
+
+            broadcast_dealers = city_dealers
             primary_dealer = broadcast_dealers[0] if broadcast_dealers else None
         else:
             broadcast_dealers = list(DealerProfile.objects.filter(is_verified=True))
@@ -1989,6 +2055,18 @@ def dealers_by_brand(request):
     data = PublicDealerSerializer(dealers, many=True).data
     # Sort by avg_rating descending
     data.sort(key=lambda d: float(d.get('avg_rating') or 0), reverse=True)
+    return Response({'results': data, 'count': len(data)})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_dealers(request):
+    """List verified dealers for the homepage carousel, priority plan first."""
+    qs = DealerProfile.objects.filter(is_verified=True, is_demo=False).select_related('plan')
+    qs_priority = qs.filter(plan__priority_ranking=True).order_by('-id')[:20]
+    qs_rest     = qs.exclude(plan__priority_ranking=True).order_by('-id')[:10]
+    combined = list(qs_priority) + list(qs_rest)
+    data = PublicDealerSerializer(combined, many=True).data
     return Response({'results': data, 'count': len(data)})
 
 

@@ -1,5 +1,5 @@
 ﻿import React, { Component, useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { SalesPage } from './SalesPage';
 import NavbarNew from './components/NavbarNew';
 import FooterNew from './components/FooterNew';
@@ -316,21 +316,24 @@ function ToastProvider({ children }) {
     setToasts(t => [...t, { id, msg, type }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4500);
   }, []);
+  const dismiss = useCallback((id) => setToasts(t => t.filter(x => x.id !== id)), []);
   const ICONS = { success: "✓", error: "✕", warning: "⚠", info: "ℹ" };
   const COLORS = { success: C.success, error: C.danger, warning: C.warning, info: C.info };
   return (
     <ToastCtx.Provider value={add}>
       {children}
-      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column-reverse", gap: 8, maxWidth: 360, pointerEvents: "none" }}>
+      <style>{`@keyframes slideDown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", gap: 8, maxWidth: 360, pointerEvents: "none" }}>
         {toasts.map(t => (
           <div key={t.id} style={{
             background: COLORS[t.type] || C.info, color: "#fff",
             padding: "12px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600,
             boxShadow: "0 4px 20px rgba(0,0,0,0.25)", display: "flex", alignItems: "flex-start", gap: 8,
-            animation: "slideUp 0.25s ease",
+            animation: "slideDown 0.25s ease", pointerEvents: "auto",
           }}>
             <span style={{ flexShrink: 0, fontSize: 15 }}>{ICONS[t.type]}</span>
-            <span style={{ lineHeight: 1.5 }}>{t.msg}</span>
+            <span style={{ lineHeight: 1.5, flex: 1 }}>{t.msg}</span>
+            <button onClick={() => dismiss(t.id)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.8)", fontSize: 16, cursor: "pointer", padding: "0 0 0 4px", lineHeight: 1, flexShrink: 0, fontFamily: "inherit" }} aria-label="Dismiss">×</button>
           </div>
         ))}
       </div>
@@ -523,12 +526,63 @@ function TextArea({ value, onChange, placeholder, rows = 3, required, style = {}
 
 function Select({ value, onChange, options, placeholder, style = {} }) {
   const C = useC();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => String(o.value) === String(value));
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("touchstart", handler); };
+  }, [open]);
+
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}
-      style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer", ...style }}>
-      {placeholder && <option value="">{placeholder}</option>}
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <div ref={ref} style={{ position: "relative", width: "100%", ...style }}>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{
+        width: "100%", padding: "9px 32px 9px 12px", border: `1.5px solid ${open ? C.primary : C.border}`,
+        borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: selected ? C.text : C.textDim,
+        background: C.surface, outline: "none", cursor: "pointer", textAlign: "left",
+        boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "space-between",
+        transition: "border-color 0.15s",
+      }}>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected ? selected.label : (placeholder || "Select...")}
+        </span>
+        <span style={{ fontSize: 10, color: C.textDim, marginLeft: 6, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+          background: C.surface, border: `1.5px solid ${C.primary}`, borderRadius: 8,
+          zIndex: 9000, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", overflow: "hidden",
+          maxHeight: 260, overflowY: "auto",
+        }}>
+          {placeholder && (
+            <div onClick={() => { onChange(""); setOpen(false); }} style={{
+              padding: "10px 14px", fontSize: 13, color: C.textDim, cursor: "pointer",
+              borderBottom: `1px solid ${C.border}`,
+            }}>{placeholder}</div>
+          )}
+          {options.map(o => (
+            <div key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} style={{
+              padding: "10px 14px", fontSize: 13, cursor: "pointer",
+              color: String(o.value) === String(value) ? C.primary : C.text,
+              background: String(o.value) === String(value) ? `${C.primary}12` : "transparent",
+              borderBottom: `1px solid ${C.border}20`,
+              fontWeight: String(o.value) === String(value) ? 700 : 400,
+              transition: "background 0.1s",
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = `${C.primary}18`}
+              onMouseLeave={e => e.currentTarget.style.background = String(o.value) === String(value) ? `${C.primary}12` : "transparent"}
+            >
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -655,11 +709,13 @@ function DonutChart({ data, size = 100 }) {
 function AuthPage({ onAuth }) {
   const C = useC();
   const toast = useToast();
-  const [mode, setMode] = useState("login"); // "login" | "register" | "forgot" | "otp"
+  const [searchParams] = useSearchParams();
+  const [mode, setMode] = useState(() => searchParams.get("tab") === "register" ? "register" : "login"); // "login" | "register" | "forgot" | "otp"
   const [form, setForm] = useState({ username: "", password: "", confirm_password: "", email: "", dealer_name: "", phone: "", city: "", state: "", pincode: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [authStatus, setAuthStatus] = useState(null);
+  const [loginHint, setLoginHint] = useState(null); // null | "wrong_password" | "no_account" | "duplicate_email"
   const [pincodeData, setPincodeData] = useState(null); // { city, state, suggestions: [] }
   const [pincodeLoading, setPincodeLoading] = useState(false);
   // Forgot password state
@@ -745,6 +801,7 @@ function AuthPage({ onAuth }) {
   const submit = async (e) => {
     e.preventDefault();
     setAuthStatus(null);
+    setLoginHint(null);
     const errs = validate();
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
@@ -765,24 +822,25 @@ function AuthPage({ onAuth }) {
     } catch (err) {
       setAuthStatus("error");
       const errObj = typeof err === "object" ? err : {};
-      const serverMsg = errObj.detail || errObj.non_field_errors?.[0] || errObj.non_field_errors
-        || Object.values(errObj).flat().join(" ")
+      // Extract clean message (exclude boolean fields like account_exists)
+      const serverMsg = errObj.error || errObj.detail || errObj.non_field_errors?.[0]
+        || Object.values(errObj).filter(v => typeof v === "string").flat().join(" ")
         || "Something went wrong. Please try again.";
-      // Show toast for auth failures — use actual server message when available
+      // Determine contextual hint
       if (mode === "login") {
-        toast(serverMsg || "Login failed. Check your username and password.", "error");
+        if (errObj.account_exists === false) setLoginHint("no_account");
+        else if (errObj.account_exists === true) setLoginHint("wrong_password");
       } else {
-        toast("Registration failed. " + serverMsg, "error");
+        // Check for duplicate email in register
+        const emailErr = Array.isArray(errObj.email) ? errObj.email[0] : errObj.email;
+        if (emailErr && /already/i.test(emailErr)) setLoginHint("duplicate_email");
       }
-      // Also set inline errors for field-level server errors
+      toast(mode === "login" ? serverMsg : ("Registration failed. " + serverMsg), "error");
+      // Set inline banner + field errors
       const inlineErrs = {};
-      if (errObj.detail || errObj.non_field_errors) {
-        inlineErrs._banner = typeof (errObj.detail || errObj.non_field_errors) === "string"
-          ? (errObj.detail || errObj.non_field_errors)
-          : (errObj.non_field_errors?.[0] || errObj.detail);
-      }
-      Object.keys(errObj).filter(k => !["detail","non_field_errors"].includes(k)).forEach(k => {
-        inlineErrs[k] = Array.isArray(errObj[k]) ? errObj[k][0] : errObj[k];
+      inlineErrs._banner = serverMsg;
+      Object.keys(errObj).filter(k => !["error","detail","non_field_errors","account_exists"].includes(k)).forEach(k => {
+        inlineErrs[k] = Array.isArray(errObj[k]) ? errObj[k][0] : (typeof errObj[k] === "string" ? errObj[k] : "");
       });
       setFieldErrors(inlineErrs);
     }
@@ -826,19 +884,29 @@ function AuthPage({ onAuth }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, position: "relative" }}>
-      {/* Language Toggle - Top Right */}
-      <button onClick={() => {
-        const next = localStorage.getItem("erd_lang") === "en" ? "hi" : "en";
-        i18n.changeLanguage(next);
-        localStorage.setItem("erd_lang", next);
-      }} title={localStorage.getItem("erd_lang") === "en" ? "भाषा बदलें हिंदी के लिए" : "Change language to English"}
-        style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", backdropFilter: "blur(5px)", transition: "all 0.2s" }}
-        onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; }}
-        onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}>
-        {localStorage.getItem("erd_lang") === "en" ? "हि" : "EN"}
-      </button>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* Navbar */}
+      <NavbarNew />
 
+      {/* Support info bar */}
+      <div style={{ background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", padding: "8px 24px", display: "flex", justifyContent: "center", alignItems: "center", gap: 32, flexWrap: "wrap", fontSize: 13, color: "#15803d" }}>
+        {BRANDING.support.phone && (
+          <a href={`tel:${BRANDING.support.phone}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
+            📞 {BRANDING.support.phone}
+          </a>
+        )}
+        <a href={`mailto:${BRANDING.support.email}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
+          ✉ {BRANDING.support.email}
+        </a>
+        {BRANDING.support.whatsappDigits && (
+          <a href={`https://wa.me/${BRANDING.support.whatsappDigits}`} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
+            💬 WhatsApp Support
+          </a>
+        )}
+      </div>
+
+      {/* Green gradient auth section */}
+      <div style={{ flex: 1, background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
       <div style={{ width: 440, maxWidth: "100%" }}>
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
@@ -978,9 +1046,40 @@ function AuthPage({ onAuth }) {
 
           {/* Status banner */}
           {authStatus === "error" && fieldErrors._banner && (
-            <div style={{ background: `${C.danger}15`, border: `1.5px solid ${C.danger}55`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.danger, marginBottom: 16, display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
-              <span style={{ fontSize: 18 }}>✕</span>
-              <span>{fieldErrors._banner}</span>
+            <div style={{ background: `${C.danger}12`, border: `1.5px solid ${C.danger}44`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.danger, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontWeight: 600, marginBottom: loginHint ? 10 : 0 }}>
+                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✕</span>
+                <span>{fieldErrors._banner}</span>
+              </div>
+              {loginHint === "no_account" && (
+                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => { setMode("register"); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Create an account →
+                  </button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                </div>
+              )}
+              {loginHint === "wrong_password" && (
+                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Reset Password →
+                  </button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                </div>
+              )}
+              {loginHint === "duplicate_email" && (
+                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => { setMode("login"); setForm(p => ({ ...p, username: form.email })); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Sign in instead →
+                  </button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Registration Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                </div>
+              )}
+              {!loginHint && (
+                <div style={{ marginTop: 8 }}>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "underline" }}>Contact support if the issue persists →</a>
+                </div>
+              )}
             </div>
           )}
           {authStatus === "success" && (
@@ -993,7 +1092,7 @@ function AuthPage({ onAuth }) {
           <form onSubmit={submit}>
             {mode === "login" && (
               <Field label="Email or Username" required>
-                <Input value={form.username} onChange={set("username")} placeholder="Email or username" autoComplete="username" />
+                <Input value={form.username} onChange={set("username")} placeholder="Username / Email / Mobile Number" autoComplete="username" />
                 <FieldErr k="username" />
               </Field>
             )}
@@ -1034,14 +1133,16 @@ function AuthPage({ onAuth }) {
                   {pincodeData && <div style={{ fontSize: 11, color: C.success, marginTop: 3 }}>✓ {pincodeData.city}, {pincodeData.state}</div>}
                 </Field>
                 <Field label="City / District" required>
-                  <select value={form.city} onChange={e => set("city")(e.target.value)}
-                    style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${fieldErrors.city ? C.danger : C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", boxSizing: "border-box", cursor: "pointer" }}>
-                    <option value="">— Select your city —</option>
-                    {pincodeData?.suggestions?.filter(s => s !== form.city).map(s => (
-                      <option key={s} value={s} style={{ fontWeight: 600, color: C.primary }}>✓ {s} (from pincode)</option>
-                    ))}
-                    {MAJOR_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <Select
+                    value={form.city}
+                    onChange={set("city")}
+                    placeholder="— Select your city —"
+                    style={fieldErrors.city ? { border: `1.5px solid ${C.danger}` } : {}}
+                    options={[
+                      ...(pincodeData?.suggestions?.filter(s => s !== form.city).map(s => ({ value: s, label: `✓ ${s} (from pincode)` })) || []),
+                      ...MAJOR_CITIES.map(c => ({ value: c, label: c })),
+                    ]}
+                  />
                   <FieldErr k="city" />
                 </Field>
               </>
@@ -1065,6 +1166,10 @@ function AuthPage({ onAuth }) {
         </Card>
         )}
       </div>
+      </div>
+
+      {/* Footer */}
+      <FooterNew />
     </div>
   );
 }
@@ -1501,7 +1606,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [stats, setStats] = useState({ total: 0, inStock: 0, sold: 0, lowStock: 0 });
+  const [stats, setStats] = useState({ total: 0, inStock: 0, outOfStock: 0, sold: 0, lowStock: 0 });
   const [filters, setFilters] = useState({ brand: "", fuel_type: "", stock_status: "", search: "" });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -1546,17 +1651,21 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
   }, [page, debouncedSearch, filters.brand, filters.fuel_type, filters.stock_status]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadStats = () => api.dashboard().then(d => {
+    if (d) setStats({ total: d.total_vehicles, inStock: d.in_stock, outOfStock: d.out_of_stock || 0, sold: d.total_sold || 0, lowStock: d.low_stock || 0 });
+  }).catch(() => null);
+
   useEffect(() => {
     Promise.all([
       api.brands().catch(() => null),
-      api.dashboard().catch(() => null),
+      loadStats(),
       api.vehicleTypes().catch(() => null),
-    ]).then(([brandsData, dashData, typesData]) => {
+    ]).then(([brandsData, , typesData]) => {
       if (brandsData) setBrands(brandsData.results || brandsData);
-      if (dashData) setStats({ total: dashData.total_vehicles, inStock: dashData.in_stock, sold: 0, lowStock: 0 });
       if (typesData) setVehicleTypes((typesData.results || typesData).map(t => ({ slug: t.slug, name: t.name })));
     });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setF = k => v => setFilters(p => ({ ...p, [k]: v }));
   const setForm_ = k => v => setForm(p => ({ ...p, [k]: v }));
@@ -1569,7 +1678,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     setSaving(true);
     try {
       let payload;
-      const specFields = { range_km: form.range_km || null, battery_capacity: form.battery_capacity, max_speed: form.max_speed || null, seating_capacity: form.seating_capacity || 3, payload_kg: form.payload_kg || null, warranty_years: form.warranty_years || 1, hsn_code: form.hsn_code || "8703", is_used: form.is_used };
+      const specFields = { range_km: form.range_km || null, battery_capacity: form.battery_capacity, max_speed: form.max_speed || null, seating_capacity: form.seating_capacity || "3", payload_kg: form.payload_kg || null, warranty_years: form.warranty_years || 1, hsn_code: form.hsn_code || "8703", is_used: form.is_used };
       if (form.thumbnail) {
         payload = new FormData();
         payload.append("brand", form.brand_id);
@@ -1596,7 +1705,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
       }
       setGalleryFiles([]);
       toast("Vehicle added successfully!", "success");
-      onAddClose(); load();
+      onAddClose(); load(); loadStats();
     } catch (err) {
       const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to add vehicle.";
       toast(msg, "error");
@@ -1618,7 +1727,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     setEditSaving(true);
     try {
       let payload;
-      const editSpecFields = { range_km: editForm.range_km || null, battery_capacity: editForm.battery_capacity, max_speed: editForm.max_speed || null, seating_capacity: editForm.seating_capacity || 3, payload_kg: editForm.payload_kg || null, warranty_years: editForm.warranty_years || 1, hsn_code: editForm.hsn_code || "8703", is_used: editForm.is_used };
+      const editSpecFields = { range_km: editForm.range_km || null, battery_capacity: editForm.battery_capacity, max_speed: editForm.max_speed || null, seating_capacity: editForm.seating_capacity || "3", payload_kg: editForm.payload_kg || null, warranty_years: editForm.warranty_years || 1, hsn_code: editForm.hsn_code || "8703", is_used: editForm.is_used };
       if (editForm.thumbnail) {
         payload = new FormData();
         payload.append("model_name", editForm.model_name);
@@ -1644,7 +1753,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
       }
       setEditGalleryFiles([]);
       toast("Vehicle updated successfully!", "success");
-      setEditVehicle(null); load();
+      setEditVehicle(null); load(); loadStats();
     } catch (err) {
       const msg = typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to update vehicle.";
       toast(msg, "error");
@@ -1656,7 +1765,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     try {
       await api.vehicles.delete(deleteId);
       toast("Vehicle removed from inventory.", "success");
-      setDeleteId(null); load();
+      setDeleteId(null); load(); loadStats();
     } catch {
       toast("Failed to delete vehicle.", "error");
     }
@@ -1699,10 +1808,11 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
       {/* Stats */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
-          { label: "Total Vehicles", value: stats.total, color: C.info    },
-          { label: "In Stock",       value: stats.inStock,color: C.success },
-          { label: "Sold",           value: 27,           color: C.accent  },
-          { label: "Low Stock",      value: 5,            color: C.danger  },
+          { label: "Total Vehicles", value: stats.total,      color: C.info    },
+          { label: "In Stock",       value: stats.inStock,    color: C.success },
+          { label: "Low Stock",      value: stats.lowStock,   color: C.warning },
+          { label: "Out of Stock",   value: stats.outOfStock, color: C.danger  },
+          { label: "Units Sold",     value: stats.sold,       color: C.accent  },
         ].map(s => (
           <div key={s.label} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 18px", display: "flex", gap: 10, alignItems: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: s.color, fontFamily: "Georgia, serif" }}>{s.value}</div>
@@ -1768,11 +1878,11 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
               <Field label="Price (₹)" required><Input value={form.price} onChange={setForm_("price")} type="number" placeholder="150000" /></Field>
               <Field label="Stock Quantity"><Input value={form.stock_quantity} onChange={setForm_("stock_quantity")} type="number" placeholder="10" /></Field>
               <Field label="Year"><Input value={form.year} onChange={setForm_("year")} type="number" placeholder="2024" /></Field>
-              <Field label="Seating Capacity"><Input value={form.seating_capacity} onChange={setForm_("seating_capacity")} type="number" placeholder="3" /></Field>
-              <Field label="Range (km, for electric)"><Input value={form.range_km} onChange={setForm_("range_km")} type="number" placeholder="120" /></Field>
+              <Field label="Seating Capacity"><Input value={form.seating_capacity} onChange={setForm_("seating_capacity")} placeholder="e.g. 3 or 4+1" /></Field>
+              <Field label="Range (km, for electric)"><Input value={form.range_km} onChange={setForm_("range_km")} placeholder="e.g. 120 or 100-120" /></Field>
               <Field label="Battery Capacity"><Input value={form.battery_capacity} onChange={setForm_("battery_capacity")} placeholder="100Ah 48V" /></Field>
-              <Field label="Max Speed (km/h)"><Input value={form.max_speed} onChange={setForm_("max_speed")} type="number" placeholder="45" /></Field>
-              <Field label="Payload (kg)"><Input value={form.payload_kg} onChange={setForm_("payload_kg")} type="number" placeholder="500" /></Field>
+              <Field label="Max Speed (km/h)"><Input value={form.max_speed} onChange={setForm_("max_speed")} placeholder="e.g. 45 or 45-55" /></Field>
+              <Field label="Payload (kg)"><Input value={form.payload_kg} onChange={setForm_("payload_kg")} placeholder="e.g. 500 or 600-1000" /></Field>
               <Field label="Warranty (years)"><Input value={form.warranty_years} onChange={setForm_("warranty_years")} type="number" placeholder="1" /></Field>
               <Field label="HSN Code"><Input value={form.hsn_code} onChange={setForm_("hsn_code")} placeholder="8703" /></Field>
               <Field label="Condition">
@@ -1854,11 +1964,11 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
               <Field label="Year">
                 <Input value={editForm.year} onChange={v => setEditForm(p => ({ ...p, year: v }))} type="number" />
               </Field>
-              <Field label="Seating Capacity"><Input value={editForm.seating_capacity || ""} onChange={v => setEditForm(p => ({ ...p, seating_capacity: v }))} type="number" placeholder="3" /></Field>
-              <Field label="Range (km)"><Input value={editForm.range_km || ""} onChange={v => setEditForm(p => ({ ...p, range_km: v }))} type="number" placeholder="120" /></Field>
+              <Field label="Seating Capacity"><Input value={editForm.seating_capacity || ""} onChange={v => setEditForm(p => ({ ...p, seating_capacity: v }))} placeholder="e.g. 3 or 4+1" /></Field>
+              <Field label="Range (km)"><Input value={editForm.range_km || ""} onChange={v => setEditForm(p => ({ ...p, range_km: v }))} placeholder="e.g. 120 or 100-120" /></Field>
               <Field label="Battery Capacity"><Input value={editForm.battery_capacity || ""} onChange={v => setEditForm(p => ({ ...p, battery_capacity: v }))} placeholder="100Ah 48V" /></Field>
-              <Field label="Max Speed (km/h)"><Input value={editForm.max_speed || ""} onChange={v => setEditForm(p => ({ ...p, max_speed: v }))} type="number" placeholder="45" /></Field>
-              <Field label="Payload (kg)"><Input value={editForm.payload_kg || ""} onChange={v => setEditForm(p => ({ ...p, payload_kg: v }))} type="number" placeholder="500" /></Field>
+              <Field label="Max Speed (km/h)"><Input value={editForm.max_speed || ""} onChange={v => setEditForm(p => ({ ...p, max_speed: v }))} placeholder="e.g. 45 or 45-55" /></Field>
+              <Field label="Payload (kg)"><Input value={editForm.payload_kg || ""} onChange={v => setEditForm(p => ({ ...p, payload_kg: v }))} placeholder="e.g. 500 or 600-1000" /></Field>
               <Field label="Warranty (years)"><Input value={editForm.warranty_years || ""} onChange={v => setEditForm(p => ({ ...p, warranty_years: v }))} type="number" placeholder="1" /></Field>
               <Field label="HSN Code"><Input value={editForm.hsn_code || ""} onChange={v => setEditForm(p => ({ ...p, hsn_code: v }))} placeholder="8703" /></Field>
               <Field label="Condition">
@@ -1977,16 +2087,51 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12 }}>Add New Brand</div>
             <input value={newBrandName} onChange={e => setNewBrandName(e.target.value)} placeholder="Brand name" autoFocus
               style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, fontFamily: "inherit", background: C.bg, color: C.text, marginBottom: 16, boxSizing: "border-box" }} />
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ marginTop: 12, borderTop: "1px solid #e5e7eb", paddingTop: 10 }}>
+              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 6 }}>Existing brands — click 🗑 to remove:</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {brands.map(b => (
+                  <span key={b.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f3f4f6", borderRadius: 6, padding: "3px 8px", fontSize: 12 }}>
+                    {b.name}
+                    <button onClick={async () => {
+                      try {
+                        await apiFetch(`/brands/${b.id}/`, { method: "DELETE" });
+                        setBrands(prev => prev.filter(x => x.id !== b.id));
+                        if (form.brand_id === b.id) setForm(f => ({ ...f, brand_id: "" }));
+                        toast(`Brand "${b.name}" removed.`, "success");
+                      } catch { toast("Cannot delete brand with existing vehicles.", "error"); }
+                    }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 13, padding: 0, lineHeight: 1 }}>🗑</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button onClick={() => { setShowAddBrand(false); setNewBrandName(""); }} style={{ flex: 1, padding: 10, border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
               <button onClick={async () => {
                 if (!newBrandName.trim()) return;
+                let r;
                 try {
-                  const r = await apiFetch("/brands/", { method: "POST", body: JSON.stringify({ name: newBrandName.trim() }) });
-                  setBrands(prev => [...prev, r]);
-                  setForm(f => ({ ...f, brand_id: r.id }));
-                  setShowAddBrand(false); setNewBrandName("");
-                } catch { alert("Failed to create brand. Try again."); }
+                  r = await apiFetch("/brands/", { method: "POST", body: JSON.stringify({ name: newBrandName.trim() }) });
+                } catch (err) {
+                  // If brand already exists (409 or 400 with "already exists"), find it in existing list
+                  const existing = brands.find(b => b.name.toLowerCase() === newBrandName.trim().toLowerCase());
+                  if (existing) {
+                    setShowAddBrand(false);
+                    setNewBrandName("");
+                    setForm(f => ({ ...f, brand_id: existing.id }));
+                    setEditForm(f => ({ ...f, brand_id: existing.id }));
+                    toast(`Brand "${existing.name}" already exists — selected.`, "info");
+                    return;
+                  }
+                  toast(typeof err === "object" ? Object.values(err).flat().join(" ") : "Failed to add brand.", "error");
+                  return;
+                }
+                setBrands(prev => [...prev, r]);
+                setShowAddBrand(false);
+                setNewBrandName("");
+                setForm(f => ({ ...f, brand_id: r.id }));
+                setEditForm(f => ({ ...f, brand_id: r.id }));
+                toast(`Brand "${r.name}" added!`, "success");
               }} style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, background: C.primary, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Create</button>
             </div>
           </div>
@@ -4236,30 +4381,6 @@ function SupportPage() {
           </div>
         </Card>
 
-        {/* Driver / Buyer Support */}
-        <Card>
-          <div style={{ fontSize: 18, fontWeight: 800, color: C.info, marginBottom: 4 }}>🛺 Driver Support</div>
-          <div style={{ fontSize: 13, color: C.textMid, marginBottom: 20 }}>For eRickshaw drivers and buyers using the platform</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {[
-              { icon: "📞", label: "Driver Helpline", value: settings.support_phone, action: () => window.open(`tel:${settings.support_phone}`) },
-              { icon: "💬", label: "WhatsApp Help", value: "Get vehicle advice", action: () => openSupportWhatsApp("Hi I need help finding a vehicle") },
-              { icon: "✉️", label: "Email Support", value: settings.support_email, action: () => window.open(`mailto:${settings.support_email}?subject=Driver Support`) },
-            ].map(({ icon, label, value, action }) => (
-              <button key={label} onClick={action} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
-                <span style={{ fontSize: 20 }}>{icon}</span>
-                <div>
-                  <div style={{ fontSize: 12, color: C.textDim, fontWeight: 600 }}>{label}</div>
-                  <div style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{value}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-          <div style={{ marginTop: 20, background: `${C.info}08`, border: `1px solid ${C.info}22`, borderRadius: 8, padding: "12px 14px", fontSize: 12, color: C.textMid }}>
-            <div style={{ fontWeight: 700, color: C.info, marginBottom: 4 }}>Buying Guidance</div>
-            <div>Compare eRickshaw models, understand EMI options, and connect with verified dealers. We help you make the right purchase decision.</div>
-          </div>
-        </Card>
       </div>
 
       {/* FAQ */}
@@ -7040,16 +7161,7 @@ export default function App({ skipLanding = false }) {
     return (
       <ThemeCtx.Provider value={{ isDark, toggle: toggleTheme, C: C_LIVE }}>
         <ToastProvider>
-          <NavbarNew />
-          <div style={{ paddingTop: 60 }}>
-            <AuthPage onAuth={handleAuth} />
-            <div style={{ textAlign: "center", padding: "10px 0 20px", fontFamily: "'Nunito',sans-serif", fontSize: 13 }}>
-              <button onClick={() => navigate("/", { replace: true })} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 13 }}>
-                ← Back to home
-              </button>
-            </div>
-          </div>
-          <FooterNew />
+          <AuthPage onAuth={handleAuth} />
         </ToastProvider>
       </ThemeCtx.Provider>
     );

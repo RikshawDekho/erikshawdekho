@@ -142,21 +142,65 @@ function Input({ value, onChange, placeholder, type="text", required, style={} }
 
 function Select({ value, onChange, options, placeholder, style={} }) {
   const C = useC();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => String(o.value) === String(value));
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("touchstart", handler); };
+  }, [open]);
+
   return (
-    <select
-      value={value} onChange={e => onChange(e.target.value)}
-      style={{
-        width: "100%", padding: "9px 12px",
-        border: `1.5px solid ${C.border}`, borderRadius: 7,
-        fontSize: 13, fontFamily: "inherit",
-        color: C.text, background: C.surface,
-        outline: "none", boxSizing: "border-box", cursor: "pointer", ...style,
-      }}
-    >
-      {placeholder && <option value="">{placeholder}</option>}
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <div ref={ref} style={{ position: "relative", width: "100%", ...style }}>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{
+        width: "100%", padding: "9px 32px 9px 12px", border: `1.5px solid ${open ? C.primary : C.border}`,
+        borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: selected ? C.text : C.textDim,
+        background: C.surface, outline: "none", cursor: "pointer", textAlign: "left",
+        boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "space-between",
+        transition: "border-color 0.15s",
+      }}>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected ? selected.label : (placeholder || "Select...")}
+        </span>
+        <span style={{ fontSize: 10, color: C.textDim, marginLeft: 6, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+          background: C.surface, border: `1.5px solid ${C.primary}`, borderRadius: 8,
+          zIndex: 9000, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", overflow: "hidden",
+          maxHeight: 260, overflowY: "auto",
+        }}>
+          {placeholder && (
+            <div onClick={() => { onChange(""); setOpen(false); }} style={{
+              padding: "10px 14px", fontSize: 13, color: C.textDim, cursor: "pointer",
+              borderBottom: `1px solid ${C.border}`,
+            }}>{placeholder}</div>
+          )}
+          {options.map(o => (
+            <div key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} style={{
+              padding: "10px 14px", fontSize: 13, cursor: "pointer",
+              color: String(o.value) === String(value) ? C.primary : C.text,
+              background: String(o.value) === String(value) ? `${C.primary}12` : "transparent",
+              borderBottom: `1px solid ${C.border}20`,
+              fontWeight: String(o.value) === String(value) ? 700 : 400,
+              transition: "background 0.1s",
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = `${C.primary}18`}
+              onMouseLeave={e => e.currentTarget.style.background = String(o.value) === String(value) ? `${C.primary}12` : "transparent"}
+            >
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
+
 }
 
 function Modal({ title, children, onClose, width=640 }) {
@@ -173,6 +217,88 @@ function Modal({ title, children, onClose, width=640 }) {
         </div>
         <div style={{ padding: 22 }}>{children}</div>
       </div>
+    </div>
+  );
+}
+
+// Custom date input — 3 separate fields (DD / MM / YYYY)
+// Uses local state so each field retains typed value independently;
+// only writes ISO string to parent when all three fields are complete.
+function DateInput({ value, onChange }) {
+  const C = useC();
+
+  // Initialise local state from ISO value prop
+  const fromISO = (iso) => {
+    if (!iso) return { dd: "", mm: "", yy: "" };
+    const [y, mo, d] = iso.split("-");
+    return { dd: d || "", mm: mo || "", yy: y || "" };
+  };
+
+  const [dd, setDd] = useState(() => fromISO(value).dd);
+  const [mm, setMm] = useState(() => fromISO(value).mm);
+  const [yy, setYy] = useState(() => fromISO(value).yy);
+
+  // Sync if parent resets the value (e.g. form clear)
+  useEffect(() => {
+    const p = fromISO(value);
+    setDd(p.dd); setMm(p.mm); setYy(p.yy);
+  }, [value]);
+
+  // Clamp helpers
+  const clampDD = (v) => { const n = parseInt(v); if (isNaN(n) || v === "") return v; return String(Math.min(31, Math.max(1, n))); };
+  const clampMM = (v) => { const n = parseInt(v); if (isNaN(n) || v === "") return v; return String(Math.min(12, Math.max(1, n))); };
+  const clampYY = (v) => { if (v.length < 4) return v; const n = parseInt(v); if (isNaN(n)) return v; return String(Math.min(2099, Math.max(2024, n))); };
+
+  // Days in month for cross-field validation
+  const daysInMonth = (m, y) => { const n = parseInt(m); const yr = parseInt(y); if (!n || !yr) return 31; return new Date(yr, n, 0).getDate(); };
+  const ddErr = dd && mm && yy.length === 4 && parseInt(dd) > daysInMonth(mm, yy);
+  const mmErr = mm && parseInt(mm) > 12;
+
+  const commit = (newDd, newMm, newYy) => {
+    const d = String(newDd).padStart(2, "0");
+    const m = String(newMm).padStart(2, "0");
+    const y = String(newYy);
+    const validDay = parseInt(newDd) >= 1 && parseInt(newDd) <= daysInMonth(newMm, newYy);
+    const validMon = parseInt(newMm) >= 1 && parseInt(newMm) <= 12;
+    if (y.length === 4 && newMm && newDd && validDay && validMon) {
+      onChange(`${y}-${m}-${d}`);
+    } else {
+      onChange("");
+    }
+  };
+
+  const baseStyle = { padding: "9px 8px", borderRadius: 7, fontSize: 14, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none", textAlign: "center", width: "100%", boxSizing: "border-box", transition: "border-color 0.15s" };
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.4fr", gap: 6 }}>
+        <input
+          type="number" min="1" max="31" value={dd} placeholder="DD"
+          onChange={e => { const v = e.target.value.slice(0, 2); setDd(v); commit(v, mm, yy); }}
+          onBlur={e => { const v = clampDD(e.target.value); setDd(v); commit(v, mm, yy); e.target.style.borderColor = ddErr ? C.danger : C.border; }}
+          onFocus={e => e.target.style.borderColor = C.primary}
+          style={{ ...baseStyle, border: `1.5px solid ${ddErr ? C.danger : C.border}` }}
+        />
+        <input
+          type="number" min="1" max="12" value={mm} placeholder="MM"
+          onChange={e => { const v = e.target.value.slice(0, 2); setMm(v); commit(dd, v, yy); }}
+          onBlur={e => { const v = clampMM(e.target.value); setMm(v); commit(dd, v, yy); e.target.style.borderColor = mmErr ? C.danger : C.border; }}
+          onFocus={e => e.target.style.borderColor = C.primary}
+          style={{ ...baseStyle, border: `1.5px solid ${mmErr ? C.danger : C.border}` }}
+        />
+        <input
+          type="number" min="2024" max="2099" value={yy} placeholder="YYYY"
+          onChange={e => { const v = e.target.value.slice(0, 4); setYy(v); commit(dd, mm, v); }}
+          onBlur={e => { const v = clampYY(e.target.value); setYy(v); commit(dd, mm, v); e.target.style.borderColor = C.border; }}
+          onFocus={e => e.target.style.borderColor = C.primary}
+          style={{ ...baseStyle, border: `1.5px solid ${C.border}` }}
+        />
+      </div>
+      {(ddErr || mmErr) && (
+        <div style={{ fontSize: 11, color: C.danger, marginTop: 4 }}>
+          {mmErr ? "Month must be 1–12" : `Day ${dd} is invalid for month ${mm}`}
+        </div>
+      )}
     </div>
   );
 }
@@ -536,6 +662,8 @@ export function SalesPage() {
     financer_details: "",
     down_payment: "",
     loan_amount_financed: "",
+    interest_rate: "12.0",
+    tenure_months: "36",
     // GST rates (default 2.5% each for eRickshaw EVs)
     cgst_rate: "2.5", sgst_rate: "2.5",
   };
@@ -591,24 +719,27 @@ export function SalesPage() {
       return setFormErr("Financer details are required for Loan / Finance payment.");
     setFormErr(""); setSaving(true);
     try {
-      // Serialize battery serials as newline-separated string
       // Convert empty optional integer/decimal fields to null so backend doesn't reject them
-      const toIntOrNull = v => (v === "" || v === null || v === undefined) ? null : (parseInt(v) || null);
+      const toIntOrNull   = v => (v === "" || v === null || v === undefined) ? null : (parseInt(v)   || null);
+      const toFloatOrNull = v => (v === "" || v === null || v === undefined) ? null : (parseFloat(v) || null);
       const payload = {
         ...form,
-        battery_serial_number: form.battery_serials.join("\n"),
-        battery_count: form.battery_count,
-        financer_details: form.financer_details,
+        battery_serial_number:  form.battery_serials.join("\n"),
+        battery_count:          parseInt(form.battery_count) || 1,
+        financer_details:       form.financer_details,
         battery_warranty_months: toIntOrNull(form.battery_warranty_months),
         vehicle_warranty_months: toIntOrNull(form.vehicle_warranty_months),
-        quantity: parseInt(form.quantity) || 1,
-        cgst_rate: parseFloat(form.cgst_rate) || 2.5,
-        sgst_rate: parseFloat(form.sgst_rate) || 2.5,
-        down_payment: form.down_payment ? parseFloat(form.down_payment) : null,
-        loan_amount_financed: form.loan_amount_financed ? parseFloat(form.loan_amount_financed) : null,
+        year_of_manufacture:    toIntOrNull(form.year_of_manufacture),
+        quantity:               parseInt(form.quantity) || 1,
+        cgst_rate:              parseFloat(form.cgst_rate) || 2.5,
+        sgst_rate:              parseFloat(form.sgst_rate) || 2.5,
+        down_payment:           toFloatOrNull(form.down_payment),
+        loan_amount_financed:   toFloatOrNull(form.loan_amount_financed),
       };
-      // Remove frontend-only field not in model
+      // Remove frontend-only fields not present in the Sale model
       delete payload.battery_serials;
+      delete payload.interest_rate;
+      delete payload.tenure_months;
       await api.sales.create(payload);
       setShowAdd(false);
       setForm(EMPTY_FORM);
@@ -647,11 +778,21 @@ export function SalesPage() {
   ];
 
   return (
-    <div style={{ padding: 24, color: C.text }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    <div className="sp-page" style={{ padding: 20, color: C.text }}>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @media(max-width:600px){
+          .sp-page{padding:12px 10px!important}
+          .sp-stat-val{font-size:18px!important;word-break:break-word}
+          .sp-toolbar{flex-direction:column;align-items:stretch!important}
+          .sp-toolbar>input{min-width:0!important}
+          .sp-toolbar-btns{display:flex;gap:8px}
+          .sp-toolbar-btns>button{flex:1}
+        }
+      `}</style>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, marginBottom: 22 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
         {[
           { icon: "🛺", label: "Total Sales",      value: stats.total,           color: C.primary },
           { icon: "📅", label: "This Month",        value: stats.thisMonth,       color: C.info },
@@ -660,11 +801,11 @@ export function SalesPage() {
         ].map(s => (
           <Card key={s.label}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
+              <div style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
                 <div style={{ fontSize: 11, color: C.textMid, marginBottom: 4, fontWeight: 600, letterSpacing: "0.3px" }}>{s.label.toUpperCase()}</div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: s.color, fontFamily: "Georgia,serif" }}>{s.value}</div>
+                <div className="sp-stat-val" style={{ fontSize: 24, fontWeight: 800, color: s.color, fontFamily: "Georgia,serif", wordBreak: "break-word" }}>{s.value}</div>
               </div>
-              <div style={{ width: 42, height: 42, borderRadius: 10, background: `${s.color}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{s.icon}</div>
+              <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, background: `${s.color}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{s.icon}</div>
             </div>
           </Card>
         ))}
@@ -672,7 +813,7 @@ export function SalesPage() {
 
       {/* Toolbar */}
       <Card padding={14} style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        <div className="sp-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="🔍  Search by customer or invoice..."
@@ -685,8 +826,10 @@ export function SalesPage() {
             onFocus={e => e.target.style.borderColor = C.primary}
             onBlur={e  => e.target.style.borderColor = C.border}
           />
-          <Btn label="↺ Refresh"        color={C.primary} outline onClick={load} />
-          <Btn label="+ Record New Sale" color={C.primary} icon="💰" onClick={() => setShowAdd(true)} />
+          <div className="sp-toolbar-btns" style={{ display: "flex", gap: 8 }}>
+            <Btn label="↺ Refresh"        color={C.primary} outline onClick={load} />
+            <Btn label="+ Record New Sale" color={C.primary} icon="💰" onClick={() => setShowAdd(true)} />
+          </div>
         </div>
 
         {/* Date presets + range */}
@@ -735,8 +878,8 @@ export function SalesPage() {
         </div>
 
         {loading ? <Spinner /> : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: C.bg }}>
                   {["Invoice No", "Customer", "Vehicle", "Sale Price", "Payment", "Delivery", "Status", "Actions"].map(h => (
@@ -981,8 +1124,8 @@ export function SalesPage() {
                   { value: "cheque",        label: "📋 Cheque" },
                 ]} />
               </Field>
-              <Field label="Expected Delivery Date">
-                <Input value={form.delivery_date} onChange={setF("delivery_date")} type="date" />
+              <Field label="Expected Delivery Date (DD / MM / YYYY)">
+                <DateInput value={form.delivery_date} onChange={setF("delivery_date")} />
               </Field>
               <Field label="Place of Supply (State)" required>
                 <Input value={form.place_of_supply} onChange={setF("place_of_supply")} placeholder="e.g. Delhi, Uttar Pradesh" />
@@ -1003,18 +1146,53 @@ export function SalesPage() {
                   <Field label="Down Payment (₹)">
                     <Input value={form.down_payment} onChange={v => {
                       const dp = parseFloat(v) || 0;
-                      const sp = parseFloat(form.sale_price) || 0;
-                      setForm(p => ({ ...p, down_payment: v, loan_amount_financed: sp && dp ? String(Math.max(0, sp - dp)) : p.loan_amount_financed }));
+                      // Loan is against the grand total (incl. CGST + SGST), not the base price
+                      setForm(p => ({ ...p, down_payment: v, loan_amount_financed: total_ && dp ? String(Math.max(0, Math.round(total_ - dp))) : p.loan_amount_financed }));
                     }} type="number" placeholder="0" />
                   </Field>
                   <Field label="Loan Amount Financed (₹)">
                     <Input value={form.loan_amount_financed} onChange={setF("loan_amount_financed")} type="number" placeholder="Auto-calculated" />
                   </Field>
                 </div>
-                {form.down_payment && form.loan_amount_financed && (
-                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
-                    Sale ₹{Number(form.sale_price||0).toLocaleString("en-IN")} = DP ₹{Number(form.down_payment||0).toLocaleString("en-IN")} + Loan ₹{Number(form.loan_amount_financed||0).toLocaleString("en-IN")}
-                  </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
+                  <Field label="Interest Rate (% p.a.)">
+                    <Input value={form.interest_rate} onChange={setF("interest_rate")} type="number" placeholder="12.0" />
+                  </Field>
+                  <Field label="Tenure (months)">
+                    <Select value={form.tenure_months} onChange={setF("tenure_months")} options={[6,12,18,24,30,36,48,60].map(n => ({ value: String(n), label: `${n} months` }))} />
+                  </Field>
+                </div>
+                {form.loan_amount_financed && (
+                  (() => {
+                    const principal = parseFloat(form.loan_amount_financed) || 0;
+                    const annualRate = parseFloat(form.interest_rate) || 12;
+                    const months = parseInt(form.tenure_months) || 36;
+                    const r = annualRate / 12 / 100;
+                    const emi = r === 0 ? principal / months : (principal * r * Math.pow(1 + r, months)) / (Math.pow(1 + r, months) - 1);
+                    const totalPayable = emi * months;
+                    const totalInterest = totalPayable - principal;
+                    return (
+                      <div style={{ background: `${C.info}10`, border: `1px solid ${C.info}30`, borderRadius: 8, padding: 10, marginTop: 6, fontSize: 12 }}>
+                        <div style={{ fontWeight: 700, color: C.info, marginBottom: 6 }}>📊 EMI Calculation</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
+                          {[
+                            ["Loan Amount", `₹${principal.toLocaleString("en-IN")}`],
+                            ["Monthly EMI", `₹${Math.round(emi).toLocaleString("en-IN")}`],
+                            ["Total Payable", `₹${Math.round(totalPayable).toLocaleString("en-IN")}`],
+                            ["Total Interest", `₹${Math.round(totalInterest).toLocaleString("en-IN")}`],
+                          ].map(([l, v]) => (
+                            <div key={l} style={{ background: C.surface, borderRadius: 6, padding: "5px 8px" }}>
+                              <div style={{ color: C.textDim, fontSize: 10 }}>{l}</div>
+                              <div style={{ fontWeight: 700, color: C.text }}>{v}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4, textAlign: "center" }}>
+                          Grand Total ₹{Math.round(total_).toLocaleString("en-IN")} (incl. GST) – DP ₹{Number(form.down_payment||0).toLocaleString("en-IN")} = Loan ₹{principal.toLocaleString("en-IN")}
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             )}
