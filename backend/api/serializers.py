@@ -15,6 +15,14 @@ from .models import (
 PLATFORM_NAME = getattr(settings, 'PLATFORM_NAME', 'eRickshawDekho')
 
 
+def _webp(url: str) -> str:
+    """Inject f_auto,q_auto into Cloudinary image URLs so browsers get WebP automatically."""
+    if url and 'res.cloudinary.com' in url and '/upload/' in url:
+        if '/upload/f_auto' not in url:
+            return url.replace('/upload/', '/upload/f_auto,q_auto,w_auto/', 1)
+    return url
+
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -46,7 +54,7 @@ class VehicleImageSerializer(serializers.ModelSerializer):
     def get_url(self, obj):
         request = self.context.get('request')
         try:
-            url = obj.image.url
+            url = _webp(obj.image.url)
             return request.build_absolute_uri(url) if request else url
         except Exception:
             return ''
@@ -258,7 +266,7 @@ class PublicVehicleSerializer(serializers.ModelSerializer):
         if obj.thumbnail:
             request = self.context.get('request')
             try:
-                url = obj.thumbnail.url
+                url = _webp(obj.thumbnail.url)
                 return request.build_absolute_uri(url) if request else url
             except Exception:
                 pass
@@ -269,7 +277,7 @@ class PublicVehicleSerializer(serializers.ModelSerializer):
         imgs = []
         for img in obj.images.all():
             try:
-                url = img.image.url
+                url = _webp(img.image.url)
                 imgs.append({'id': img.id, 'url': request.build_absolute_uri(url) if request else url, 'order': img.order})
             except Exception:
                 pass
