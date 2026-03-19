@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="hi-IN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ErikshawDekho App Install करें — PWA</title>
+  <meta name="description" content="ErikshawDekho को अपने मोबाइल में install करें — बिना App Store के!" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#16a34a" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #14532d 0%, #16a34a 60%, #1a6b44 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      color: #fff;
+    }
+    .card {
+      background: #fff;
+      color: #1e293b;
+      border-radius: 20px;
+      padding: 32px 28px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .logo { text-align: center; margin-bottom: 24px; }
+    .logo .icon { font-size: 48px; margin-bottom: 8px; }
+    .logo h1 { font-size: 22px; font-weight: 800; color: #14532d; }
+    .logo p { font-size: 13px; color: #64748b; margin-top: 4px; }
+    .install-btn {
+      display: block; width: 100%; padding: 16px;
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      color: #fff; border: none; border-radius: 12px;
+      font-size: 17px; font-weight: 800; cursor: pointer;
+      font-family: inherit; text-align: center;
+      box-shadow: 0 4px 16px rgba(22,163,74,0.4);
+      transition: transform 0.15s, box-shadow 0.15s;
+      margin-bottom: 20px; text-decoration: none;
+    }
+    .install-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(22,163,74,0.5); }
+    .install-btn.hidden { display: none; }
+    .divider { text-align: center; color: #94a3b8; font-size: 12px; margin: 16px 0; position: relative; }
+    .divider::before, .divider::after {
+      content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #e2e8f0;
+    }
+    .divider::before { left: 0; }
+    .divider::after { right: 0; }
+    .steps { margin-top: 8px; }
+    .step {
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 14px 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .step:last-child { border-bottom: none; }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #dcfce7; color: #15803d;
+      font-weight: 800; font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .step-text strong { display: block; font-size: 14px; color: #1e293b; margin-bottom: 2px; }
+    .step-text span { font-size: 12px; color: #64748b; }
+    .ios-steps, .android-steps { display: none; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #f0fdf4; color: #15803d;
+      border: 1.5px solid #bbf7d0;
+      padding: 6px 12px; border-radius: 20px;
+      font-size: 12px; font-weight: 700; margin-bottom: 20px;
+    }
+    .open-btn {
+      display: block; width: 100%; padding: 14px;
+      border: 2px solid #16a34a; color: #16a34a;
+      background: #fff; border-radius: 12px;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      font-family: inherit; text-align: center;
+      text-decoration: none; margin-top: 12px;
+    }
+    #already-installed { display: none; }
+    .footer-note { text-align: center; color: rgba(255,255,255,0.7); font-size: 12px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <div class="icon">🛺</div>
+      <h1>ErikshawDekho</h1>
+      <p>भारत का सबसे भरोसेमंद ई-रिक्शा प्लेटफॉर्म</p>
+    </div>
+
+    <div id="already-installed">
+      <div class="badge">✓ App पहले से installed है</div>
+      <a href="/" class="install-btn">App खोलें →</a>
+    </div>
+
+    <div id="install-section">
+      <!-- Android / Desktop: native install prompt -->
+      <button id="native-install-btn" class="install-btn hidden" onclick="triggerInstall()">
+        📲 App Install करें (Free)
+      </button>
+
+      <!-- iOS instructions -->
+      <div class="ios-steps" id="ios-guide">
+        <div class="badge">📱 iPhone / iPad पर Install करें</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-text">
+              <strong>Safari में खोलें</strong>
+              <span>इस link को Safari browser में open करें (Chrome नहीं)</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-text">
+              <strong>Share बटन दबाएँ</strong>
+              <span>नीचे middle में Share icon (<b>⎙</b>) tap करें</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-text">
+              <strong>"Add to Home Screen" चुनें</strong>
+              <span>List में scroll करें और "Add to Home Screen" tap करें</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-text">
+              <strong>Add tap करें</strong>
+              <span>ऊपर right corner में "Add" tap करें — हो गया! 🎉</span>
+            </div>
+          </div>
+        </div>
+        <a href="/" class="open-btn" style="margin-top:20px">पहले App में देखें →</a>
+      </div>
+
+      <!-- Android manual fallback -->
+      <div class="android-steps" id="android-guide">
+        <div class="badge">📱 Android पर Install करें</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-text">
+              <strong>Chrome menu खोलें</strong>
+              <span>ऊपर right में ⋮ (3 dots) tap करें</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-text">
+              <strong>"Add to Home screen" tap करें</strong>
+              <span>Menu में "Add to Home screen" option tap करें</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-text">
+              <strong>Install confirm करें</strong>
+              <span>"Install" या "Add" tap करें — app home screen पर आ जाएगा</span>
+            </div>
+          </div>
+        </div>
+        <a href="/" class="open-btn" style="margin-top:20px">पहले App में देखें →</a>
+      </div>
+    </div>
+  </div>
+  <p class="footer-note">कोई App Store की जरूरत नहीं • Direct install • Free forever</p>
+
+  <script>
+    let deferredPrompt = null;
+
+    // Detect if already running as PWA (standalone)
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+
+    if (isStandalone) {
+      document.getElementById('already-installed').style.display = 'block';
+      document.getElementById('install-section').style.display = 'none';
+    } else {
+      const ua = navigator.userAgent;
+      const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const isAndroid = /Android/.test(ua);
+
+      if (isIOS) {
+        document.getElementById('ios-guide').style.display = 'block';
+      }
+
+      // Listen for native install prompt (Android Chrome, Desktop Edge/Chrome)
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        // Hide manual guides, show native button
+        document.getElementById('ios-guide').style.display = 'none';
+        document.getElementById('android-guide').style.display = 'none';
+        document.getElementById('native-install-btn').classList.remove('hidden');
+      });
+
+      // If Android but no prompt yet, show manual guide
+      if (isAndroid) {
+        setTimeout(() => {
+          if (!deferredPrompt && !document.getElementById('native-install-btn').classList.contains('hidden') === false) {
+            document.getElementById('android-guide').style.display = 'block';
+          }
+        }, 1500);
+      }
+    }
+
+    // After install: show success
+    window.addEventListener('appinstalled', () => {
+      document.getElementById('already-installed').style.display = 'block';
+      document.getElementById('install-section').style.display = 'none';
+    });
+
+    async function triggerInstall() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (outcome === 'accepted') {
+        document.getElementById('already-installed').style.display = 'block';
+        document.getElementById('install-section').style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>

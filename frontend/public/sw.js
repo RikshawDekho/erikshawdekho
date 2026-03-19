@@ -22,12 +22,14 @@ async function cacheRuntime(request, response) {
   await cache.put(request, response);
 }
 
-// Install: pre-cache app shell and offline fallback
+// Install: pre-cache app shell and offline fallback.
+// Do NOT call skipWaiting() here — we want the new SW to wait so the app
+// can show a user-visible "New version available" banner before reloading.
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)).catch(() => null)
   );
-  self.skipWaiting();
+  // skipWaiting() is triggered only via SKIP_WAITING message from the banner
 });
 
 // Activate: clean old caches

@@ -39,55 +39,109 @@ import DriverLearnHubPage from './pages/DriverLearnHubPage.jsx'
 import DealerPortalPage from './pages/DealerPortalPage.jsx'
 import FinancerPage from './pages/FinancerPage.jsx'
 
-// Register service worker for PWA offline support
+// ─── PWA Auto-Update ────────────────────────────────────────────────────────
+// Strategy: new SW waits → banner shown → user clicks OR idle 10s → skipWaiting → reload
+// No silent auto-reload that breaks active form sessions.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
 
-      // Show "New version available" banner to the user
+      function applyUpdate(worker) {
+        worker.postMessage({ type: 'SKIP_WAITING' });
+      }
+
       function showUpdateBanner(worker) {
-        // Avoid duplicate banners
         if (document.getElementById('pwa-update-banner')) return;
+
         const banner = document.createElement('div');
         banner.id = 'pwa-update-banner';
         banner.style.cssText = [
-          'position:fixed', 'bottom:80px', 'left:50%', 'transform:translateX(-50%)',
-          'z-index:9999', 'background:#16a34a', 'color:#fff',
-          'padding:12px 20px', 'border-radius:12px', 'box-shadow:0 4px 20px rgba(0,0,0,0.3)',
-          'display:flex', 'align-items:center', 'gap:12px', 'font-family:inherit',
+          'position:fixed', 'top:16px', 'left:50%', 'transform:translateX(-50%) translateY(-80px)',
+          'z-index:99999', 'background:#16a34a', 'color:#fff',
+          'padding:12px 20px', 'border-radius:14px',
+          'box-shadow:0 6px 28px rgba(0,0,0,0.35)',
+          'display:flex', 'align-items:center', 'gap:12px',
+          'font-family:-apple-system,BlinkMacSystemFont,sans-serif',
           'font-size:14px', 'font-weight:600', 'white-space:nowrap',
           'max-width:calc(100vw - 32px)',
+          'transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
         ].join(';');
+
+        let countdown = 10;
         banner.innerHTML = `
-          <span>🔄 नया अपडेट available है</span>
-          <button id="pwa-update-btn" style="background:#fff;color:#16a34a;border:none;padding:6px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;">Update करें</button>
-          <button id="pwa-dismiss-btn" style="background:rgba(255,255,255,0.2);color:#fff;border:none;padding:6px 10px;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+          <span>🔄 नया अपडेट ready — <span id="pwa-cd">${countdown}s</span> में auto-update</span>
+          <button id="pwa-update-btn" style="background:#fff;color:#16a34a;border:none;padding:6px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;">अभी Update करें</button>
+          <button id="pwa-dismiss-btn" style="background:rgba(255,255,255,0.2);color:#fff;border:none;padding:6px 10px;border-radius:8px;font-size:13px;cursor:pointer;line-height:1;" title="Dismiss">✕</button>
         `;
         document.body.appendChild(banner);
+
+        // Slide in after paint
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => { banner.style.transform = 'translateX(-50%) translateY(0)'; });
+        });
+
+        // Countdown timer — apply update automatically after 10s
+        const timer = setInterval(() => {
+          countdown--;
+          const cd = document.getElementById('pwa-cd');
+          if (cd) cd.textContent = countdown + 's';
+          if (countdown <= 0) {
+            clearInterval(timer);
+            applyUpdate(worker);
+            banner.remove();
+          }
+        }, 1000);
+
+        // Pause countdown on user interaction (typing, clicking inside forms)
+        let paused = false;
+        const pauseTimer = () => {
+          if (paused) return;
+          paused = true;
+          clearInterval(timer);
+          const cd = document.getElementById('pwa-cd');
+          if (cd) cd.closest('span').textContent = 'अभी update करें या बाद में';
+        };
+        document.addEventListener('keydown', pauseTimer, { once: true });
+        document.addEventListener('input', pauseTimer, { once: true });
+
         document.getElementById('pwa-update-btn').addEventListener('click', () => {
-          worker.postMessage({ type: 'SKIP_WAITING' });
+          clearInterval(timer);
+          applyUpdate(worker);
           banner.remove();
         });
-        document.getElementById('pwa-dismiss-btn').addEventListener('click', () => banner.remove());
+        document.getElementById('pwa-dismiss-btn').addEventListener('click', () => {
+          clearInterval(timer);
+          banner.style.transform = 'translateX(-50%) translateY(-80px)';
+          setTimeout(() => banner.remove(), 350);
+          // Re-show on next visibility (tab focus) so update isn't lost forever
+          document.addEventListener('visibilitychange', function reshowOnFocus() {
+            if (document.visibilityState === 'visible') {
+              document.removeEventListener('visibilitychange', reshowOnFocus);
+              setTimeout(() => showUpdateBanner(worker), 2000);
+            }
+          });
+        });
       }
 
-      // If a new SW is already waiting (page was open when update came in), show banner immediately
+      // If a waiting SW already exists when page loads, show banner right away
       if (registration.waiting) {
         showUpdateBanner(registration.waiting);
       }
 
+      // Listen for new SW finishing installation
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         if (!newWorker) return;
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New SW installed and waiting — show banner (old SW still controls this page)
             showUpdateBanner(newWorker);
           }
         });
       });
 
-      // When new SW takes control, reload to get fresh assets
+      // When new SW takes control (after skipWaiting), reload once to get fresh assets
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (refreshing) return;
@@ -95,11 +149,12 @@ if ('serviceWorker' in navigator) {
         window.location.reload();
       });
 
-      // Check for updates every 30 minutes (also on visibility change)
-      window.setInterval(() => { registration.update().catch(() => {}); }, 30 * 60 * 1000);
+      // Poll for updates every 15 minutes + on every tab focus
+      setInterval(() => registration.update().catch(() => {}), 15 * 60 * 1000);
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') registration.update().catch(() => {});
       });
+
     } catch {
       // Keep startup resilient even if SW registration fails.
     }
