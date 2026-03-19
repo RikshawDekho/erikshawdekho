@@ -1,8 +1,133 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { I18nProvider } from './i18n.jsx'
+
+// ─── Per-route SEO meta tags ────────────────────────────────────
+const ROUTE_META = {
+  '/': {
+    title: 'ErikshawDekho — भारत का सबसे भरोसेमंद ई-रिक्शा प्लेटफॉर्म',
+    description: 'भारत का सबसे भरोसेमंद ई-रिक्शा प्लेटफॉर्म। Compare करें, verified dealers से best price पाएँ, EMI calculator, free enquiry — बिल्कुल मुफ्त।',
+    og_title: 'ErikshawDekho — भारत का ई-रिक्शा प्लेटफॉर्म',
+    canonical: 'https://www.erikshawdekho.com/',
+  },
+  '/driver': {
+    title: 'ई-रिक्शा खरीदें | ErikshawDekho',
+    description: 'Find the best e-rickshaw deals near you. Compare prices, EMI options, and verified dealers across India.',
+    og_title: 'Buy E-Rickshaw in India | ErikshawDekho',
+    canonical: 'https://www.erikshawdekho.com/driver',
+  },
+  '/driver/marketplace': {
+    title: 'E-Rickshaw Marketplace — New & Used eRickshaws | ErikshawDekho',
+    description: 'Browse 500+ new and used e-rickshaws from verified dealers across India. Filter by fuel type, city, price. Free enquiry.',
+    og_title: 'E-Rickshaw Marketplace India | ErikshawDekho',
+    canonical: 'https://www.erikshawdekho.com/driver/marketplace',
+  },
+  '/driver/dealers': {
+    title: 'Verified E-Rickshaw Dealers Near You | ErikshawDekho',
+    description: 'Find trusted, verified e-rickshaw and auto-rickshaw dealers in your city. Compare showrooms, read reviews, contact directly.',
+    og_title: 'Verified E-Rickshaw Dealers India | ErikshawDekho',
+    canonical: 'https://www.erikshawdekho.com/driver/dealers',
+  },
+  '/driver/learn': {
+    title: 'E-Rickshaw Buying Guide & Tips | ErikshawDekho',
+    description: 'Learn everything about buying an e-rickshaw — battery, range, EMI, government subsidy, insurance, maintenance tips.',
+    og_title: 'E-Rickshaw Buying Guide | ErikshawDekho',
+    canonical: 'https://www.erikshawdekho.com/driver/learn',
+  },
+  '/dealer': {
+    title: 'Dealer Portal — Manage Your Showroom | ErikshawDekho',
+    description: 'Manage your e-rickshaw inventory, leads, and sales with ErikshawDekho\'s dealer SaaS platform.',
+    og_title: 'E-Rickshaw Dealer Portal | ErikshawDekho',
+    canonical: 'https://www.erikshawdekho.com/dealer',
+  },
+  '/financer': {
+    title: 'Financer Portal — E-Rickshaw Finance | ErikshawDekho',
+    description: 'Offer e-rickshaw loans, manage dealer associations, and track finance applications on ErikshawDekho.',
+    og_title: 'E-Rickshaw Finance Portal | ErikshawDekho',
+    canonical: 'https://www.erikshawdekho.com/financer',
+  },
+  '/sitemap': {
+    title: 'Site Map — All Pages | ErikshawDekho',
+    description: 'Complete sitemap of ErikshawDekho — browse all pages: marketplace, dealers, buying guide, portals.',
+    og_title: 'Sitemap | ErikshawDekho',
+    canonical: 'https://www.erikshawdekho.com/sitemap',
+  },
+}
+
+// JSON-LD per route
+const ROUTE_JSONLD = {
+  '/driver/marketplace': {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "E-Rickshaw Marketplace India",
+    "description": "Browse new and used e-rickshaws from verified dealers across India",
+    "url": "https://www.erikshawdekho.com/driver/marketplace",
+    "numberOfItems": "500+",
+    "itemListOrder": "https://schema.org/ItemListOrderDescending",
+  },
+  '/driver/dealers': {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "Verified E-Rickshaw Dealers in India",
+    "description": "Find trusted verified e-rickshaw and auto-rickshaw dealers across India",
+    "url": "https://www.erikshawdekho.com/driver/dealers",
+  },
+  '/driver/learn': {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "name": "E-Rickshaw Buying Guide",
+    "description": "Learn about e-rickshaw battery, range, EMI, government subsidies, and maintenance",
+    "url": "https://www.erikshawdekho.com/driver/learn",
+  },
+}
+
+function setMeta(name, content) {
+  let el = document.querySelector(`meta[name="${name}"]`) || document.querySelector(`meta[property="${name}"]`)
+  if (!el) {
+    el = document.createElement('meta')
+    el.setAttribute(name.startsWith('og:') ? 'property' : 'name', name)
+    document.head.appendChild(el)
+  }
+  el.setAttribute('content', content)
+}
+
+function setCanonical(href) {
+  let el = document.querySelector('link[rel="canonical"]')
+  if (!el) { el = document.createElement('link'); el.rel = 'canonical'; document.head.appendChild(el) }
+  el.href = href
+}
+
+function setJsonLd(data) {
+  let el = document.getElementById('route-jsonld')
+  if (!el) {
+    el = document.createElement('script')
+    el.id = 'route-jsonld'
+    el.type = 'application/ld+json'
+    document.head.appendChild(el)
+  }
+  el.textContent = data ? JSON.stringify(data) : ''
+}
+
+function RouteMeta() {
+  const location = useLocation()
+  useEffect(() => {
+    const meta = ROUTE_META[location.pathname]
+    if (meta) {
+      document.title = meta.title
+      setMeta('description', meta.description)
+      setMeta('og:title', meta.og_title || meta.title)
+      setMeta('og:description', meta.description)
+      setMeta('og:url', meta.canonical)
+      setMeta('twitter:title', meta.og_title || meta.title)
+      setMeta('twitter:description', meta.description)
+      if (meta.canonical) setCanonical(meta.canonical)
+    }
+    setJsonLd(ROUTE_JSONLD[location.pathname] || null)
+  }, [location.pathname])
+  return null
+}
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
@@ -41,6 +166,8 @@ import DriverDealerDirectoryPage from './pages/DriverDealerDirectoryPage.jsx'
 import DriverLearnHubPage from './pages/DriverLearnHubPage.jsx'
 import DealerPortalPage from './pages/DealerPortalPage.jsx'
 import FinancerPage from './pages/FinancerPage.jsx'
+import SitemapPage from './pages/SitemapPage.jsx'
+import NotFoundPage from './pages/NotFoundPage.jsx'
 
 // ─── PWA Auto-Update ────────────────────────────────────────────────────────
 // Strategy: new SW waits → banner shown → user clicks OR idle 10s → skipWaiting → reload
@@ -169,6 +296,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
     <BrowserRouter>
       <I18nProvider>
+        <RouteMeta />
         <Routes>
           {/* Main homepage: driver-first with products + enquiry form */}
           <Route path="/"                    element={<DriverLandingPage />} />
@@ -196,8 +324,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/dashboard"   element={<Navigate to="/dealer" replace />} />
           <Route path="/login"       element={<Navigate to="/dealer" replace />} />
 
-          {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* HTML Sitemap */}
+          <Route path="/sitemap" element={<SitemapPage />} />
+
+          {/* Catch-all — proper 404 page */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </I18nProvider>
     </BrowserRouter>

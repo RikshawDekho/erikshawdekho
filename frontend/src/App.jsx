@@ -175,11 +175,12 @@ const api = {
   marketplace:(p="") => apiFetch(`/marketplace/${p}`),
 
   vehicles: {
-    list:   (p="") => apiFetch(`/vehicles/${p}`),
-    get:    (id)   => apiFetch(`/vehicles/${id}/`),
-    create: (d)    => apiFetch("/vehicles/", { method: "POST", body: d instanceof FormData ? d : JSON.stringify(d) }),
-    update: (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
-    delete: (id)   => apiFetch(`/vehicles/${id}/`, { method: "DELETE" }),
+    list:    (p="") => apiFetch(`/vehicles/${p}`),
+    get:     (id)   => apiFetch(`/vehicles/${id}/`),
+    create:  (d)    => apiFetch("/vehicles/", { method: "POST", body: d instanceof FormData ? d : JSON.stringify(d) }),
+    update:  (id,d) => apiFetch(`/vehicles/${id}/`, { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
+    delete:  (id)   => apiFetch(`/vehicles/${id}/`, { method: "DELETE" }),
+    feature: (id)   => apiFetch(`/vehicles/${id}/feature/`, { method: "POST" }),
   },
   leads: {
     list:   (p="") => apiFetch(`/leads/${p}`),
@@ -230,7 +231,7 @@ const api = {
     updateFcm:   (d) => apiFetch("/notifications/fcm-token/", { method: "PATCH", body: JSON.stringify(d) }),
   },
   profile: {
-    update: (d) => apiFetch("/auth/me/", { method: "PATCH", body: JSON.stringify(d) }),
+    update: (d) => apiFetch("/auth/me/", { method: "PATCH", body: d instanceof FormData ? d : JSON.stringify(d) }),
   },
   enquiry: (d) => apiFetch("/public/enquiry/", { method: "POST", body: JSON.stringify(d) }),
   enquiries: {
@@ -260,6 +261,8 @@ const api = {
     financeApps:            (p="")     => apiFetch(`/admin-portal/finance-applications/${p}`),
     financerDocs:           (id)       => apiFetch(`/admin-portal/financers/${id}/documents/`),
     reviewFinancerDoc:      (id,did,d) => apiFetch(`/admin-portal/financers/${id}/documents/${did}/`, { method: "PATCH", body: JSON.stringify(d) }),
+    vehicles:               (p="")     => apiFetch(`/admin-portal/vehicles/${p}`),
+    featureVehicle:         (id,d)     => apiFetch(`/admin-portal/vehicles/${id}/`, { method: "PATCH", body: JSON.stringify(d) }),
   },
   auth: {
     forgotPassword:    (d) => apiFetch("/auth/forgot-password/",       { method: "POST", body: JSON.stringify(d) }),
@@ -1893,6 +1896,18 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
     }
   };
 
+  const handleFeatureToggle = async (v) => {
+    try {
+      const result = await api.vehicles.feature(v.id);
+      setVehicles(p => p.map(x => x.id === v.id ? { ...x, is_featured: result.is_featured } : x));
+      toast(result.is_featured ? `"${v.model_name}" featured on homepage!` : `"${v.model_name}" removed from featured.`, "success");
+    } catch (err) {
+      toast(err?.error || "Failed to update featured status.", "error");
+    }
+  };
+
+  const isProDealer = plan && (plan.type === "pro" || plan.type === "early_dealer") && plan.is_active;
+
   const cols = [
     { label: "ID",       render: r => <span style={{ color: C.textDim, fontSize: 12 }}>{r.id}</span> },
     { label: "Thumbnail",render: r => (
@@ -1911,6 +1926,13 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         <Btn label="View"   size="sm" outline color={C.info}    onClick={() => setViewVehicle(r)} />
         <Btn label="Edit"   size="sm" outline color={C.primary} onClick={() => openEdit(r)} />
         <Btn label="Delete" size="sm" outline color={C.danger}  onClick={() => setDeleteId(r.id)} />
+        {isProDealer && (
+          <button onClick={() => handleFeatureToggle(r)}
+            title={r.is_featured ? "Remove from homepage featured" : "Feature on homepage (max 3)"}
+            style={{ padding: "4px 10px", borderRadius: 6, border: `1.5px solid ${r.is_featured ? C.warning : C.border}`, background: r.is_featured ? `${C.warning}20` : "transparent", color: r.is_featured ? C.warning : C.textMid, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
+            {r.is_featured ? "⭐" : "☆"}
+          </button>
+        )}
       </div>
     )},
   ];
@@ -3633,6 +3655,10 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
   const [prefsLoading, setPrefsLoading] = useState(true);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
+  const [showroomMode, setShowroomMode] = useState(false);
+  const [logoFile, setLogoFile] = useState(null);
+  const [coverFile, setCoverFile] = useState(null);
+  const [showroomSaving, setShowroomSaving] = useState(false);
 
   const loadData = () => {
     Promise.all([api.me(), api.dashboard()]).then(([me, dash]) => {
@@ -3740,6 +3766,78 @@ function AccountPage({ dealer: dealerProp, onLogout }) {
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{val || "—"}</div>
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Showroom Branding card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>🏪 Showroom Branding</div>
+            <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>Upload your logo and cover image for the dealer directory</div>
+          </div>
+          <Btn label={showroomMode ? "Cancel" : "✏ Edit"} color={C.primary} outline size="sm" onClick={() => { setShowroomMode(m => !m); setLogoFile(null); setCoverFile(null); }} />
+        </div>
+
+        {/* Preview existing images */}
+        {!showroomMode && (
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 120 }}>
+              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>LOGO</div>
+              <div style={{ width: 72, height: 72, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 30 }}>
+                {dealer?.logo ? <img src={dealer.logo} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🏪"}
+              </div>
+            </div>
+            <div style={{ flex: 3, minWidth: 200 }}>
+              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>COVER IMAGE</div>
+              <div style={{ height: 80, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 30 }}>
+                {dealer?.cover_image ? <img src={dealer.cover_image} alt="cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🖼️"}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showroomMode && (
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <Field label="Logo (square, max 2MB)">
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 22, flexShrink: 0 }}>
+                    {logoFile ? <img src={URL.createObjectURL(logoFile)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : dealer?.logo ? <img src={dealer.logo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🏪"}
+                  </div>
+                  <label style={{ flex: 1, padding: "7px 12px", border: `1.5px dashed ${C.primary}`, borderRadius: 7, cursor: "pointer", fontSize: 12, color: C.primary, textAlign: "center", fontFamily: "inherit" }}>
+                    {logoFile ? logoFile.name : "Choose file"}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => setLogoFile(e.target.files[0] || null)} />
+                  </label>
+                </div>
+              </Field>
+              <Field label="Cover Image (16:9 recommended, max 5MB)">
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ height: 60, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.bg, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>
+                    {coverFile ? <img src={URL.createObjectURL(coverFile)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : dealer?.cover_image ? <img src={dealer.cover_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : "🖼️"}
+                  </div>
+                  <label style={{ padding: "7px 12px", border: `1.5px dashed ${C.primary}`, borderRadius: 7, cursor: "pointer", fontSize: 12, color: C.primary, textAlign: "center", fontFamily: "inherit" }}>
+                    {coverFile ? coverFile.name : "Choose file"}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => setCoverFile(e.target.files[0] || null)} />
+                  </label>
+                </div>
+              </Field>
+            </div>
+            <Btn label={showroomSaving ? "Uploading..." : "Save Branding"} color={C.primary} disabled={showroomSaving || (!logoFile && !coverFile)} onClick={async () => {
+              if (!logoFile && !coverFile) return;
+              setShowroomSaving(true);
+              try {
+                const fd = new FormData();
+                if (logoFile) fd.append("logo", logoFile);
+                if (coverFile) fd.append("cover_image", coverFile);
+                await api.profile.update(fd);
+                toast("Showroom branding updated!", "success");
+                setShowroomMode(false); setLogoFile(null); setCoverFile(null);
+                loadData();
+              } catch { toast("Failed to upload images.", "error"); }
+              setShowroomSaving(false);
+            }} />
           </div>
         )}
       </Card>
@@ -5509,6 +5607,7 @@ const ADMIN_NAV = [
   { id: "dealers",       label: "Dealers",        icon: "🏪" },
   { id: "financers",     label: "Financers",      icon: "🏦" },
   { id: "users",         label: "Users",          icon: "👥" },
+  { id: "vehicles",      label: "Vehicles",       icon: "🛺" },
   { id: "applications",  label: "Applications",   icon: "📋" },
   { id: "fin_apps",      label: "Finance Apps",   icon: "💳" },
   { id: "analytics",     label: "Leads Analytics",icon: "📈" },
@@ -5682,6 +5781,10 @@ function AdminPortal({ user, onLogout }) {
   const [selectedFinancerDocs, setSelectedFinancerDocs] = useState(null);
   const [financerDocList, setFinancerDocList] = useState([]);
   const [loadingFinancerDocs, setLoadingFinancerDocs] = useState(false);
+  const [adminVehicles, setAdminVehicles] = useState([]);
+  const [vehicleSearch, setVehicleSearch] = useState("");
+  const debouncedVehicleSearch = useDebounce(vehicleSearch, 350);
+  const [vehicleFeaturedFilter, setVehicleFeaturedFilter] = useState("");
 
   useEffect(() => { api.admin.stats().then(setStats).catch(() => {}); }, []);
 
@@ -5700,6 +5803,7 @@ function AdminPortal({ user, onLogout }) {
       applications: () => api.admin.applications(qs).then(d => { setApplications(d.results || []); setTotalPages(d.total_pages || 1); }),
       fin_apps:     () => api.admin.financeApps(qs).then(d => { setFinApps(d.results || d || []); setTotalPages(d.total_pages || 1); }),
       enquiries:    () => api.admin.enquiries(qs).then(d => { setEnquiries(d.results || []); setTotalPages(d.total_pages || 1); }),
+      vehicles:     () => { const vp = new URLSearchParams({ page: pg }); if (debouncedVehicleSearch) vp.set("search", debouncedVehicleSearch); if (vehicleFeaturedFilter) vp.set("featured", vehicleFeaturedFilter); return api.admin.vehicles(`?${vp}`).then(d => { setAdminVehicles(d.results || []); setTotalPages(d.total_pages || 1); }); },
       analytics:    () => {
         const ap = new URLSearchParams({ period: analyticsPeriod });
         if (analyticsFrom) ap.set("date_from", analyticsFrom);
@@ -5708,7 +5812,7 @@ function AdminPortal({ user, onLogout }) {
       },
     };
     (calls[page] || (() => Promise.resolve()))().finally(() => setLoading(false));
-  }, [page, pg, debouncedSearch, dateFrom, dateTo, appFilter, analyticsPeriod, analyticsFrom, analyticsTo]);
+  }, [page, pg, debouncedSearch, dateFrom, dateTo, appFilter, analyticsPeriod, analyticsFrom, analyticsTo, debouncedVehicleSearch, vehicleFeaturedFilter]);
 
   useEffect(() => { if (page !== "overview") loadPage(); }, [loadPage, page]);
 
@@ -5788,6 +5892,15 @@ function AdminPortal({ user, onLogout }) {
       }
       toast(`${label} ${action}d.`, "success");
     } catch (e) { toast(e?.error || "Failed", "error"); }
+  };
+
+  const toggleFeature = async (v) => {
+    const next = !v.is_featured;
+    try {
+      await api.admin.featureVehicle(v.id, { is_featured: next });
+      setAdminVehicles(p => p.map(x => x.id === v.id ? { ...x, is_featured: next } : x));
+      toast(next ? `"${v.model_name}" is now featured!` : `"${v.model_name}" unfeatured.`, "success");
+    } catch { toast("Failed to update", "error"); }
   };
 
   const sidebarStyle = { width: 200, minWidth: 200, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 };
@@ -6325,6 +6438,69 @@ function AdminPortal({ user, onLogout }) {
               </div>
             )}
             {!loading && !analytics && <Card><div style={{ textAlign: "center", padding: 40, color: C.textDim }}>Click Apply to load analytics data.</div></Card>}
+          </div>
+        )}
+
+        {/* Vehicles */}
+        {page === "vehicles" && (
+          <div>
+            <Card style={{ marginBottom: 14, padding: 14 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={vehicleSearch} onChange={e => { setVehicleSearch(e.target.value); setPg(1); }}
+                  placeholder="Search vehicle or dealer..."
+                  style={{ flex: 1, minWidth: 180, padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface, outline: "none" }} />
+                <select value={vehicleFeaturedFilter} onChange={e => { setVehicleFeaturedFilter(e.target.value); setPg(1); }}
+                  style={{ padding: "7px 12px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, fontFamily: "inherit", color: C.text, background: C.surface }}>
+                  <option value="">All Vehicles</option>
+                  <option value="true">Featured Only</option>
+                  <option value="false">Not Featured</option>
+                </select>
+              </div>
+            </Card>
+
+            {loading ? <Spinner /> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.surface, borderBottom: `2px solid ${C.border}` }}>
+                      {["Image","Model","Brand","Fuel","Price","Dealer","City","Status","Featured","Action"].map(h => (
+                        <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 700, color: C.textMid, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminVehicles.map(v => (
+                      <tr key={v.id} style={{ borderBottom: `1px solid ${C.border}`, background: v.is_featured ? `${C.warning}08` : "transparent" }}>
+                        <td style={{ padding: "8px 12px" }}>
+                          <div style={{ width: 48, height: 36, borderRadius: 6, background: `${C.primary}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, overflow: "hidden", position: "relative" }}>
+                            🛺
+                            {v.thumbnail_url && <img src={v.thumbnail_url} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
+                          </div>
+                        </td>
+                        <td style={{ padding: "8px 12px", fontWeight: 600, color: C.text }}>{v.model_name}</td>
+                        <td style={{ padding: "8px 12px", color: C.textMid }}>{v.brand_name}</td>
+                        <td style={{ padding: "8px 12px" }}><span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, background: `${C.primary}15`, color: C.primary, fontWeight: 600 }}>{v.fuel_type}</span></td>
+                        <td style={{ padding: "8px 12px", color: C.primary, fontWeight: 700 }}>₹{Number(v.price).toLocaleString("en-IN")}</td>
+                        <td style={{ padding: "8px 12px", color: C.textMid }}>{v.dealer_name}</td>
+                        <td style={{ padding: "8px 12px", color: C.textDim, fontSize: 12 }}>📍 {v.dealer_city}</td>
+                        <td style={{ padding: "8px 12px" }}><span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 11, background: v.stock_status === "in_stock" ? `${C.success}20` : `${C.warning}20`, color: v.stock_status === "in_stock" ? C.success : C.warning, fontWeight: 600 }}>{v.stock_status}</span></td>
+                        <td style={{ padding: "8px 12px", textAlign: "center", fontSize: 18 }}>{v.is_featured ? "⭐" : <span style={{ color: C.textDim, fontSize: 14 }}>—</span>}</td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <button onClick={() => toggleFeature(v)}
+                            style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${v.is_featured ? C.danger : C.warning}`, background: v.is_featured ? `${C.danger}10` : `${C.warning}10`, color: v.is_featured ? C.danger : C.warning, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                            {v.is_featured ? "Unfeature" : "⭐ Feature"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {adminVehicles.length === 0 && (
+                      <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: C.textDim }}>No vehicles found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <Pagination page={pg} totalPages={totalPages} onPage={setPg} />
           </div>
         )}
 

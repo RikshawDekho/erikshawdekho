@@ -457,7 +457,6 @@ export default function DriverLandingPage() {
   return (
     <div className="dlp-root" style={{ fontFamily: TYPO.body, minHeight: "100vh", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap');
         *, *::before, *::after { box-sizing: border-box; }
         @keyframes fadeUp { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
         @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
