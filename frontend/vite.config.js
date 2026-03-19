@@ -37,5 +37,19 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    // Raise chunk size warning limit — App.jsx is intentionally large
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React runtime — cached aggressively by browsers
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // Google OAuth — only loaded when needed
+          'vendor-oauth': ['@react-oauth/google'],
+        }
+      }
+    }
   }
 })
