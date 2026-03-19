@@ -54,29 +54,30 @@ function TopContactBar({ phone, whatsapp, email }) {
   if (!phone && !email) return null;
   const digits = (whatsapp || phone || "").replace(/\D/g, "");
   return (
-    <div style={{
-      background: "#f0fdf4", borderBottom: `1px solid ${G3}`,
-      padding: "7px 20px", display: "flex", justifyContent: "flex-end",
-      alignItems: "center", gap: 20, fontSize: 12, fontFamily: TYPO.body,
-    }}>
-      {phone && (
-        <a href={`tel:${phone}`} style={{ color: "#374151", textDecoration: "none", display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
-          📞 {phone}
-        </a>
-      )}
-      {(whatsapp || phone) && (
-        <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer"
-          style={{ color: G, textDecoration: "none", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ background: G, color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>💬</span>
-          WhatsApp
-        </a>
-      )}
-      {email && (
-        <a href={`mailto:${email}`} style={{ color: "#64748b", textDecoration: "none" }}>
-          ✉ {email}
-        </a>
-      )}
-    </div>
+    <>
+      <style>{`
+        .tcb-root { background:#f0fdf4; border-bottom:1px solid ${G3}; padding:7px 20px; display:flex; justify-content:flex-end; align-items:center; gap:20px; font-size:12px; font-family:${TYPO.body}; flex-wrap:nowrap; overflow:hidden; }
+        .tcb-phone { color:#374151; text-decoration:none; display:flex; align-items:center; gap:4px; font-weight:500; white-space:nowrap; }
+        .tcb-wa    { color:${G}; text-decoration:none; font-weight:700; display:flex; align-items:center; gap:4px; white-space:nowrap; }
+        .tcb-email { color:#64748b; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
+        @media (max-width: 640px) { .tcb-phone { display:none !important; } .tcb-email { display:none !important; } }
+        @media (max-width: 400px) { .tcb-root  { display:none !important; } }
+      `}</style>
+      <div className="tcb-root">
+        {phone && (
+          <a href={`tel:${phone}`} className="tcb-phone">📞 {phone}</a>
+        )}
+        {(whatsapp || phone) && (
+          <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer" className="tcb-wa">
+            <span style={{ background: G, color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>💬</span>
+            WhatsApp
+          </a>
+        )}
+        {email && (
+          <a href={`mailto:${email}`} className="tcb-email">✉ {email}</a>
+        )}
+      </div>
+    </>
   );
 }
 
