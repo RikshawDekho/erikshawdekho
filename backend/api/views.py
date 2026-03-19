@@ -529,13 +529,24 @@ class VehicleViewSet(viewsets.ModelViewSet):
         dealer = self.request.user.dealer_profile
         # Enforce plan listing limit
         plan = getattr(dealer, 'plan', None)
-        if plan and plan.listing_limit > 0:
+        # If plan FK is set use its limit; otherwise fall back to 5 for free, unlimited for pro
+        if plan:
+            limit = plan.listing_limit
+            plan_name = plan.name
+        elif dealer.plan_type in ('pro', 'early_dealer'):
+            limit = 0  # unlimited
+            plan_name = 'Pro Plan'
+        else:
+            limit = 5  # free tier default
+            plan_name = 'Free Plan'
+
+        if limit > 0:
             current_count = Vehicle.objects.filter(dealer=dealer, is_active=True).count()
-            if current_count >= plan.listing_limit:
+            if current_count >= limit:
                 raise ValidationError({
-                    'error': f'Your {plan.name} allows maximum {plan.listing_limit} vehicle listing(s). Upgrade your plan for unlimited listings.',
+                    'error': f'Your {plan_name} allows maximum {limit} vehicle listing(s). Upgrade your plan for unlimited listings.',
                     'code': 'listing_limit_reached',
-                    'limit': plan.listing_limit,
+                    'limit': limit,
                     'current': current_count,
                 })
         serializer.save(dealer=dealer)
@@ -631,7 +642,7 @@ def marketplace_vehicles(request):
         if cached:
             return Response(cached)
 
-    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_verified=True, dealer__is_demo=False).select_related('brand','dealer','dealer__plan').prefetch_related('images')
+    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_demo=False).select_related('brand','dealer','dealer__plan').prefetch_related('images')
     if fuel:     qs = qs.filter(fuel_type=fuel)
     if search:   qs = qs.filter(Q(model_name__icontains=search)|Q(brand__name__icontains=search))
     if featured: qs = qs.filter(is_featured=True)
