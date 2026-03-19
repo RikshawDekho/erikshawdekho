@@ -1,4 +1,5 @@
 ﻿import React, { Component, useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
+import { GoogleLogin } from '@react-oauth/google';
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SalesPage } from './SalesPage';
 import NavbarNew from './components/NavbarNew';
@@ -151,10 +152,17 @@ async function apiFetch(path, opts = {}, _retry = false) {
         }
       } catch (_) { /* fall through to logout */ }
     }
-    localStorage.clear();
-    window.location.reload();
+    // Auth endpoints (login, register, google) return 401 for wrong credentials —
+    // don't treat that as a session expiry. Only auto-logout for protected API calls.
+    if (!path.startsWith('/auth/')) {
+      localStorage.clear();
+      window.location.reload();
+    }
   }
-  if (!res.ok) throw await res.json();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw { ...body, _status: res.status };
+  }
   if (res.status === 204) return null;
   return res.json();
 }
@@ -257,6 +265,7 @@ const api = {
     forgotPassword:    (d) => apiFetch("/auth/forgot-password/",       { method: "POST", body: JSON.stringify(d) }),
     resetPassword:     (d) => apiFetch("/auth/reset-password/",        { method: "POST", body: JSON.stringify(d) }),
     resetPasswordPhone:(d) => apiFetch("/auth/reset-password-phone/",  { method: "POST", body: JSON.stringify(d) }),
+    google:            (d) => apiFetch("/auth/google/",                { method: "POST", body: JSON.stringify(d) }),
   },
   dealer: {
     plans:           ()       => apiFetch("/plans/"),
@@ -715,7 +724,10 @@ function AuthPage({ onAuth }) {
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [authStatus, setAuthStatus] = useState(null);
-  const [loginHint, setLoginHint] = useState(null); // null | "wrong_password" | "no_account" | "duplicate_email"
+  const [loginHint, setLoginHint] = useState(null); // null | "wrong_password" | "no_account" | "duplicate_email" | "rate_limited"
+  const [shake, setShake] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [pincodeData, setPincodeData] = useState(null); // { city, state, suggestions: [] }
   const [pincodeLoading, setPincodeLoading] = useState(false);
   // Forgot password state
@@ -740,8 +752,9 @@ function AuthPage({ onAuth }) {
 
   const set = (k) => (v) => {
     setForm(p => ({ ...p, [k]: v }));
+    // Clear only the field-specific error, not the auth status banner —
+    // the banner should stay visible until user re-submits (Google pattern)
     setFieldErrors(p => ({ ...p, [k]: "" }));
-    setAuthStatus(null);
   };
 
   const lookupPincode = async (pin) => {
@@ -769,6 +782,44 @@ function AuthPage({ onAuth }) {
       setFieldErrors(p => ({ ...p, pincode: "Could not verify pincode. Please enter city manually." }));
     }
     setPincodeLoading(false);
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setGoogleLoading(true);
+    setAuthStatus(null);
+    setLoginHint(null);
+    setFieldErrors({});
+    try {
+      const data = await api.auth.google({ credential: credentialResponse.credential });
+      if (data.new_user) {
+        // New user — pre-fill register form and switch to register tab
+        setMode("register");
+        setForm(p => ({ ...p, email: data.email || "", dealer_name: data.name || "" }));
+        toast("Google account verified! Please complete your dealer registration.", "success");
+        return;
+      }
+      // Existing user — complete login
+      localStorage.setItem("erd_access", data.access);
+      if (data.refresh) localStorage.setItem("erd_refresh", data.refresh);
+      setAuthStatus("success");
+      const name = data.user?.dealer_name || data.user?.username || data.user?.email || "";
+      toast(`Welcome back, ${name}! Signing you in...`, "success");
+      setTimeout(() => onAuth(data), 800);
+    } catch (err) {
+      setAuthStatus("error");
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      const errObj = typeof err === "object" ? err : {};
+      const msg = errObj.error || errObj.detail || "Google sign-in failed. Please try again.";
+      setFieldErrors({ _banner: msg });
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    setFieldErrors({ _banner: "Google sign-in was cancelled or failed. Please try again." });
+    setAuthStatus("error");
   };
 
   const validate = () => {
@@ -821,24 +872,26 @@ function AuthPage({ onAuth }) {
       setTimeout(() => onAuth(data), 800);
     } catch (err) {
       setAuthStatus("error");
+      // Shake the card to signal error (Google-style)
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
       const errObj = typeof err === "object" ? err : {};
       // Extract clean message (exclude boolean fields like account_exists)
       const serverMsg = errObj.error || errObj.detail || errObj.non_field_errors?.[0]
         || Object.values(errObj).filter(v => typeof v === "string").flat().join(" ")
         || "Something went wrong. Please try again.";
       // Determine contextual hint
-      if (mode === "login") {
+      if (errObj._status === 429) {
+        setLoginHint("rate_limited");
+      } else if (mode === "login") {
         if (errObj.account_exists === false) setLoginHint("no_account");
         else if (errObj.account_exists === true) setLoginHint("wrong_password");
       } else {
-        // Check for duplicate email in register
         const emailErr = Array.isArray(errObj.email) ? errObj.email[0] : errObj.email;
         if (emailErr && /already/i.test(emailErr)) setLoginHint("duplicate_email");
       }
-      toast(mode === "login" ? serverMsg : ("Registration failed. " + serverMsg), "error");
-      // Set inline banner + field errors
-      const inlineErrs = {};
-      inlineErrs._banner = serverMsg;
+      // Set inline field errors — no toast for auth failures (inline is cleaner)
+      const inlineErrs = { _banner: serverMsg };
       Object.keys(errObj).filter(k => !["error","detail","non_field_errors","account_exists"].includes(k)).forEach(k => {
         inlineErrs[k] = Array.isArray(errObj[k]) ? errObj[k][0] : (typeof errObj[k] === "string" ? errObj[k] : "");
       });
@@ -885,25 +938,36 @@ function AuthPage({ onAuth }) {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* Support info bar — above sticky navbar */}
+      {(BRANDING.support.phone || BRANDING.support.email || BRANDING.support.whatsappDigits) && (
+        <div style={{ background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", padding: "5px 16px", display: "flex", justifyContent: "center", alignItems: "center", flexShrink: 0 }}>
+          <style>{`
+            .auth-support-item { display:inline-flex;align-items:center;gap:4px;color:#15803d;text-decoration:none;font-weight:600;font-size:12px;padding:0 10px;white-space:nowrap; }
+            .auth-support-item:hover { color:#14532d; }
+            .auth-support-sep { color:#bbf7d0;font-size:14px;font-weight:300;flex-shrink:0; }
+            .auth-support-label { display:inline; }
+            @media(max-width:480px) { .auth-support-label { display:none; } .auth-support-item { padding:0 8px;font-size:14px; } }
+          `}</style>
+          {BRANDING.support.phone && (
+            <a href={`tel:${BRANDING.support.phone}`} className="auth-support-item">
+              📞 <span className="auth-support-label">{BRANDING.support.phone}</span>
+            </a>
+          )}
+          {BRANDING.support.phone && <span className="auth-support-sep">|</span>}
+          <a href={`mailto:${BRANDING.support.email}`} className="auth-support-item">
+            ✉ <span className="auth-support-label">{BRANDING.support.email}</span>
+          </a>
+          {BRANDING.support.whatsappDigits && (<>
+            <span className="auth-support-sep">|</span>
+            <a href={`https://wa.me/${BRANDING.support.whatsappDigits}`} target="_blank" rel="noopener noreferrer" className="auth-support-item">
+              💬 <span className="auth-support-label">WhatsApp</span>
+            </a>
+          </>)}
+        </div>
+      )}
+
       {/* Navbar */}
       <NavbarNew />
-
-      {/* Support info bar */}
-      <div style={{ background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", padding: "8px 24px", display: "flex", justifyContent: "center", alignItems: "center", gap: 32, flexWrap: "wrap", fontSize: 13, color: "#15803d" }}>
-        {BRANDING.support.phone && (
-          <a href={`tel:${BRANDING.support.phone}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
-            📞 {BRANDING.support.phone}
-          </a>
-        )}
-        <a href={`mailto:${BRANDING.support.email}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
-          ✉ {BRANDING.support.email}
-        </a>
-        {BRANDING.support.whatsappDigits && (
-          <a href={`https://wa.me/${BRANDING.support.whatsappDigits}`} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, color: "#15803d", textDecoration: "none", fontWeight: 600 }}>
-            💬 WhatsApp Support
-          </a>
-        )}
-      </div>
 
       {/* Green gradient auth section */}
       <div style={{ flex: 1, background: `linear-gradient(135deg, ${C.primaryD} 0%, ${C.primary} 50%, #1a6b44 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
@@ -1035,50 +1099,60 @@ function AuthPage({ onAuth }) {
         )}
 
         {(mode === "login" || mode === "register") && (
-        <Card padding={32}>
+        <style>{`
+          @keyframes authShake {
+            0%,100%{transform:translateX(0)}
+            15%{transform:translateX(-7px)}
+            30%{transform:translateX(7px)}
+            45%{transform:translateX(-5px)}
+            60%{transform:translateX(5px)}
+            75%{transform:translateX(-3px)}
+            90%{transform:translateX(3px)}
+          }
+        `}</style>
+        )}
+        {(mode === "login" || mode === "register") && (
+        <Card padding={32} style={{ animation: shake ? "authShake 0.5s ease" : "none" }}>
           <div style={{ display: "flex", marginBottom: 24, background: C.bg, borderRadius: 8, padding: 4 }}>
             {["login", "register"].map(m => (
-              <button key={m} onClick={() => { setMode(m); setFieldErrors({}); setAuthStatus(null); }} style={{ flex: 1, padding: "8px 0", border: "none", borderRadius: 6, background: mode === m ? C.primary : "transparent", color: mode === m ? "#fff" : C.textMid, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              <button key={m} onClick={() => { setMode(m); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ flex: 1, padding: "8px 0", border: "none", borderRadius: 6, background: mode === m ? C.primary : "transparent", color: mode === m ? "#fff" : C.textMid, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
                 {m === "login" ? "Sign In" : "Register"}
               </button>
             ))}
           </div>
 
-          {/* Status banner */}
+          {/* Status banner — clean, left-bordered, Google-style */}
           {authStatus === "error" && fieldErrors._banner && (
-            <div style={{ background: `${C.danger}12`, border: `1.5px solid ${C.danger}44`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.danger, marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontWeight: 600, marginBottom: loginHint ? 10 : 0 }}>
-                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✕</span>
-                <span>{fieldErrors._banner}</span>
-              </div>
+            <div style={{ borderLeft: `4px solid ${C.danger}`, background: `${C.danger}08`, borderRadius: "0 8px 8px 0", padding: "12px 14px", fontSize: 13, color: "#1e293b", marginBottom: 16, lineHeight: 1.5 }}>
+              <div style={{ fontWeight: 600, color: C.danger, marginBottom: loginHint ? 8 : 0 }}>{fieldErrors._banner}</div>
               {loginHint === "no_account" && (
-                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { setMode("register"); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Create an account →
-                  </button>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: "#475569" }}>Don't have an account?</span>
+                  <button onClick={() => { setMode("register"); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: "none", border: `1.5px solid ${C.primary}`, borderRadius: 20, padding: "4px 14px", fontSize: 12, fontWeight: 700, color: C.primary, cursor: "pointer", fontFamily: "inherit" }}>Create account</button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support</a>
                 </div>
               )}
               {loginHint === "wrong_password" && (
-                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Reset Password →
-                  </button>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: "#475569" }}>Forgot your password?</span>
+                  <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); setLoginHint(null); }} style={{ background: "none", border: `1.5px solid ${C.primary}`, borderRadius: 20, padding: "4px 14px", fontSize: 12, fontWeight: 700, color: C.primary, cursor: "pointer", fontFamily: "inherit" }}>Reset password</button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support</a>
                 </div>
               )}
               {loginHint === "duplicate_email" && (
-                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { setMode("login"); setForm(p => ({ ...p, username: form.email })); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Sign in instead →
-                  </button>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Registration Help`} style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", background: "rgba(0,0,0,0.06)", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "none" }}>Contact Support</a>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: "#475569" }}>Already have an account?</span>
+                  <button onClick={() => { setMode("login"); setForm(p => ({ ...p, username: form.email })); setFieldErrors({}); setAuthStatus(null); setLoginHint(null); }} style={{ background: "none", border: `1.5px solid ${C.primary}`, borderRadius: 20, padding: "4px 14px", fontSize: 12, fontWeight: 700, color: C.primary, cursor: "pointer", fontFamily: "inherit" }}>Sign in instead</button>
+                  <a href={`mailto:${BRANDING.support.email}?subject=Registration Help`} style={{ fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support</a>
+                </div>
+              )}
+              {loginHint === "rate_limited" && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "#92400e" }}>
+                  Please wait a few minutes before trying again.
                 </div>
               )}
               {!loginHint && (
-                <div style={{ marginTop: 8 }}>
-                  <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ fontSize: 12, fontWeight: 600, color: C.danger, textDecoration: "underline" }}>Contact support if the issue persists →</a>
-                </div>
+                <a href={`mailto:${BRANDING.support.email}?subject=Login Help`} style={{ display: "inline-block", marginTop: 4, fontSize: 12, color: "#64748b", textDecoration: "underline" }}>Contact support if this continues →</a>
               )}
             </div>
           )}
@@ -1092,33 +1166,49 @@ function AuthPage({ onAuth }) {
           <form onSubmit={submit}>
             {mode === "login" && (
               <Field label="Email or Username" required>
-                <Input value={form.username} onChange={set("username")} placeholder="Username / Email / Mobile Number" autoComplete="username" />
+                <Input value={form.username} onChange={set("username")} placeholder="Username / Email / Mobile Number" autoComplete="username"
+                  style={loginHint === "no_account" ? { border: `1.5px solid ${C.danger}` } : {}} />
                 <FieldErr k="username" />
               </Field>
             )}
             {mode === "register" && (
               <>
-                <Field label="Dealership / Showroom Name *" required>
+                <Field label="Dealership / Showroom Name" required>
                   <Input value={form.dealer_name} onChange={set("dealer_name")} placeholder="e.g. Sharma eRickshaw Centre" />
                   <FieldErr k="dealer_name" />
                 </Field>
-                <Field label="Email Address *" required>
+                <Field label="Email Address" required>
                   <Input value={form.email} onChange={set("email")} type="email" placeholder="dealer@example.com" />
                   <FieldErr k="email" />
                 </Field>
-                <Field label="Mobile Number *" required>
+                <Field label="Mobile Number" required>
                   <Input value={form.phone} onChange={v => { set("phone")(v.replace(/\D/g, "").slice(0, 10)); }} placeholder="10-digit Indian number (starts with 6-9)" />
                   <FieldErr k="phone" />
                 </Field>
               </>
             )}
             <Field label="Password" required>
-              <Input value={form.password} onChange={set("password")} type="password" placeholder={mode === "register" ? "Min 8 chars, include a number" : "Your password"} autoComplete={mode === "login" ? "current-password" : "new-password"} />
+              <div style={{ position: "relative" }}>
+                <Input value={form.password} onChange={set("password")} type={showPassword ? "text" : "password"} placeholder={mode === "register" ? "Min 8 chars, include a number" : "Your password"} autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  style={{ ...(loginHint === "wrong_password" ? { border: `1.5px solid ${C.danger}` } : {}), paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowPassword(v => !v)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: C.textMid, fontSize: 16, padding: 2, lineHeight: 1 }}
+                  title={showPassword ? "Hide password" : "Show password"}>
+                  {showPassword ? "🙈" : "👁"}
+                </button>
+              </div>
               <FieldErr k="password" />
             </Field>
             {mode === "register" && (
-              <Field label="Confirm Password *" required>
-                <Input value={form.confirm_password} onChange={set("confirm_password")} type="password" placeholder="Repeat your password" />
+              <Field label="Confirm Password" required>
+                <div style={{ position: "relative" }}>
+                  <Input value={form.confirm_password} onChange={set("confirm_password")} type={showPassword ? "text" : "password"} placeholder="Repeat your password"
+                    style={{ paddingRight: 44 }} />
+                  <button type="button" onClick={() => setShowPassword(v => !v)}
+                    style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: C.textMid, fontSize: 16, padding: 2, lineHeight: 1 }}>
+                    {showPassword ? "🙈" : "👁"}
+                  </button>
+                </div>
                 <FieldErr k="confirm_password" />
               </Field>
             )}
@@ -1156,8 +1246,33 @@ function AuthPage({ onAuth }) {
               size="lg"
             />
           </form>
-          {mode === "login" && (
-            <div style={{ textAlign: "center", marginTop: 12 }}>
+
+          {/* Google Sign-In — shown for both login and register */}
+          <div style={{ margin: "20px 0 4px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <span style={{ fontSize: 12, color: C.textMid, whiteSpace: "nowrap" }}>or continue with</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+            {googleLoading ? (
+              <div style={{ textAlign: "center", color: C.textMid, fontSize: 13, padding: "10px 0" }}>Verifying with Google…</div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                  useOneTap={false}
+                  shape="rectangular"
+                  size="large"
+                  width="320"
+                  text={mode === "login" ? "signin_with" : "signup_with"}
+                />
+              </div>
+            )}
+          </div>
+
+          {mode === "login" && !loginHint && (
+            <div style={{ textAlign: "center", marginTop: 8 }}>
               <button onClick={() => { setMode("forgot"); setFpStatus(null); setFpError(""); }} style={{ background: "none", border: "none", color: C.primary, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
                 Forgot password?
               </button>
@@ -1168,8 +1283,15 @@ function AuthPage({ onAuth }) {
       </div>
       </div>
 
-      {/* Footer */}
-      <FooterNew />
+      {/* Minimal footer — full FooterNew is too heavy for a login page */}
+      <div style={{ background: "#111827", color: "#6b7280", fontSize: 12, padding: "16px 24px", display: "flex", justifyContent: "center", alignItems: "center", flexWrap: "wrap", gap: "8px 24px" }}>
+        <span>© {new Date().getFullYear()} {BRANDING.platformName}</span>
+        <a href="/" style={{ color: "#9ca3af", textDecoration: "none" }}>Home</a>
+        <a href="/driver/marketplace" style={{ color: "#9ca3af", textDecoration: "none" }}>Marketplace</a>
+        <a href="/driver/dealers" style={{ color: "#9ca3af", textDecoration: "none" }}>Find Dealers</a>
+        <a href={`mailto:${BRANDING.support.email}`} style={{ color: "#9ca3af", textDecoration: "none" }}>Support</a>
+        <a href="/install.html" style={{ color: "#9ca3af", textDecoration: "none" }}>Install App</a>
+      </div>
     </div>
   );
 }
@@ -4141,7 +4263,7 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
               <Field label="आपका नाम / Your Name" required>
                 <Input value={enquiryForm.customer_name} onChange={v2 => setEnquiryForm(p => ({ ...p, customer_name: v2 }))} placeholder="Ramesh Kumar" required />
               </Field>
-              <Field label="Mobile Number *" required>
+              <Field label="Mobile Number" required>
                 <Input value={enquiryForm.phone} onChange={v2 => setEnquiryForm(p => ({ ...p, phone: v2 }))} placeholder="9876543210" type="tel" required />
               </Field>
               <Field label="Pin Code / पिन कोड">

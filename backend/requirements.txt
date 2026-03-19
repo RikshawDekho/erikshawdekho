@@ -25,3 +25,4 @@ twilio==9.4.5
 firebase-admin==6.6.0
 
 # build: 2026-03-15
+google-auth==2.40.1

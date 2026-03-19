@@ -1,7 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 import { I18nProvider } from './i18n.jsx'
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
 // ─── Production console suppression ─────────────────────
 // Prevent sensitive data (errors with stack traces, API URLs) from leaking in browser console
@@ -163,6 +166,7 @@ if ('serviceWorker' in navigator) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
     <BrowserRouter>
       <I18nProvider>
         <Routes>
@@ -197,5 +201,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         </Routes>
       </I18nProvider>
     </BrowserRouter>
+    </GoogleOAuthProvider>
   </React.StrictMode>
 )

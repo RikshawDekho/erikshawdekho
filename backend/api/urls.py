@@ -19,6 +19,7 @@ urlpatterns = [
     path('', include(router.urls)),
 
     # ── Auth ──────────────────────────────────────────────────────
+    path('auth/google/',            views.google_auth,       name='google-auth'),
     path('auth/register/',          views.register,          name='register'),
     path('auth/register/driver/',   views.register_driver,   name='register-driver'),
     path('auth/login/',             views.login_view,        name='login'),

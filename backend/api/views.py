@@ -131,6 +131,101 @@ def register_driver(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+def google_auth(request):
+    """
+    Sign in / Sign up with Google OAuth.
+    Accepts a Google ID token (from @react-oauth/google credential).
+    - If user exists by email → return JWT + user info (login).
+    - If user is new → return { new_user: true, email, name, photo } so
+      frontend can redirect to the register flow with details pre-filled.
+    """
+    credential = request.data.get('credential')  # Google ID token JWT
+    if not credential:
+        return Response({'error': 'Google credential is required.'}, status=400)
+
+    # Verify the Google ID token using google-auth library
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        import os as _os
+        client_id = _os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+        if not client_id:
+            return Response({'error': 'Google login is not configured on this server.'}, status=503)
+        id_info = google_id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            client_id,
+        )
+    except Exception as e:
+        return Response({'error': f'Invalid Google token: {e}'}, status=401)
+
+    email = (id_info.get('email') or '').lower().strip()
+    name  = id_info.get('name') or ''
+    photo = id_info.get('picture') or ''
+
+    if not email or not id_info.get('email_verified'):
+        return Response({'error': 'Google account email is not verified.'}, status=400)
+
+    # Look up existing user by email
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        # New user — tell frontend to open register form with details pre-filled
+        return Response({
+            'new_user': True,
+            'email': email,
+            'name': name,
+            'photo': photo,
+        }, status=200)
+
+    if not user.is_active:
+        return Response({'error': f'Your account has been deactivated. Please contact {_support_email()}'}, status=403)
+
+    # Existing user — return JWT tokens (same structure as login_view)
+    dealer   = getattr(user, 'dealer_profile', None)
+    financer = getattr(user, 'financer_profile', None)
+    profile  = getattr(user, 'profile', None)          # UserProfile related_name='profile'
+    profile_type = profile.user_type if profile else None
+
+    NON_ADMIN_TYPES = {'financer', 'customer', 'driver'}
+    if user.is_superuser:
+        user_type = 'admin'
+    elif profile_type in NON_ADMIN_TYPES:
+        user_type = profile_type
+    elif user.is_staff:
+        user_type = 'admin'
+    elif profile_type:
+        user_type = profile_type
+    else:
+        user_type = 'dealer' if dealer else 'driver'
+
+    display_name = name or (
+        dealer.dealer_name if dealer else (
+            financer.company_name if financer else user.get_full_name() or user.username
+        )
+    )
+    return Response({
+        **_jwt_response(user),
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'user_type': user_type,
+            'name': display_name,
+        },
+        'dealer': {
+            'id':   dealer.id          if dealer else None,
+            'name': dealer.dealer_name if dealer else display_name,
+            'city': dealer.city        if dealer else '',
+        },
+        **(({'financer': {'id': financer.id, 'company_name': financer.company_name}} if financer else {})),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def login_view(request):
     """Authenticate user (dealer or driver) and return JWT tokens."""
     import re as _re
@@ -391,7 +486,9 @@ class VehicleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        dealer = self.request.user.dealer_profile
+        dealer = getattr(self.request.user, 'dealer_profile', None)
+        if dealer is None:
+            return Vehicle.objects.none()
         qs = Vehicle.objects.filter(dealer=dealer, is_active=True).select_related('brand')
         brand = self.request.query_params.get('brand')
         fuel = self.request.query_params.get('fuel_type')
