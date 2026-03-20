@@ -10,15 +10,18 @@ import { BRANDING } from "../branding";
 
 const G = ROLE_C.driver;
 
-// Cache the fetched settings so every footer mount doesn't re-fetch
+// TTL-based cache: re-fetch at most once every 5 minutes so admin changes appear promptly
 let _cachedSettings = null;
+let _cacheTime = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 min
 
 async function fetchPlatformSettings() {
-  if (_cachedSettings) return _cachedSettings;
+  if (_cachedSettings && Date.now() - _cacheTime < CACHE_TTL) return _cachedSettings;
   try {
     const res = await fetch("/api/platform/settings/");
     if (res.ok) {
       _cachedSettings = await res.json();
+      _cacheTime = Date.now();
       return _cachedSettings;
     }
   } catch {}
