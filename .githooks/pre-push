@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# pre-push hook — runs automatically before every `git push`
+#
+# Blocks the push if backend tests or frontend build fail.
+# Install: run scripts/setup-hooks.sh once per machine.
+# Skip once (emergency only): git push --no-verify
+# ─────────────────────────────────────────────────────────────────────────────
+
+ROOT="$(git rev-parse --show-toplevel)"
+BRANCH="$(git branch --show-current)"
+
+# Skip checks when pushing to non-production branches that won't merge to main
+# (e.g. chore/docs-only commits). Remove this block if you want checks everywhere.
+if [[ "$BRANCH" == chore/* || "$BRANCH" == docs/* ]]; then
+  echo "[pre-push] Skipping checks for $BRANCH (chore/docs branch)"
+  exit 0
+fi
+
+echo ""
+echo "╔══════════════════════════════════════╗"
+echo "║  pre-push: running local checks...   ║"
+echo "╚══════════════════════════════════════╝"
+echo ""
+
+"$ROOT/scripts/local-check.sh" all
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+  echo ""
+  echo "╔══════════════════════════════════════════════════════╗"
+  echo "║  PUSH BLOCKED — fix the failures above first.        ║"
+  echo "║  To skip (emergency only): git push --no-verify      ║"
+  echo "╚══════════════════════════════════════════════════════╝"
+  exit 1
+fi
+
+exit 0
