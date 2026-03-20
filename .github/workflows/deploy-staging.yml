@@ -1,27 +1,35 @@
-name: Deploy to Staging
+name: Quality Gate (Staging)
+
+# Runs on release/* pushes and PRs to develop/main.
+# Replaces the old staging Railway deploy — we run the full test suite
+# against a temporary PostgreSQL container instead of a live staging server.
+# This is sufficient for an MVP: CI tests ARE the staging gate.
+#
+# When you have budget for a staging environment later, re-add the
+# Railway deploy jobs below the test job.
 
 on:
   push:
-    branches: [release/*]
+    branches: ["release/**"]
   pull_request:
     branches: [develop, main]
 
 env:
   PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
 
 jobs:
-
-  # ── 1. Run backend tests ────────────────────────────────────────
+  # ── 1. Full backend test suite ────────────────────────────────────
   test-backend:
-    name: Backend Tests (Staging)
+    name: Backend Tests
     runs-on: ubuntu-latest
 
     services:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_DB: test_erikshaw_staging
-          POSTGRES_USER: postgres
+          POSTGRES_DB:       test_erikshaw_gate
+          POSTGRES_USER:     postgres
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
         options: >-
@@ -41,76 +49,45 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Django checks + tests
+      - name: Django system check + full test suite
         working-directory: backend
         env:
           DJANGO_SETTINGS_MODULE: erickshaw.settings.development
-          SECRET_KEY: staging-test-secret-key
-          DEBUG: "True"
-          DB_NAME: test_erikshaw_staging
-          DB_USER: postgres
+          SECRET_KEY:  quality-gate-secret-key-minimum-32-chars
+          DEBUG:       "True"
+          DB_NAME:     test_erikshaw_gate
+          DB_USER:     postgres
           DB_PASSWORD: postgres
-          DB_HOST: localhost
-          DB_PORT: "5432"
+          DB_HOST:     localhost
+          DB_PORT:     "5432"
         run: |
           python manage.py check
-          python manage.py test --verbosity=1
+          python manage.py test --verbosity=2
 
-
-  # ── 2. Deploy backend to Railway (staging) ──────────────────────
-  deploy-backend-staging:
-    name: Deploy Backend (Railway Staging)
+  # ── 2. Frontend build check ───────────────────────────────────────
+  frontend-build:
+    name: Frontend Build
     runs-on: ubuntu-latest
-    needs: test-backend
-    if: github.event_name == 'push'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Deploy to Railway
-        working-directory: backend
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
-        run: railway up --service backend --detach
-
-      # Seed staging DB with fixed test fixtures if empty.
-      # Uses --no-reset so live staging data is preserved between deploys.
-      - name: Seed staging DB (fixtures only if empty)
-        working-directory: backend
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
-          ALLOW_STAGING_SEED: "true"
-          APP_ENV: staging
-          DJANGO_SETTINGS_MODULE: erickshaw.settings.staging
-        run: |
-          railway run python manage.py seed_staging
-
-
-  # ── 3. Deploy frontend preview to Vercel ────────────────────────
-  deploy-frontend-staging:
-    name: Deploy Frontend (Vercel Preview)
-    runs-on: ubuntu-latest
-    needs: test-backend
-    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel
-
-      - name: Deploy preview to Vercel
+      - name: Install and build
+        working-directory: frontend
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel --token "$VERCEL_TOKEN"
+          VITE_API_URL: https://api.erikshawdekho.com/api
+        run: |
+          npm ci
+          npm run build
+
+  # ── NOTE: Staging Railway deploy removed (single Railway plan) ────
+  # When ready to add staging environment:
+  # 1. Create a new Railway service for staging
+  # 2. Add RAILWAY_TOKEN_STAGING secret in GitHub repo settings
+  # 3. Add a deploy-backend-staging job here (see git history for template)
