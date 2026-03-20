@@ -19,7 +19,7 @@ def _webp(url: str) -> str:
     """Inject f_auto,q_auto into Cloudinary image URLs so browsers get WebP automatically."""
     if url and 'res.cloudinary.com' in url and '/upload/' in url:
         if '/upload/f_auto' not in url:
-            return url.replace('/upload/', '/upload/f_auto,q_auto,w_auto/', 1)
+            return url.replace('/upload/', '/upload/f_auto,q_auto/', 1)
     return url
 
 

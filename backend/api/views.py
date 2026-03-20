@@ -543,12 +543,11 @@ class VehicleViewSet(viewsets.ModelViewSet):
         if limit > 0:
             current_count = Vehicle.objects.filter(dealer=dealer, is_active=True).count()
             if current_count >= limit:
-                raise ValidationError({
-                    'error': f'Your {plan_name} allows maximum {limit} vehicle listing(s). Upgrade your plan for unlimited listings.',
-                    'code': 'listing_limit_reached',
-                    'limit': limit,
-                    'current': current_count,
-                })
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied(
+                    f'Listing limit reached: your {plan_name} allows {limit} active listing(s). '
+                    f'You currently have {current_count}. Remove an old listing or upgrade to Pro for unlimited.'
+                )
         serializer.save(dealer=dealer)
 
     def destroy(self, request, *args, **kwargs):
@@ -642,7 +641,7 @@ def marketplace_vehicles(request):
         if cached:
             return Response(cached)
 
-    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_demo=False).select_related('brand','dealer','dealer__plan').prefetch_related('images')
+    qs = Vehicle.objects.filter(is_active=True, stock_status__in=['in_stock','low_stock'], dealer__is_demo=False, dealer__user__is_active=True).select_related('brand','dealer','dealer__plan').prefetch_related('images')
     if fuel:     qs = qs.filter(fuel_type=fuel)
     if search:   qs = qs.filter(Q(model_name__icontains=search)|Q(brand__name__icontains=search))
     if featured: qs = qs.filter(is_featured=True)
@@ -3367,6 +3366,12 @@ def admin_vehicles(request, vehicle_id=None):
         if 'is_featured' in request.data:
             v.is_featured = request.data['is_featured']
             v.save(update_fields=['is_featured'])
+            # Bust marketplace caches so featured vehicles appear immediately
+            from django.core.cache import cache
+            for key in ['marketplace::true::', 'marketplace::::', 'marketplace::true::',
+                        f'marketplace::{v.fuel_type or ""}:true::',
+                        f'marketplace::{v.fuel_type or ""}:::']:
+                cache.delete(key)
         return Response({'id': v.id, 'is_featured': v.is_featured})
 
     # GET — list all vehicles with dealer info, paginated
