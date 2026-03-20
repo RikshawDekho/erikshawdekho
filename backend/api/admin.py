@@ -7,6 +7,10 @@ from .models import (
     Lead, Sale, Customer, Task, FinanceLoan,
     DealerApplication, DealerReview, PublicEnquiry,
     NotificationLog, Plan, DealerAPIKey, PlatformSettings,
+    FinancerProfile, FinancerDocument, CustomerProfile,
+    FinancerPlan, FinancerSubscription,
+    FinancerDealerAssociation, FinancerRequiredDocument,
+    FinanceApplication, FinanceApplicationDocument,
 )
 
 
@@ -209,3 +213,74 @@ class DealerAPIKeyAdmin(admin.ModelAdmin):
 @admin.register(PlatformSettings)
 class PlatformSettingsAdmin(admin.ModelAdmin):
     list_display = ['support_name', 'support_email', 'support_phone', 'support_whatsapp', 'updated_at']
+
+
+# ─── Financer Ecosystem ───────────────────────────────────────────
+
+@admin.register(FinancerProfile)
+class FinancerProfileAdmin(admin.ModelAdmin):
+    list_display  = ['company_name', 'user', 'phone', 'city', 'is_verified', 'created_at']
+    list_filter   = ['is_verified', 'city']
+    search_fields = ['company_name', 'user__username', 'phone']
+    list_editable = ['is_verified']
+    actions       = ['verify_financers']
+
+    @admin.action(description='Verify selected financers')
+    def verify_financers(self, request, queryset):
+        updated = queryset.update(is_verified=True)
+        self.message_user(request, f'{updated} financer(s) verified.')
+
+
+@admin.register(FinancerDocument)
+class FinancerDocumentAdmin(admin.ModelAdmin):
+    list_display  = ['financer', 'doc_type', 'status', 'uploaded_at']
+    list_filter   = ['status', 'doc_type']
+    list_editable = ['status']
+
+
+@admin.register(FinancerPlan)
+class FinancerPlanAdmin(admin.ModelAdmin):
+    list_display = ['name', 'slug', 'price_per_year', 'max_dealer_associations',
+                    'max_finance_applications', 'commission_per_lead', 'is_active']
+    list_editable = ['is_active']
+
+
+@admin.register(FinancerSubscription)
+class FinancerSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ['financer', 'plan', 'applications_used', 'is_active', 'expires_at', 'started_at']
+    list_filter  = ['is_active', 'plan']
+    search_fields = ['financer__company_name']
+
+
+@admin.register(FinancerDealerAssociation)
+class FinancerDealerAssociationAdmin(admin.ModelAdmin):
+    list_display  = ['dealer', 'financer', 'status', 'applied_at', 'reviewed_at']
+    list_filter   = ['status']
+    list_editable = ['status']
+    search_fields = ['dealer__dealer_name', 'financer__company_name']
+
+
+@admin.register(FinancerRequiredDocument)
+class FinancerRequiredDocumentAdmin(admin.ModelAdmin):
+    list_display = ['financer', 'doc_type', 'is_mandatory', 'description']
+    list_filter  = ['doc_type', 'is_mandatory']
+
+
+@admin.register(FinanceApplication)
+class FinanceApplicationAdmin(admin.ModelAdmin):
+    list_display  = ['id', 'customer_name', 'dealer', 'financer', 'loan_amount', 'status', 'created_at']
+    list_filter   = ['status']
+    search_fields = ['customer_name', 'customer_phone', 'dealer__dealer_name', 'financer__company_name']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(FinanceApplicationDocument)
+class FinanceApplicationDocumentAdmin(admin.ModelAdmin):
+    list_display = ['application', 'doc_type', 'notes', 'uploaded_at']
+
+
+@admin.register(CustomerProfile)
+class CustomerProfileAdmin(admin.ModelAdmin):
+    list_display  = ['full_name', 'user', 'phone', 'city', 'created_at']
+    search_fields = ['full_name', 'phone', 'user__username']
+

@@ -37,7 +37,8 @@ class DealerProfile(models.Model):
     city = models.CharField(max_length=100, default='Delhi')
     state = models.CharField(max_length=100, default='Delhi')
     pincode = models.CharField(max_length=10, blank=True)
-    logo = models.ImageField(upload_to='dealers/', null=True, blank=True)
+    logo = models.ImageField(upload_to='dealers/logos/', null=True, blank=True)
+    cover_image = models.ImageField(upload_to='dealers/covers/', null=True, blank=True, help_text='Store banner/cover image shown in dealer directory')
     description = models.TextField(blank=True, help_text='Showroom description visible on public profile')
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -48,8 +49,9 @@ class DealerProfile(models.Model):
     plan            = models.ForeignKey('Plan', on_delete=models.SET_NULL, null=True, blank=True, related_name='dealers')
     listing_count   = models.IntegerField(default=0, help_text='Cached count of active listings')
     # ── Free Tier Tracking ────────────────────────────────
-    lifetime_lead_count   = models.IntegerField(default=0, help_text='Lifetime leads received (free tier limit: 50)')
+    lifetime_lead_count   = models.IntegerField(default=0, help_text='Lifetime leads received (free tier limit: 20)')
     invoice_count         = models.IntegerField(default=0, help_text='Invoices generated (free tier limit: 20)')
+    lifetime_enquiry_count = models.IntegerField(default=0, help_text='Lifetime public enquiries received (free tier limit: 20)')
     # ── Notification Preferences ──────────────────────────
     notify_email    = models.BooleanField(default=True,  help_text='Receive email notifications')
     notify_whatsapp = models.BooleanField(default=True,  help_text='Receive WhatsApp notifications')
@@ -61,6 +63,7 @@ class DealerProfile(models.Model):
     bank_ifsc            = models.CharField(max_length=20,  blank=True, default='HDFC000123')
     bank_upi             = models.CharField(max_length=100, blank=True, default='erikshawdekho@hdfc')
     invoice_footer_note  = models.TextField(blank=True, default='')
+    is_demo              = models.BooleanField(default=False)
 
     @property
     def plan_is_active(self):
@@ -121,6 +124,19 @@ class Brand(models.Model):
         return self.name
 
 
+class VehicleType(models.Model):
+    """Dealer-managed vehicle categories (e.g. Passenger Rickshaw, Cargo Loader, custom types)."""
+    name       = models.CharField(max_length=100, unique=True)
+    slug       = models.CharField(max_length=50, unique=True)  # stored in Vehicle.vehicle_type
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-is_default', 'name']
+
+    def __str__(self):
+        return self.name
+
+
 class Vehicle(models.Model):
     FUEL_CHOICES = [
         ('electric', 'Electric'),
@@ -129,6 +145,7 @@ class Vehicle(models.Model):
         ('lpg', 'LPG'),
         ('diesel', 'Diesel'),
     ]
+    # TYPE_CHOICES kept for display labels only; vehicle_type is now a free CharField
     TYPE_CHOICES = [
         ('passenger', 'Passenger Rickshaw'),
         ('cargo', 'Cargo Loader'),
@@ -143,21 +160,21 @@ class Vehicle(models.Model):
     dealer = models.ForeignKey(DealerProfile, on_delete=models.CASCADE, related_name='vehicles')
     brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True)
     model_name = models.CharField(max_length=200)
-    vehicle_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='passenger')
+    vehicle_type = models.CharField(max_length=100, default='passenger')
     fuel_type = models.CharField(max_length=20, choices=FUEL_CHOICES)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    stock_quantity = models.IntegerField(default=0)
+    stock_quantity = models.IntegerField(default=1)
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS, default='in_stock')
     year = models.IntegerField(default=2024)
     is_used = models.BooleanField(default=False)
     thumbnail = models.ImageField(upload_to='vehicles/', null=True, blank=True)
     thumbnail_url = models.URLField(max_length=500, null=True, blank=True, help_text='External image URL for seeded/demo vehicles')
     # Specs
-    range_km = models.IntegerField(null=True, blank=True, help_text='Range in KM (for electric)')
+    range_km = models.CharField(max_length=30, blank=True, null=True, help_text='e.g. 120 or 100-120 km')
     battery_capacity = models.CharField(max_length=50, blank=True)
-    max_speed = models.IntegerField(null=True, blank=True)
-    payload_kg = models.IntegerField(null=True, blank=True)
-    seating_capacity = models.IntegerField(default=3)
+    max_speed = models.CharField(max_length=30, blank=True, null=True, help_text='e.g. 45 or 45-55 km/h')
+    payload_kg = models.CharField(max_length=50, blank=True, null=True, help_text='e.g. 500 or 600-1000 kg')
+    seating_capacity = models.CharField(max_length=20, blank=True, default='3', help_text='e.g. 3, 4+1, 3+1')
     warranty_years = models.IntegerField(default=1)
     hsn_code = models.CharField(max_length=20, default='8703')
     description = models.TextField(blank=True)
@@ -169,10 +186,16 @@ class Vehicle(models.Model):
     def __str__(self):
         return f"{self.brand} {self.model_name}"
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'is_active', 'stock_status']),
+        ]
+
     def save(self, *args, **kwargs):
-        if self.stock_quantity == 0:
+        qty = self.stock_quantity or 0
+        if qty == 0:
             self.stock_status = 'out_of_stock'
-        elif self.stock_quantity <= 3:
+        elif qty <= 3:
             self.stock_status = 'low_stock'
         else:
             self.stock_status = 'in_stock'
@@ -210,6 +233,16 @@ class Lead(models.Model):
     follow_up_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete — never hard-delete CRM records
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'status']),
+            models.Index(fields=['dealer', 'created_at']),   # fast sort+filter by dealer
+            models.Index(fields=['dealer', 'is_deleted']),   # soft-delete queries
+        ]
 
     def __str__(self):
         return f"{self.customer_name} - {self.vehicle}"
@@ -257,8 +290,20 @@ class Sale(models.Model):
     # Battery unit count + financer details
     battery_count    = models.IntegerField(default=1, help_text='Number of battery units installed')
     financer_details = models.TextField(blank=True, help_text='Financer name, loan a/c, ref number, branch etc.')
+    # Loan / finance breakdown
+    down_payment     = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text='Customer down payment amount')
+    loan_amount_financed = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text='Amount financed via loan')
     # GST compliance fields
     place_of_supply = models.CharField(max_length=100, blank=True)  # state name
+    sale_updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete — never hard-delete financial records
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'sale_date']),
+        ]
 
     @property
     def subtotal(self):
@@ -291,6 +336,15 @@ class Customer(models.Model):
     total_purchases = models.IntegerField(default=0)
     total_spent = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete — preserve customer history
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'phone']),
+        ]
 
     def __str__(self):
         return self.name
@@ -304,6 +358,7 @@ class Task(models.Model):
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
     is_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.title
@@ -322,9 +377,31 @@ class FinanceLoan(models.Model):
     bank_name = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     applied_date = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['dealer', 'status']),
+        ]
 
     def __str__(self):
         return f"{self.customer_name} - ₹{self.loan_amount}"
+
+
+# ─── VEHICLE GALLERY ───────────────────────────────────────────────
+
+class VehicleImage(models.Model):
+    """Additional gallery images for a vehicle listing (beyond the primary thumbnail)."""
+    vehicle  = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='images')
+    image    = models.ImageField(upload_to='vehicles/gallery/')
+    order    = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f"Image #{self.order} for {self.vehicle}"
 
 
 # ─── DEALER APPLICATION ────────────────────────────────────────────
@@ -439,6 +516,23 @@ class PlatformSettings(models.Model):
     support_email    = models.EmailField(default="support@erikshawdekho.com")
     support_name     = models.CharField(max_length=100, default="eRickshawDekho Support")
     homepage_intro_video_url = models.URLField(blank=True, default="")
+
+    # ── Homepage Content (admin-editable) ─────────────────────────
+    announcement_text   = models.CharField(max_length=300, blank=True, default="",
+                                           help_text="Top announcement bar text. Leave blank to hide.")
+    announcement_link   = models.URLField(blank=True, default="",
+                                          help_text="Optional link for the announcement bar.")
+    hero_title_hi       = models.CharField(max_length=200, blank=True, default="ई-रिक्शा चाहिए?",
+                                           help_text="Hero heading in Hindi")
+    hero_title_en       = models.CharField(max_length=200, blank=True, default="Looking for E-Rickshaw?",
+                                           help_text="Hero heading in English")
+    hero_subtitle_hi    = models.CharField(max_length=300, blank=True,
+                                           default="भारत के verified dealers से सीधे best price पाएँ — बिल्कुल मुफ्त",
+                                           help_text="Hero subtitle in Hindi")
+    hero_subtitle_en    = models.CharField(max_length=300, blank=True,
+                                           default="Get best prices directly from verified dealers across India — completely free",
+                                           help_text="Hero subtitle in English")
+
     created_at       = models.DateTimeField(auto_now_add=True)
     updated_at       = models.DateTimeField(auto_now=True)
 
@@ -481,13 +575,19 @@ class DealerAPIKey(models.Model):
 # ─── PUBLIC ENQUIRY (no auth needed, no required dealer FK) ───────
 
 class PublicEnquiry(models.Model):
-    """Visitor lead from public marketplace / homepage — no login required."""
+    """
+    Visitor lead from public marketplace / homepage — no login required.
+    Must target a specific dealer (brand + dealer selection mandatory from v3).
+    """
     customer_name = models.CharField(max_length=200)
     phone         = models.CharField(max_length=15)
+    pincode       = models.CharField(max_length=10, blank=True)
     city          = models.CharField(max_length=100, blank=True)
+    brand_name    = models.CharField(max_length=100, blank=True,
+                                     help_text='Brand selected by driver during enquiry')
     vehicle       = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True)
     dealer        = models.ForeignKey(DealerProfile, on_delete=models.SET_NULL, null=True, blank=True,
-                                      help_text='Auto-assigned based on vehicle or city')
+                                      help_text='Targeted dealer selected by driver. Lead goes only to this dealer.')
     notes         = models.TextField(blank=True)
     is_processed  = models.BooleanField(default=False)
     created_at    = models.DateTimeField(auto_now_add=True)
@@ -496,6 +596,9 @@ class PublicEnquiry(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Public Enquiry'
         verbose_name_plural = 'Public Enquiries'
+        indexes = [
+            models.Index(fields=['dealer', 'is_processed']),
+        ]
 
     def __str__(self):
         return f"{self.customer_name} ({self.phone}) — {self.city}"
@@ -535,6 +638,9 @@ class NotificationLog(models.Model):
 
     class Meta:
         ordering = ['-sent_at']
+        indexes = [
+            models.Index(fields=['dealer', 'sent_at']),
+        ]
 
     def __str__(self):
         status = '✓' if self.success else '✗'
@@ -564,6 +670,7 @@ class FinancerProfile(models.Model):
     max_tenure_months = models.IntegerField(default=60)
     processing_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=2.0)
     created_at     = models.DateTimeField(auto_now_add=True)
+    is_demo        = models.BooleanField(default=False)
 
     def __str__(self):
         return self.company_name
@@ -618,3 +725,227 @@ class CustomerProfile(models.Model):
 
     def __str__(self):
         return self.full_name
+
+
+# ─── FINANCER PLANS & SUBSCRIPTIONS ──────────────────────────────
+
+class FinancerPlan(models.Model):
+    """Subscription tiers for financer/NBFC partners.
+
+    Free trial : 2 dealers, 5 applications, ₹3,000 commission per financed lead
+    Pro        : ₹5,000/year + ₹2,000 commission per financed lead, unlimited everything
+    """
+    SLUG_FREE = 'free'
+    SLUG_PRO  = 'pro'
+
+    name                      = models.CharField(max_length=100, unique=True)
+    slug                      = models.CharField(max_length=50, unique=True)
+    price_per_year            = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    max_dealer_associations   = models.IntegerField(default=2,
+                                    help_text='Max dealers financer can add. 0 = unlimited.')
+    max_finance_applications  = models.IntegerField(default=5,
+                                    help_text='Max lifetime applications. 0 = unlimited.')
+    commission_per_lead       = models.DecimalField(max_digits=10, decimal_places=2, default=3000,
+                                    help_text='Platform commission charged per successfully financed lead (₹).')
+    is_active                 = models.BooleanField(default=True)
+    features_json             = models.JSONField(default=list, blank=True,
+                                    help_text='List of feature strings to display on plan card.')
+    created_at                = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} (₹{self.price_per_year}/yr)"
+
+    class Meta:
+        ordering = ['price_per_year']
+
+
+class FinancerSubscription(models.Model):
+    """Active subscription record for a financer."""
+    financer           = models.OneToOneField(FinancerProfile, on_delete=models.CASCADE,
+                                              related_name='subscription')
+    plan               = models.ForeignKey(FinancerPlan, on_delete=models.PROTECT)
+    started_at         = models.DateTimeField(auto_now_add=True)
+    expires_at         = models.DateTimeField(null=True, blank=True)
+    is_active          = models.BooleanField(default=True)
+    applications_used  = models.IntegerField(default=0,
+                                help_text='Financed applications this billing cycle (free tier limit enforced).')
+    auto_renew         = models.BooleanField(default=False)
+
+    @property
+    def is_within_limit(self):
+        """Return True if financer can process more applications under current plan."""
+        limit = self.plan.max_finance_applications
+        if limit == 0:
+            return True
+        return self.applications_used < limit
+
+    def __str__(self):
+        return f"{self.financer.company_name} — {self.plan.name}"
+
+    class Meta:
+        ordering = ['-started_at']
+
+
+# ─── FINANCER ↔ DEALER ASSOCIATION ───────────────────────────────
+
+class FinancerDealerAssociation(models.Model):
+    """
+    Dealer applies to a financer. Financer approves/rejects.
+    Admin/Superadmin must have already verified the dealer before financer sees them.
+    Once financer approves: dealer appears as 'verified' in the financer's ecosystem.
+    """
+    STATUS_CHOICES = [
+        ('pending',   'Pending Financer Approval'),
+        ('approved',  'Approved by Financer'),
+        ('rejected',  'Rejected by Financer'),
+        ('suspended', 'Suspended'),
+    ]
+    financer    = models.ForeignKey(FinancerProfile, on_delete=models.CASCADE,
+                                    related_name='dealer_associations')
+    dealer      = models.ForeignKey(DealerProfile, on_delete=models.CASCADE,
+                                    related_name='financer_associations')
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    applied_at  = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    notes       = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ('financer', 'dealer')
+        ordering = ['-applied_at']
+
+    def __str__(self):
+        return f"{self.dealer.dealer_name} → {self.financer.company_name} [{self.status}]"
+
+
+# ─── FINANCER REQUIRED DOCUMENTS ─────────────────────────────────
+
+class FinancerRequiredDocument(models.Model):
+    """
+    Documents a financer mandates from a dealer before processing any loan application.
+    Financer can customise this list. Dealer must upload all mandatory docs.
+    """
+    DOC_TYPES = [
+        ('aadhaar',           'Aadhaar Card'),
+        ('pan',               'PAN Card'),
+        ('voter_id',          'Voter ID'),
+        ('driving_license',   'Driving License'),
+        ('bank_statement',    'Bank Statement (3 months)'),
+        ('income_proof',      'Income / Salary Proof'),
+        ('address_proof',     'Address Proof'),
+        ('passport_photo',    'Passport Size Photo (2 copies)'),
+        ('vehicle_quotation', 'Vehicle Quotation from Dealer'),
+        ('form_16',           'Form 16 / ITR'),
+        ('other',             'Other'),
+    ]
+    financer       = models.ForeignKey(FinancerProfile, on_delete=models.CASCADE,
+                                       related_name='required_documents')
+    doc_type       = models.CharField(max_length=30, choices=DOC_TYPES)
+    description    = models.CharField(max_length=300, blank=True,
+                                      help_text='Additional instructions for this document.')
+    is_mandatory   = models.BooleanField(default=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('financer', 'doc_type')
+        ordering = ['doc_type']
+
+    def __str__(self):
+        flag = '(mandatory)' if self.is_mandatory else '(optional)'
+        return f"{self.financer.company_name} — {self.get_doc_type_display()} {flag}"
+
+
+# ─── FINANCE APPLICATION (dealer → financer) ─────────────────────
+
+class FinanceApplication(models.Model):
+    """
+    Full loan application created by dealer on behalf of a customer/buyer.
+    Dealer collects mandatory documents, uploads them here, then submits to financer.
+    Financer can update status; dealer and customer see the latest status.
+    """
+    STATUS_CHOICES = [
+        ('draft',        'Draft — Collecting Documents'),
+        ('submitted',    'Submitted to Financer'),
+        ('under_review', 'Under Review'),
+        ('docs_required','Additional Documents Required'),
+        ('approved',     'Approved'),
+        ('rejected',     'Rejected'),
+        ('disbursed',    'Loan Disbursed'),
+        ('cancelled',    'Cancelled'),
+    ]
+
+    dealer         = models.ForeignKey(DealerProfile,   on_delete=models.CASCADE,
+                                       related_name='finance_applications')
+    financer       = models.ForeignKey(FinancerProfile, on_delete=models.CASCADE,
+                                       related_name='received_applications')
+    vehicle        = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True)
+
+    # Customer / buyer details
+    customer_name    = models.CharField(max_length=200)
+    customer_phone   = models.CharField(max_length=15)
+    customer_email   = models.EmailField(blank=True)
+    customer_address = models.TextField(blank=True)
+    customer_aadhaar = models.CharField(max_length=20, blank=True)
+    customer_pan     = models.CharField(max_length=12, blank=True)
+    customer_dob     = models.DateField(null=True, blank=True)
+
+    # Loan parameters
+    vehicle_price    = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    loan_amount      = models.DecimalField(max_digits=10, decimal_places=2)
+    down_payment     = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    tenure_months    = models.IntegerField(default=36)
+
+    # Workflow tracking
+    status           = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    status_notes     = models.TextField(blank=True,
+                                        help_text='Financer notes visible to dealer on status update.')
+    submitted_at     = models.DateTimeField(null=True, blank=True)
+    reviewed_at      = models.DateTimeField(null=True, blank=True)
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['dealer', 'status']),
+            models.Index(fields=['financer', 'status']),
+        ]
+
+    def __str__(self):
+        return f"FA-{self.pk} | {self.customer_name} → {self.financer.company_name} [{self.status}]"
+
+
+class FinanceApplicationDocument(models.Model):
+    """
+    Customer documents uploaded by dealer against a FinanceApplication.
+    Each document maps to a FinancerRequiredDocument.doc_type.
+    """
+    application  = models.ForeignKey(FinanceApplication, on_delete=models.CASCADE,
+                                     related_name='documents')
+    doc_type     = models.CharField(max_length=30,
+                                    help_text='Must match one of FinancerRequiredDocument.doc_type choices.')
+    file         = models.FileField(upload_to='finance_app_docs/')
+    notes        = models.CharField(max_length=300, blank=True)
+    uploaded_at  = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"FA-{self.application_id} — {self.doc_type}"
+
+
+class FinanceApplicationRemark(models.Model):
+    """
+    Threaded remarks on a FinanceApplication — visible to both financer and dealer.
+    Either party can post remarks; the other sees them immediately.
+    """
+    AUTHOR_CHOICES = [('financer', 'Financer'), ('dealer', 'Dealer')]
+
+    application = models.ForeignKey(FinanceApplication, on_delete=models.CASCADE,
+                                    related_name='remarks')
+    author_type = models.CharField(max_length=10, choices=AUTHOR_CHOICES)
+    content     = models.TextField()
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"FA-{self.application_id} [{self.author_type}]: {self.content[:50]}"

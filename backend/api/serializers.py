@@ -1,14 +1,26 @@
 import re as _re
 from rest_framework import serializers
+from django.conf import settings
 from django.contrib.auth.models import User
-from django.db.models import Avg
+from django.db.models import Avg, Q
 from django.utils import timezone
 from datetime import timedelta
 from .models import (
-    DealerProfile, Brand, Vehicle, Lead, Sale, Customer, Task, FinanceLoan,
+    DealerProfile, Brand, VehicleType, Vehicle, VehicleImage, Lead, Sale, Customer, Task, FinanceLoan,
     DealerApplication, DealerReview, UserProfile, VideoResource, BlogPost, Plan,
     FinancerProfile, FinancerDocument, CustomerProfile,
 )
+
+
+PLATFORM_NAME = getattr(settings, 'PLATFORM_NAME', 'eRickshawDekho')
+
+
+def _webp(url: str) -> str:
+    """Inject f_auto,q_auto into Cloudinary image URLs so browsers get WebP automatically."""
+    if url and 'res.cloudinary.com' in url and '/upload/' in url:
+        if '/upload/f_auto' not in url:
+            return url.replace('/upload/', '/upload/f_auto,q_auto/', 1)
+    return url
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -30,9 +42,33 @@ class BrandSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class VehicleTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VehicleType
+        fields = ['id', 'name', 'slug', 'is_default']
+
+
+class VehicleImageSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    def get_url(self, obj):
+        request = self.context.get('request')
+        try:
+            url = _webp(obj.image.url)
+            return request.build_absolute_uri(url) if request else url
+        except Exception:
+            return ''
+
+    class Meta:
+        model = VehicleImage
+        fields = ['id', 'url', 'order']
+
+
 class VehicleSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source='brand.name', read_only=True)
     dealer_name = serializers.CharField(source='dealer.dealer_name', read_only=True)
+    gallery_images = VehicleImageSerializer(source='images', many=True, read_only=True)
+
     class Meta:
         model = Vehicle
         fields = '__all__'
@@ -126,7 +162,8 @@ class RegisterSerializer(serializers.Serializer):
         if len(digits) != 10 or not digits[0] in '6789':
             raise serializers.ValidationError("Enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).")
         clean = digits
-        if DealerProfile.objects.filter(phone__endswith=clean).exists():
+        # Normalize: check both stored-as-10 and stored-as-+91XXXXXXXXXX
+        if DealerProfile.objects.filter(Q(phone=clean) | Q(phone=f'+91{clean}') | Q(phone=f'91{clean}')).exists():
             raise serializers.ValidationError("An account with this mobile number already exists.")
         return clean
 
@@ -221,13 +258,37 @@ class PublicVehicleSerializer(serializers.ModelSerializer):
     dealer_address  = serializers.CharField(source='dealer.address', read_only=True)
     dealer_state    = serializers.CharField(source='dealer.state', read_only=True)
     dealer_verified = serializers.BooleanField(source='dealer.is_verified', read_only=True)
+    thumbnail       = serializers.SerializerMethodField()
+    gallery_images  = serializers.SerializerMethodField()
+
+    def get_thumbnail(self, obj):
+        # Prefer uploaded file; fall back to external URL (seeded/demo vehicles)
+        if obj.thumbnail:
+            request = self.context.get('request')
+            try:
+                url = _webp(obj.thumbnail.url)
+                return request.build_absolute_uri(url) if request else url
+            except Exception:
+                pass
+        return obj.thumbnail_url or ''
+
+    def get_gallery_images(self, obj):
+        request = self.context.get('request')
+        imgs = []
+        for img in obj.images.all():
+            try:
+                url = _webp(img.image.url)
+                imgs.append({'id': img.id, 'url': request.build_absolute_uri(url) if request else url, 'order': img.order})
+            except Exception:
+                pass
+        return imgs
 
     class Meta:
         model  = Vehicle
         fields = ['id', 'brand_name', 'dealer_id', 'dealer_name', 'dealer_city',
                   'dealer_phone', 'dealer_address', 'dealer_state', 'dealer_verified',
                   'model_name', 'fuel_type', 'vehicle_type', 'price', 'stock_status',
-                  'stock_quantity', 'thumbnail', 'year', 'is_featured', 'is_used',
+                  'stock_quantity', 'thumbnail', 'gallery_images', 'year', 'is_featured', 'is_used',
                   'range_km', 'battery_capacity', 'max_speed', 'payload_kg',
                   'seating_capacity', 'warranty_years', 'hsn_code', 'description']
 
@@ -240,16 +301,24 @@ class PublicDealerSerializer(serializers.ModelSerializer):
     class Meta:
         model  = DealerProfile
         fields = ['id', 'dealer_name', 'city', 'state', 'phone', 'address',
-                  'description', 'logo', 'avg_rating', 'review_count', 'vehicle_count']
+                  'description', 'logo', 'cover_image', 'avg_rating', 'review_count', 'vehicle_count']
 
     def get_avg_rating(self, obj):
-        avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']
-        return round(avg, 1) if avg else None
+        # Use annotation if available (avoids extra query)
+        if hasattr(obj, '_avg_rating'):
+            avg = obj._avg_rating
+        else:
+            avg = obj.reviews.aggregate(avg=Avg('rating'))['avg']
+        return round(float(avg), 1) if avg else None
 
     def get_review_count(self, obj):
+        if hasattr(obj, '_review_count'):
+            return obj._review_count
         return obj.reviews.count()
 
     def get_vehicle_count(self, obj):
+        if hasattr(obj, '_vehicle_count'):
+            return obj._vehicle_count
         return obj.vehicles.filter(is_active=True, stock_status__in=['in_stock', 'low_stock']).count()
 
 
@@ -286,7 +355,7 @@ class VideoResourceSerializer(serializers.ModelSerializer):
         extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_dealer_name(self, obj):
-        return obj.dealer.dealer_name if obj.dealer else 'eRickshawDekho'
+        return obj.dealer.dealer_name if obj.dealer else PLATFORM_NAME
 
 
 class BlogPostSerializer(serializers.ModelSerializer):
@@ -298,7 +367,7 @@ class BlogPostSerializer(serializers.ModelSerializer):
         extra_kwargs = {'dealer': {'read_only': True}}
 
     def get_dealer_name(self, obj):
-        return obj.dealer.dealer_name if obj.dealer else 'eRickshawDekho'
+        return obj.dealer.dealer_name if obj.dealer else PLATFORM_NAME
 
 
 class PlanSerializer(serializers.ModelSerializer):
@@ -348,8 +417,8 @@ class FinancerRegisterSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         email = validated_data['email']
-        username = email.split('@')[0]
-        base = username
+        base = _re.sub(r'[^a-zA-Z0-9]', '', email.split('@')[0]).lower()[:20] or 'financer'
+        username = base
         n = 1
         while User.objects.filter(username=username).exists():
             username = f"{base}{n}"
@@ -384,19 +453,26 @@ class CustomerRegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError("Email already registered.")
         return value.lower()
 
+    def validate_full_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Full name cannot be blank.")
+        return value
+
     def create(self, validated_data):
         email = validated_data['email']
-        username = email.split('@')[0]
-        base = username
+        base = _re.sub(r'[^a-zA-Z0-9]', '', email.split('@')[0]).lower()[:20] or 'customer'
+        username = base
         n = 1
         while User.objects.filter(username=username).exists():
             username = f"{base}{n}"
             n += 1
+        parts = validated_data['full_name'].split()
         user = User.objects.create_user(
             username=username, email=email,
             password=validated_data['password'],
-            first_name=validated_data['full_name'].split()[0] if validated_data['full_name'] else '',
-            last_name=' '.join(validated_data['full_name'].split()[1:]) if len(validated_data['full_name'].split()) > 1 else '',
+            first_name=parts[0] if parts else '',
+            last_name=' '.join(parts[1:]) if len(parts) > 1 else '',
         )
         UserProfile.objects.create(user=user, user_type='customer', phone=validated_data['phone'], city=validated_data.get('city', ''))
         CustomerProfile.objects.create(

@@ -1,0 +1,181 @@
+name: Railway — One-Time Environment Setup
+
+# ── When to run ────────────────────────────────────────────────────
+# Trigger manually from GitHub → Actions → "Railway — One-Time Environment Setup" → Run workflow.
+# Run ONCE after creating your Railway project and linking Postgres services.
+# Safe to re-run — all operations are idempotent (update_or_create).
+on:
+  workflow_dispatch:
+    inputs:
+      environments:
+        description: "Which environments to set up (comma-separated: production,staging,demo)"
+        required: true
+        default: "production,staging,demo"
+      rotate_secrets:
+        description: "Regenerate SECRET_KEY for selected environments? (true/false)"
+        required: true
+        default: "false"
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  setup:
+    name: Configure Railway Environments
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      # ── Generate secrets locally (never sent to logs) ─────────────
+      - name: Generate secret keys
+        id: secrets
+        run: |
+          PROD_KEY=$(python -c "import secrets; print(secrets.token_hex(50))")
+          STAGING_KEY=$(python -c "import secrets; print(secrets.token_hex(50))")
+          DEMO_KEY=$(python -c "import secrets; print(secrets.token_hex(50))")
+          echo "::add-mask::$PROD_KEY"
+          echo "::add-mask::$STAGING_KEY"
+          echo "::add-mask::$DEMO_KEY"
+          echo "prod_key=$PROD_KEY"     >> $GITHUB_OUTPUT
+          echo "staging_key=$STAGING_KEY" >> $GITHUB_OUTPUT
+          echo "demo_key=$DEMO_KEY"     >> $GITHUB_OUTPUT
+
+      # ── Production environment ────────────────────────────────────
+      - name: Configure production
+        if: contains(inputs.environments, 'production')
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo "Configuring production environment..."
+
+          # Only set SECRET_KEY if rotating or first time
+          if [ "${{ inputs.rotate_secrets }}" = "true" ] || \
+             ! railway variables --environment production --json 2>/dev/null | python -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'SECRET_KEY' in d else 1)" 2>/dev/null; then
+            railway variables set SECRET_KEY="${{ steps.secrets.outputs.prod_key }}" \
+              --environment production
+            echo "  SECRET_KEY set for production"
+          else
+            echo "  SECRET_KEY already set for production (skipped — use rotate_secrets=true to update)"
+          fi
+
+          railway variables set \
+            DJANGO_SETTINGS_MODULE="erickshaw.settings.production" \
+            APP_ENV="prod" \
+            ENVIRONMENT="production" \
+            DEBUG="False" \
+            ALLOWED_HOSTS="erikshawdekho.com,www.erikshawdekho.com,api.erikshawdekho.com,*.up.railway.app" \
+            CORS_ALLOWED_ORIGINS="https://erikshawdekho.com,https://www.erikshawdekho.com,https://erikshawdekho.vercel.app" \
+            PLATFORM_URL="https://www.erikshawdekho.com" \
+            PLATFORM_NAME="eRickshawDekho" \
+            PLATFORM_TAGLINE="Bharosemand Platform" \
+            SUPPORT_EMAIL="support@erikshawdekho.com" \
+            DEFAULT_FROM_EMAIL="noreply@erikshawdekho.com" \
+            ADMIN_USERNAME="admin" \
+            ADMIN_EMAIL="admin@erikshawdekho.com" \
+            --environment production
+
+          echo "Production configured."
+
+      # ── Staging environment ───────────────────────────────────────
+      - name: Configure staging
+        if: contains(inputs.environments, 'staging')
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo "Configuring staging environment..."
+
+          if [ "${{ inputs.rotate_secrets }}" = "true" ] || \
+             ! railway variables --environment staging --json 2>/dev/null | python -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'SECRET_KEY' in d else 1)" 2>/dev/null; then
+            railway variables set SECRET_KEY="${{ steps.secrets.outputs.staging_key }}" \
+              --environment staging
+            echo "  SECRET_KEY set for staging"
+          else
+            echo "  SECRET_KEY already set for staging (skipped)"
+          fi
+
+          railway variables set \
+            DJANGO_SETTINGS_MODULE="erickshaw.settings.staging" \
+            APP_ENV="staging" \
+            ENVIRONMENT="staging" \
+            DEBUG="False" \
+            ALLOWED_HOSTS="staging.erikshawdekho.com,staging-api.erikshawdekho.com,*.up.railway.app" \
+            CORS_ALLOWED_ORIGINS="https://staging.erikshawdekho.com" \
+            PLATFORM_URL="https://staging.erikshawdekho.com" \
+            PLATFORM_NAME="eRickshawDekho" \
+            SUPPORT_EMAIL="support@erikshawdekho.com" \
+            DEFAULT_FROM_EMAIL="noreply@erikshawdekho.com" \
+            ALLOW_STAGING_SEED="true" \
+            --environment staging
+
+          echo "Staging configured."
+
+      # ── Demo environment ──────────────────────────────────────────
+      - name: Configure demo
+        if: contains(inputs.environments, 'demo')
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo "Configuring demo environment..."
+
+          if [ "${{ inputs.rotate_secrets }}" = "true" ] || \
+             ! railway variables --environment demo --json 2>/dev/null | python -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'SECRET_KEY' in d else 1)" 2>/dev/null; then
+            railway variables set SECRET_KEY="${{ steps.secrets.outputs.demo_key }}" \
+              --environment demo
+            echo "  SECRET_KEY set for demo"
+          else
+            echo "  SECRET_KEY already set for demo (skipped)"
+          fi
+
+          railway variables set \
+            DJANGO_SETTINGS_MODULE="erickshaw.settings.demo" \
+            APP_ENV="demo" \
+            ENVIRONMENT="demo" \
+            DEBUG="False" \
+            ALLOWED_HOSTS="demo.erikshawdekho.com,demo-api.erikshawdekho.com,*.up.railway.app" \
+            CORS_ALLOWED_ORIGINS="https://demo.erikshawdekho.com" \
+            PLATFORM_URL="https://demo.erikshawdekho.com" \
+            PLATFORM_NAME="eRickshawDekho" \
+            ALLOW_DEMO_SEED="true" \
+            SUPPORT_EMAIL="support@erikshawdekho.com" \
+            DEFAULT_FROM_EMAIL="noreply@erikshawdekho.com" \
+            --environment demo
+
+          echo "Demo configured."
+
+      # ── Summary ───────────────────────────────────────────────────
+      - name: Print summary
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo ""
+          echo "============================================"
+          echo "Railway environment setup complete!"
+          echo "============================================"
+          echo ""
+          echo "Configured: ${{ inputs.environments }}"
+          echo ""
+          echo "Next steps:"
+          echo "  1. If not done yet: add Postgres service to each Railway environment"
+          echo "     (Railway dashboard → + New → Database → PostgreSQL)"
+          echo "     DATABASE_URL is injected automatically — nothing to set manually."
+          echo ""
+          echo "  2. Optional — set email/SMS credentials via Railway dashboard or CLI:"
+          echo "     railway variables set EMAIL_HOST_USER=you@gmail.com --environment production"
+          echo "     railway variables set EMAIL_HOST_PASSWORD=yourapppassword --environment production"
+          echo "     railway variables set TWILIO_ACCOUNT_SID=... --environment production"
+          echo "     railway variables set TWILIO_AUTH_TOKEN=... --environment production"
+          echo ""
+          echo "  3. After first production deploy, bootstrap Plans + PlatformSettings:"
+          echo "     railway run python manage.py seed_production --confirm-production --environment production"
+          echo ""
+          echo "  4. Redeploy all services to pick up new variables:"
+          echo "     Railway dashboard → each service → Redeploy"
+          echo "============================================"

@@ -3,16 +3,16 @@ import { useSearchParams, Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
 const G   = "#16a34a";
 
 const FUEL_COLOR = { electric: "#16a34a", petrol: "#ea580c", cng: "#0891b2", lpg: "#7c3aed", diesel: "#475569" };
 const FUEL_EMOJI = { electric: "⚡", petrol: "⛽", cng: "🔵", lpg: "🟣", diesel: "🖤" };
 function fmtINR(n) { return `₹${Number(n || 0).toLocaleString("en-IN")}`; }
 
-/* ── Enquiry Modal (lead → aligned dealer) ────────────── */
+/* ── Enquiry Modal (targeted lead — brand/dealer/pincode mandatory) ── */
 function EnquiryModal({ vehicle, onClose }) {
-  const [form, setForm] = useState({ name: "", phone: "", city: "" });
+  const [form, setForm] = useState({ name: "", phone: "", city: "", pincode: "", notes: vehicle ? `I am interested in ${vehicle.brand_name} ${vehicle.model_name}. Please contact me with the best price.` : "" });
   const [sent, setSent] = useState(false);
   const [err, setErr]   = useState("");
   const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 10 };
@@ -20,8 +20,18 @@ function EnquiryModal({ vehicle, onClose }) {
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
+    if (!form.phone || !/^[6-9]\d{9}$/.test(form.phone)) return setErr("Valid 10-digit Indian mobile number डालें (6-9 से शुरू)।");
+    if (!form.pincode || !/^\d{6}$/.test(form.pincode)) return setErr("Valid 6-digit pincode डालें।");
     try {
-      const body = { customer_name: form.name, phone: form.phone, city: form.city, vehicle: vehicle.id };
+      const body = {
+        customer_name: form.name,
+        phone: form.phone,
+        city: form.city,
+        pincode: form.pincode,
+        brand_name: vehicle.brand_name,
+        notes: form.notes,
+        vehicle: vehicle.id,
+      };
       if (vehicle.dealer_id) body.dealer = vehicle.dealer_id;
       const res = await fetch(`${API}/public/enquiry/`, {
         method: "POST",
@@ -36,7 +46,7 @@ function EnquiryModal({ vehicle, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: "#fff", borderRadius: 16, width: 420, maxWidth: "100%", padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+      <div style={{ background: "#fff", borderRadius: 16, width: 440, maxWidth: "100%", padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
         {sent ? (
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
@@ -58,10 +68,12 @@ function EnquiryModal({ vehicle, onClose }) {
             {err && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "8px 12px", borderRadius: 8, marginBottom: 12, fontSize: 13 }}>{err}</div>}
             <form onSubmit={submit}>
               <input style={inp} placeholder="आपका नाम *" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} required />
-              <input style={inp} placeholder="Mobile Number *" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} required />
+              <input style={inp} placeholder="Mobile Number * (10 digits)" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} required maxLength={10} />
+              <input style={inp} placeholder="Pincode * (6 digits)" value={form.pincode} onChange={e => setForm(p => ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} required maxLength={6} />
               <input style={inp} placeholder="City / District" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
+              <textarea style={{ ...inp, minHeight: 50, resize: "vertical" }} placeholder="Notes" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
               <button type="submit" style={{ width: "100%", background: G, color: "#fff", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-                Best Price जानें →
+                🛺 Best Price जानें →
               </button>
             </form>
           </>

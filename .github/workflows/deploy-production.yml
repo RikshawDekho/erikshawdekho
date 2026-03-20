@@ -41,6 +41,7 @@ jobs:
       - name: Django system checks + tests
         working-directory: backend
         env:
+          DJANGO_SETTINGS_MODULE: erickshaw.settings.development
           SECRET_KEY:  test-secret-key-for-ci
           DEBUG:       "True"
           DB_NAME:     test_erikshaw

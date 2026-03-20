@@ -1,78 +1,112 @@
-// ErikshawDekho Service Worker — PWA offline support
-// Increment version to force all clients to get fresh assets on next load
-const CACHE_NAME = 'erikshaw-v3';
+// ErikshawDekho Service Worker — PWA offline + update support
+const CACHE_VERSION = "v6";
+const STATIC_CACHE = `erikshaw-static-${CACHE_VERSION}`;
+const RUNTIME_CACHE = `erikshaw-runtime-${CACHE_VERSION}`;
+const OFFLINE_URL = "/offline.html";
+
 const STATIC_ASSETS = [
-  '/',
-  '/marketplace',
-  '/dealers',
-  '/manifest.json',
-  '/rickshaw.svg',
+  "/",
+  OFFLINE_URL,
+  "/manifest.json",
+  "/rickshaw.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
 ];
 
-// Install: pre-cache static shell
-self.addEventListener('install', (event) => {
+const isApiRequest = (url) => url.pathname.startsWith("/api/");
+const isNavigationRequest = (request) => request.mode === "navigate" || request.headers.get("accept")?.includes("text/html");
+
+async function cacheRuntime(request, response) {
+  if (!response || !response.ok) return;
+  const cache = await caches.open(RUNTIME_CACHE);
+  await cache.put(request, response);
+}
+
+// Install: pre-cache app shell and offline fallback.
+// Do NOT call skipWaiting() here — we want the new SW to wait so the app
+// can show a user-visible "New version available" banner before reloading.
+self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)).catch(() => null)
   );
-  self.skipWaiting();
+  // skipWaiting() is triggered only via SKIP_WAITING message from the banner
 });
 
-// Activate: clean up old caches
-self.addEventListener('activate', (event) => {
+// Activate: clean old caches
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
+          .map((key) => caches.delete(key))
+      )
     )
   );
   self.clients.claim();
 });
 
-// Fetch strategy:
-//   API requests  → network-first (fresh data), fall back to cache
-//   Static assets → cache-first (fast load), fall back to network
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") return;
 
-  // Skip non-GET and cross-origin requests
-  if (event.request.method !== 'GET') return;
-  if (url.origin !== self.location.origin && !url.pathname.startsWith('/api')) return;
+  const url = new URL(request.url);
+  const sameOrigin = url.origin === self.location.origin;
 
-  if (url.pathname.startsWith('/api/')) {
-    // Network-first for API calls
+  // Let unrelated cross-origin requests pass through
+  if (!sameOrigin && !isApiRequest(url)) return;
+
+  if (isNavigationRequest(request)) {
+    // Always network-first for HTML; never cache navigation responses (avoids stale JS bundle refs after deploy)
     event.respondWith(
-      fetch(event.request)
-        .then((res) => {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
-          return res;
+      fetch(request)
+        .catch(async () => {
+          return (await caches.match("/")) || (await caches.match(OFFLINE_URL));
         })
-        .catch(() => caches.match(event.request))
     );
-  } else if (event.request.headers.get('accept')?.includes('text/html')) {
-    // Network-first for HTML pages — always serve fresh app shell
+    return;
+  }
+
+  if (isApiRequest(url)) {
     event.respondWith(
-      fetch(event.request)
-        .then((res) => {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
-          return res;
-        })
-        .catch(() => caches.match(event.request))
-    );
-  } else {
-    // Cache-first for static assets (JS/CSS/images) — fast load, fall back to network
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request).then((res) => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+      fetch(request)
+        .then((response) => {
+          // Avoid storing authenticated responses to reduce sensitive cache footprint.
+          if (!request.headers.has("Authorization")) {
+            cacheRuntime(request, response.clone());
           }
-          return res;
-        });
-      })
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          return new Response(JSON.stringify({ detail: "Offline" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        })
     );
+    return;
+  }
+
+  // Static assets: stale-while-revalidate
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      const networkFetch = fetch(request)
+        .then((response) => {
+          cacheRuntime(request, response.clone());
+          return response;
+        })
+        .catch(() => cached);
+
+      return cached || networkFetch;
+    })
+  );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
   }
 });
 

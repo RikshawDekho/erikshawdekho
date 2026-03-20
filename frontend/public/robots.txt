@@ -1,0 +1,34 @@
+# ErikshawDekho — robots.txt
+# Standard: Google Search Central, Apple, Bing, Yandex crawl guidelines
+
+User-agent: *
+
+# Public pages — fully crawlable and indexable
+Allow: /$
+Allow: /driver$
+Allow: /driver/marketplace$
+Allow: /driver/marketplace/
+Allow: /driver/dealers$
+Allow: /driver/dealers/
+Allow: /driver/learn$
+Allow: /driver/compare$
+Allow: /welcome$
+Allow: /install.html
+Allow: /sitemap$
+
+# Authenticated portals — do NOT index (private SaaS dashboards)
+Disallow: /dealer/
+Disallow: /dealer/dashboard
+Disallow: /financer/
+Disallow: /admin/
+
+# Block noisy crawl paths
+Disallow: /api/
+Disallow: /static/
+Disallow: /media/
+
+# Sitemap location (required by Google Search Console, Bing Webmaster Tools)
+Sitemap: https://www.erikshawdekho.com/sitemap.xml
+
+# Crawl delay for politeness (ignored by Googlebot, respected by others)
+Crawl-delay: 5

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
 const G   = "#16a34a";
 const D   = "#1e3a8a";
 
@@ -68,52 +68,120 @@ function VehicleCard({ v, onEnquire }) {
   );
 }
 
-/* ── Lead / Enquiry Form ─────────────────────────── */
-function LeadForm({ dealerId, dealerName, vehicleId }) {
-  const [form, setForm] = useState({ name: "", phone: "", city: "", model: "" });
+/* ── Lead / Enquiry Form (v3 — targeted: brand → dealer) ── */
+function LeadForm({ presetBrand, presetDealerId, presetDealerName, vehicleId, allBrands }) {
+  const [brands, setBrands] = useState(allBrands || []);
+  const [form, setForm] = useState({ name: "", phone: "", city: "", pincode: "", notes: "" });
+  const [chosenBrand, setChosenBrand] = useState(presetBrand || "");
+  const [dealers, setDealers] = useState([]);
+  const [chosenDealer, setChosenDealer] = useState(presetDealerId || "");
+  const [chosenDealerName, setChosenDealerName] = useState(presetDealerName || "");
+  const [loadingDealers, setLoadingDealers] = useState(false);
   const [sent, setSent] = useState(false);
-  const [err, setErr]   = useState("");
+  const [err, setErr] = useState("");
+
+  // Fetch brands once if not passed via props
+  useEffect(() => {
+    if (brands.length > 0) return;
+    publicFetch("/brands/").then(d => {
+      if (Array.isArray(d)) setBrands(d);
+      else if (d?.results) setBrands(d.results);
+    });
+  }, []);
+
+  // Pre-populate notes when brand changes
+  useEffect(() => {
+    if (chosenBrand) {
+      setForm(p => ({ ...p, notes: `I am interested in ${chosenBrand} e-rickshaw. Please contact me with the best price and availability.` }));
+    }
+  }, [chosenBrand]);
+
+  // Load dealers when brand changes
+  useEffect(() => {
+    if (!chosenBrand) { setDealers([]); setChosenDealer(""); setChosenDealerName(""); return; }
+    if (presetDealerId) return; // Skip if dealer is preset (from vehicle card)
+    setLoadingDealers(true);
+    publicFetch(`/public/dealers-by-brand/?brand=${encodeURIComponent(chosenBrand)}`)
+      .then(d => { setDealers(d?.results || []); setChosenDealer(""); setChosenDealerName(""); })
+      .finally(() => setLoadingDealers(false));
+  }, [chosenBrand]);
 
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
+    if (!chosenBrand) return setErr("Brand select करें।");
+    if (!chosenDealer && !presetDealerId) return setErr("Dealer select करें।");
+    if (!form.phone || !/^[6-9]\d{9}$/.test(form.phone)) return setErr("Valid 10-digit Indian mobile number डालें (6-9 से शुरू)।");
+    if (!form.pincode || !/^\d{6}$/.test(form.pincode)) return setErr("Valid 6-digit pincode डालें।");
     try {
-      const body = { customer_name: form.name, phone: form.phone, city: form.city, notes: form.model ? `Model preference: ${form.model}` : "" };
-      if (dealerId) body.dealer = dealerId;
+      const body = {
+        customer_name: form.name,
+        phone: form.phone,
+        city: form.city,
+        pincode: form.pincode,
+        brand_name: chosenBrand,
+        dealer: chosenDealer || presetDealerId,
+        notes: form.notes,
+      };
       if (vehicleId) body.vehicle = vehicleId;
       const res = await fetch(`${API}/public/enquiry/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.ok) { setSent(true); }
-      else { setErr("कुछ गलत हुआ। फिर कोशिश करें।"); }
+      if (res.ok) setSent(true);
+      else setErr("कुछ गलत हुआ। फिर कोशिश करें।");
     } catch { setErr("Network error. Please try again."); }
   };
 
   if (sent) return (
     <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 12, padding: 24, textAlign: "center" }}>
       <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
-      <div style={{ fontWeight: 700, color: G, fontSize: 16 }}>धन्यवाद! आपकी enquiry मिल गई।</div>
+      <div style={{ fontWeight: 700, color: G, fontSize: 16 }}>धन्यवाद! आपकी enquiry भेजी गई।</div>
       <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>
-        {dealerName ? `${dealerName} आपसे 24 घंटों में contact करेंगे।` : "हमारे dealer आपसे 24 घंटों में contact करेंगे।"}
+        {chosenDealerName || presetDealerName
+          ? `${chosenDealerName || presetDealerName} आपसे 24 घंटों में contact करेंगे।`
+          : "Dealer आपसे 24 घंटों में contact करेंगे।"}
       </div>
     </div>
   );
 
   const inp = { width: "100%", padding: "11px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  const sel = { ...inp, background: "#fff", cursor: "pointer" };
 
   return (
     <form onSubmit={submit}>
       {err && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, marginBottom: 12, fontSize: 13 }}>{err}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
         <input style={inp} placeholder="आपका नाम *" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} required />
-        <input style={inp} placeholder="Mobile Number *" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} required />
+        <input style={inp} placeholder="Mobile Number * (10 digits)" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} required maxLength={10} />
+
+        {/* Brand selector */}
+        {presetBrand ? (
+          <input style={{ ...inp, background: "#f9fafb" }} value={presetBrand} readOnly />
+        ) : (
+          <select style={sel} value={chosenBrand} onChange={e => setChosenBrand(e.target.value)} required>
+            <option value="">— Brand चुनें * —</option>
+            {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+          </select>
+        )}
+
+        {/* Dealer selector (loads after brand) */}
+        {presetDealerId ? (
+          <input style={{ ...inp, background: "#f9fafb" }} value={presetDealerName || "Selected Dealer"} readOnly />
+        ) : (
+          <select style={sel} value={chosenDealer} onChange={e => { setChosenDealer(e.target.value); setChosenDealerName(e.target.options[e.target.selectedIndex]?.text || ""); }} required disabled={!chosenBrand || loadingDealers}>
+            <option value="">{loadingDealers ? "Loading dealers..." : !chosenBrand ? "— पहले brand चुनें —" : dealers.length === 0 ? "— No dealers found —" : "— Dealer चुनें * —"}</option>
+            {dealers.map(d => <option key={d.id} value={d.id}>{d.dealer_name} — {d.city}{d.avg_rating ? ` (⭐ ${Number(d.avg_rating).toFixed(1)})` : ""}</option>)}
+          </select>
+        )}
+
+        <input style={inp} placeholder="Pincode * (6 digits)" value={form.pincode} onChange={e => setForm(p => ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} required maxLength={6} />
         <input style={inp} placeholder="City / जिला" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
-        <input style={inp} placeholder="कौन सा model चाहिए?" value={form.model} onChange={e => setForm(p => ({ ...p, model: e.target.value }))} />
       </div>
+      <textarea style={{ ...inp, marginBottom: 12, minHeight: 60, resize: "vertical" }} placeholder="Notes (auto-filled, editable)" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
       <button type="submit" style={{ width: "100%", background: G, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
-        Best Price जानें →
+        🛺 Best Price जानें →
       </button>
     </form>
   );
@@ -127,7 +195,7 @@ function DealerQueryModal({ brand, dealers, onClose }) {
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
         onClick={e => e.target === e.currentTarget && onClose()}>
-        <div style={{ background: "#fff", borderRadius: 16, width: 480, maxWidth: "100%", padding: 28, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ background: "#fff", borderRadius: 16, width: 520, maxWidth: "100%", padding: 28, maxHeight: "90vh", overflowY: "auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
             <div>
               <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>Enquiry — {selectedDealer.dealer_name}</div>
@@ -135,7 +203,7 @@ function DealerQueryModal({ brand, dealers, onClose }) {
             </div>
             <button onClick={() => setSelectedDealer(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#9ca3af" }}>←</button>
           </div>
-          <LeadForm dealerId={selectedDealer.id} dealerName={selectedDealer.dealer_name} />
+          <LeadForm presetBrand={brand} presetDealerId={selectedDealer.id} presetDealerName={selectedDealer.dealer_name} />
         </div>
       </div>
     );
@@ -184,7 +252,7 @@ function FeaturedEnquiryModal({ vehicle, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: "#fff", borderRadius: 16, width: 480, maxWidth: "100%", padding: 28 }}>
+      <div style={{ background: "#fff", borderRadius: 16, width: 520, maxWidth: "100%", padding: 28 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>{vehicle.brand_name} {vehicle.model_name}</div>
@@ -192,7 +260,7 @@ function FeaturedEnquiryModal({ vehicle, onClose }) {
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#9ca3af" }}>✕</button>
         </div>
-        <LeadForm dealerId={vehicle.dealer_id} dealerName={vehicle.dealer_name} vehicleId={vehicle.id} />
+        <LeadForm presetBrand={vehicle.brand_name} presetDealerId={vehicle.dealer_id} presetDealerName={vehicle.dealer_name} vehicleId={vehicle.id} />
       </div>
     </div>
   );
@@ -249,7 +317,7 @@ export default function HomePage() {
           {/* Lead form in hero */}
           <div className="hero-cta" style={{ background: "rgba(255,255,255,0.97)", borderRadius: 16, padding: 24, maxWidth: 560, margin: "0 auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", color: "#111" }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: "#111827", marginBottom: 16 }}>Free Quote पाएँ — 2 मिनट में</div>
-            <LeadForm />
+            <LeadForm allBrands={brands} />
           </div>
         </div>
       </section>

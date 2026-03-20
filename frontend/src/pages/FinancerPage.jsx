@@ -1,162 +1,242 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
+import { GoogleLogin } from '@react-oauth/google';
+import Navbar from "../components/NavbarNew";
+import FooterNew from "../components/FooterNew";
+import { SectionSkeleton } from "../components/PageSkeleton";
+import { ROLE_C, TYPO, RADIUS, CONTROL, LAYOUT } from "../theme";
 
-const API = import.meta.env.VITE_API_URL || "https://api.erikshawdekho.com/api";
-const G = "#16a34a";
-const P = "#7c3aed";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.MODE === "demo" ? "https://demo-api.erikshawdekho.com/api" : import.meta.env.MODE === "development" ? "http://localhost:8000/api" : "https://api.erikshawdekho.com/api");
+const G = ROLE_C.driver;
+const P = ROLE_C.financer;
 
 function fmtINR(n) { return `₹${Number(n || 0).toLocaleString("en-IN")}`; }
 
-/* ── Financer Registration Form ── */
-function FinancerRegForm({ onSuccess }) {
-  const [form, setForm] = useState({ username: "", password: "", company_name: "", license_number: "", phone: "", city: "", state: "", interest_rate_min: "", interest_rate_max: "", loan_amount_min: "", loan_amount_max: "" });
+const STATUS_BADGE = {
+  pending: { bg: "#fef3c7", color: "#92400e", label: "⏳ Pending" },
+  approved: { bg: "#dcfce7", color: "#166534", label: "✅ Approved" },
+  rejected: { bg: "#fef2f2", color: "#dc2626", label: "❌ Rejected" },
+  suspended: { bg: "#f3f4f6", color: "#6b7280", label: "🚫 Suspended" },
+  submitted: { bg: "#dbeafe", color: "#1e40af", label: "📤 Submitted" },
+  under_review: { bg: "#fef3c7", color: "#92400e", label: "🔍 Under Review" },
+  docs_required: { bg: "#fff7ed", color: "#c2410c", label: "📋 Docs Required" },
+  disbursed: { bg: "#dcfce7", color: "#166534", label: "💰 Disbursed" },
+  cancelled: { bg: "#f3f4f6", color: "#6b7280", label: "🚫 Cancelled" },
+  draft: { bg: "#f3f4f6", color: "#6b7280", label: "📝 Draft" },
+};
+
+function Badge({ status }) {
+  const s = STATUS_BADGE[status] || { bg: "#f3f4f6", color: "#6b7280", label: status };
+  return <span style={{ background: s.bg, color: s.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{s.label}</span>;
+}
+
+/* ─── Login Form ────────────────────────────────────────── */
+function FinancerLoginForm({ onSuccess, onSwitchToRegister }) {
+  const [form, setForm] = useState({ username: "", password: "" });
+  const [errBanner, setErrBanner] = useState(null); // { msg, hint: null|"wrong_password"|"no_account"|"wrong_portal" }
+  const [loading, setLoading] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  const triggerShake = () => { setShake(true); setTimeout(() => setShake(false), 500); };
+  const inp = (highlight) => ({ width: "100%", padding: "12px 14px", paddingRight: 44, border: `1.5px solid ${highlight ? "#dc2626" : "#e5e7eb"}`, borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" });
+  const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 5 };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErrBanner(null); setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/login/`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (res.ok && data.access) {
+        if (data.user?.user_type && !["financer", "admin"].includes(data.user.user_type)) {
+          setErrBanner({ msg: `This portal is for NBFC/Financer accounts only. Your account type is "${data.user.user_type}".`, hint: "wrong_portal" });
+          triggerShake();
+        } else { onSuccess(data); }
+      } else {
+        const msg = data.error || data.detail || "Login failed. Check your credentials.";
+        const hint = res.status === 429 ? "rate_limited"
+          : data.account_exists === false ? "no_account"
+          : data.account_exists === true ? "wrong_password"
+          : null;
+        setErrBanner({ msg, hint });
+        triggerShake();
+      }
+    } catch { setErrBanner({ msg: "Network error. Please try again.", hint: null }); triggerShake(); }
+    setLoading(false);
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setGoogleLoading(true); setErrBanner(null);
+    try {
+      const res = await fetch(`${API}/auth/google/`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: credentialResponse.credential }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErrBanner({ msg: data.error || data.detail || "Google sign-in failed.", hint: null }); triggerShake(); return; }
+      if (data.new_user) { onSwitchToRegister({ email: data.email, name: data.name }); return; }
+      if (data.user?.user_type && !["financer", "admin"].includes(data.user.user_type)) {
+        setErrBanner({ msg: `This portal is for NBFC/Financer accounts only. Your account type is "${data.user.user_type}".`, hint: "wrong_portal" });
+        triggerShake(); return;
+      }
+      onSuccess(data);
+    } catch { setErrBanner({ msg: "Google sign-in failed. Please try again.", hint: null }); triggerShake(); }
+    setGoogleLoading(false);
+  };
+
+  return (
+    <div style={{ maxWidth: 420, margin: "0 auto" }}>
+      <style>{`@keyframes fShake{0%,100%{transform:translateX(0)}15%{transform:translateX(-7px)}30%{transform:translateX(7px)}45%{transform:translateX(-5px)}60%{transform:translateX(5px)}75%{transform:translateX(-3px)}90%{transform:translateX(3px)}}`}</style>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 32, boxShadow: "0 4px 24px rgba(0,0,0,0.08)", animation: shake ? "fShake 0.5s ease" : "none" }}>
+        <h2 style={{ textAlign: "center", fontSize: 20, fontWeight: 700, color: "#111827", marginBottom: 24, letterSpacing: "-0.3px" }}>Sign in to Financer Portal</h2>
+
+        {errBanner && (
+          <div style={{ borderLeft: "4px solid #dc2626", background: "#fef2f2", borderRadius: "0 8px 8px 0", padding: "12px 14px", fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 600, color: "#dc2626", marginBottom: errBanner.hint ? 8 : 0 }}>{errBanner.msg}</div>
+            {errBanner.hint === "wrong_password" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                <span style={{ fontSize: 12, color: "#475569" }}>Forgot your password?</span>
+                <a href={`mailto:support@erikshawdekho.com?subject=Financer Password Reset Request&body=Please reset the password for my financer account: ${form.username}`}
+                  style={{ background: "none", border: `1.5px solid ${P}`, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700, color: P, cursor: "pointer", fontFamily: "inherit", textDecoration: "none" }}>
+                  Reset password
+                </a>
+              </div>
+            )}
+            {errBanner.hint === "no_account" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                <span style={{ fontSize: 12, color: "#475569" }}>Don't have an account?</span>
+                <button type="button" onClick={() => onSwitchToRegister({})} style={{ background: "none", border: `1.5px solid ${P}`, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700, color: P, cursor: "pointer", fontFamily: "inherit" }}>Create account</button>
+              </div>
+            )}
+            {errBanner.hint === "wrong_portal" && (
+              <div style={{ marginTop: 4 }}>
+                <a href="/dealer" style={{ fontSize: 12, color: P, fontWeight: 700, textDecoration: "underline" }}>Go to Dealer portal →</a>
+              </div>
+            )}
+            {errBanner.hint === "rate_limited" && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#92400e" }}>Please wait a few minutes before trying again.</div>
+            )}
+          </div>
+        )}
+
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={lbl}>Email or Username</label>
+            <input style={inp(errBanner?.hint === "no_account")} placeholder="your@email.com" value={form.username}
+              onChange={e => setForm(p => ({ ...p, username: e.target.value }))} autoComplete="username" required />
+          </div>
+          <div>
+            <label style={lbl}>Password</label>
+            <div style={{ position: "relative" }}>
+              <input style={inp(errBanner?.hint === "wrong_password")} type={showPw ? "text" : "password"} placeholder="Your password" value={form.password}
+                onChange={e => setForm(p => ({ ...p, password: e.target.value }))} autoComplete="current-password" required />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16, padding: 2, lineHeight: 1 }}
+                title={showPw ? "Hide password" : "Show password"}>
+                {showPw ? "🙈" : "👁"}
+              </button>
+            </div>
+          </div>
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Signing in…" : "Sign In"}
+          </button>
+        </form>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 16px" }}>
+          <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+          <span style={{ fontSize: 12, color: "#9ca3af", whiteSpace: "nowrap" }}>or continue with</span>
+          <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+        </div>
+        {googleLoading ? (
+          <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "10px 0" }}>Verifying with Google…</div>
+        ) : (
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <GoogleLogin onSuccess={handleGoogleSuccess} onError={() => { setErrBanner({ msg: "Google sign-in was cancelled or failed.", hint: null }); }}
+              useOneTap={false} shape="rectangular" size="large" width="356" text="signin_with" />
+          </div>
+        )}
+        {!errBanner?.hint && (
+          <div style={{ textAlign: "center", marginTop: 16 }}>
+            <button type="button" style={{ background: "none", border: "none", color: P, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+              Forgot password?
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Registration Form ─────────────────────────────────── */
+function FinancerRegForm({ onSuccess, prefillEmail, prefillName }) {
+  const [form, setForm] = useState({ email: prefillEmail || "", password: "", company_name: prefillName || "", contact_person: "", phone: "", city: "" });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const inp = { width: "100%", padding: "11px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  const [showPw, setShowPw] = useState(false);
+  const inp = { width: "100%", padding: "12px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 5 };
 
   const submit = async (e) => {
     e.preventDefault();
     setErr(""); setLoading(true);
+    if (form.phone && !/^[6-9]\d{9}$/.test(form.phone)) { setErr("Valid 10-digit Indian mobile number required."); setLoading(false); return; }
+    if (form.password.length < 8) { setErr("Password must be at least 8 characters."); setLoading(false); return; }
     try {
       const res = await fetch(`${API}/auth/register/financer/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (res.ok) {
-        onSuccess(data);
-      } else {
-        setErr(typeof data === "object" ? Object.values(data).flat().join(" ") : "Registration failed.");
-      }
+      if (res.ok) onSuccess(data);
+      else setErr(typeof data === "object" ? Object.values(data).flat().join(" ") : "Registration failed.");
     } catch { setErr("Network error."); }
     setLoading(false);
   };
 
   return (
-    <form onSubmit={submit} style={{ maxWidth: 540, margin: "0 auto" }}>
-      <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 20, textAlign: "center", color: "#111827" }}>🏦 Financer Registration</div>
-      {err && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 13 }}>{err}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-        <input style={inp} placeholder="Username *" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} required />
-        <input style={inp} type="password" placeholder="Password *" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} required />
-        <input style={inp} placeholder="Company Name *" value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value }))} required />
-        <input style={inp} placeholder="License Number" value={form.license_number} onChange={e => setForm(p => ({ ...p, license_number: e.target.value }))} />
-        <input style={inp} placeholder="Phone *" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} required />
-        <input style={inp} placeholder="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
-        <input style={inp} placeholder="State" value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))} />
-        <input style={inp} type="number" step="0.1" placeholder="Min Interest Rate %" value={form.interest_rate_min} onChange={e => setForm(p => ({ ...p, interest_rate_min: e.target.value }))} />
-        <input style={inp} type="number" step="0.1" placeholder="Max Interest Rate %" value={form.interest_rate_max} onChange={e => setForm(p => ({ ...p, interest_rate_max: e.target.value }))} />
-        <input style={inp} type="number" placeholder="Min Loan Amount" value={form.loan_amount_min} onChange={e => setForm(p => ({ ...p, loan_amount_min: e.target.value }))} />
-        <input style={inp} type="number" placeholder="Max Loan Amount" value={form.loan_amount_max} onChange={e => setForm(p => ({ ...p, loan_amount_max: e.target.value }))} />
-      </div>
-      <button type="submit" disabled={loading}
-        style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
-        {loading ? "Registering..." : "Register as Financer →"}
-      </button>
-    </form>
-  );
-}
-
-/* ── Financer Dashboard (authenticated) ── */
-function FinancerDashboard({ token, onLogout }) {
-  const [profile, setProfile] = useState(null);
-  const [docs, setDocs] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [docType, setDocType] = useState("pan");
-  const [docDesc, setDocDesc] = useState("");
-  const [docFile, setDocFile] = useState(null);
-
-  const authFetch = (path, opts = {}) => fetch(`${API}${path}`, { ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) } });
-
-  useEffect(() => {
-    authFetch("/financer/profile/").then(r => r.ok ? r.json() : null).then(d => d && setProfile(d));
-    authFetch("/financer/documents/").then(r => r.ok ? r.json() : []).then(d => Array.isArray(d) ? setDocs(d) : setDocs(d?.results || []));
-  }, []);
-
-  const uploadDoc = async (e) => {
-    e.preventDefault();
-    if (!docFile) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.append("document_type", docType);
-    fd.append("description", docDesc);
-    fd.append("file", docFile);
-    const res = await authFetch("/financer/documents/", { method: "POST", body: fd });
-    if (res.ok) {
-      const newDoc = await res.json();
-      setDocs(prev => [...prev, newDoc]);
-      setDocFile(null); setDocDesc("");
-    }
-    setUploading(false);
-  };
-
-  if (!profile) return <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>Loading profile...</div>;
-
-  return (
-    <div style={{ maxWidth: 800, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <div>
-          <div style={{ fontWeight: 800, fontSize: 22, color: "#111827" }}>🏦 {profile.company_name}</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>📍 {profile.city}{profile.state ? `, ${profile.state}` : ""} · {profile.phone}</div>
-        </div>
-        <button onClick={onLogout} style={{ background: "#f3f4f6", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Logout</button>
-      </div>
-
-      {/* Profile card */}
-      <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e5e7eb", marginBottom: 24 }}>
-        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#111827" }}>Profile Details</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[
-            { l: "License", v: profile.license_number || "—" },
-            { l: "Interest Rate", v: profile.interest_rate_min && profile.interest_rate_max ? `${profile.interest_rate_min}% — ${profile.interest_rate_max}%` : "—" },
-            { l: "Loan Range", v: profile.loan_amount_min && profile.loan_amount_max ? `${fmtINR(profile.loan_amount_min)} — ${fmtINR(profile.loan_amount_max)}` : "—" },
-            { l: "Processing Fee", v: profile.processing_fee_pct ? `${profile.processing_fee_pct}%` : "—" },
-            { l: "Status", v: profile.is_verified ? "✅ Verified" : "⏳ Pending Verification" },
-          ].map(({ l, v }) => (
-            <div key={l} style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
-              <div style={{ fontSize: 11, color: "#9ca3af" }}>{l}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{v}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Document upload */}
-      <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e5e7eb", marginBottom: 24 }}>
-        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#111827" }}>📄 Documents</div>
-        {docs.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            {docs.map(d => (
-              <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#f9fafb", borderRadius: 8, marginBottom: 8, border: "1px solid #f3f4f6" }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{d.document_type?.toUpperCase()} — {d.description || "No description"}</div>
-                  <div style={{ fontSize: 11, color: "#6b7280" }}>{d.is_verified ? "✅ Verified" : "⏳ Under review"}</div>
-                </div>
-                {d.file && <a href={d.file} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 600, fontSize: 12, textDecoration: "none" }}>View ↗</a>}
-              </div>
-            ))}
-          </div>
+    <div style={{ maxWidth: 440, margin: "0 auto" }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 32, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+        <h2 style={{ textAlign: "center", fontSize: 20, fontWeight: 700, color: "#111827", marginBottom: 8, letterSpacing: "-0.3px" }}>Create Financer Account</h2>
+        <p style={{ textAlign: "center", color: "#6b7280", fontSize: 13, marginBottom: 24 }}>NBFC / Financer partner registration</p>
+        {err && (
+          <div style={{ borderLeft: "4px solid #dc2626", background: "#fef2f2", borderRadius: "0 8px 8px 0", padding: "12px 14px", fontSize: 13, marginBottom: 16, color: "#dc2626", fontWeight: 600 }}>{err}</div>
         )}
-        <form onSubmit={uploadDoc} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <select value={docType} onChange={e => setDocType(e.target.value)}
-            style={{ padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit" }}>
-            <option value="pan">PAN Card</option>
-            <option value="aadhaar">Aadhaar</option>
-            <option value="gst">GST Certificate</option>
-            <option value="bank">Bank Statement</option>
-            <option value="license">Business License</option>
-            <option value="agreement">Agreement</option>
-            <option value="other">Other</option>
-          </select>
-          <input type="text" placeholder="Description" value={docDesc} onChange={e => setDocDesc(e.target.value)}
-            style={{ padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", flex: 1, minWidth: 140 }} />
-          <input type="file" onChange={e => setDocFile(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
-          <button type="submit" disabled={uploading || !docFile}
-            style={{ background: P, color: "#fff", border: "none", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: uploading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: uploading ? 0.6 : 1 }}>
-            {uploading ? "Uploading..." : "Upload"}
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div><label style={lbl}>Email Address *</label>
+            <input style={inp} type="email" placeholder="your@company.com" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} autoComplete="email" required />
+          </div>
+          <div><label style={lbl}>Password *</label>
+            <div style={{ position: "relative" }}>
+              <input style={{ ...inp, paddingRight: 44 }} type={showPw ? "text" : "password"} placeholder="Min 8 characters" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} autoComplete="new-password" required minLength={8} />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16, padding: 2, lineHeight: 1 }}>
+                {showPw ? "🙈" : "👁"}
+              </button>
+            </div>
+          </div>
+          <div><label style={lbl}>Company / NBFC Name *</label>
+            <input style={inp} placeholder="e.g. Sharma Finance Pvt. Ltd." value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value }))} required />
+          </div>
+          <div><label style={lbl}>Contact Person</label>
+            <input style={inp} placeholder="Full name" value={form.contact_person} onChange={e => setForm(p => ({ ...p, contact_person: e.target.value }))} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div><label style={lbl}>Phone *</label>
+              <input style={inp} placeholder="10-digit number" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} required inputMode="numeric" />
+            </div>
+            <div><label style={lbl}>City</label>
+              <input style={inp} placeholder="e.g. Delhi" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
+            </div>
+          </div>
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: P, color: "#fff", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.7 : 1, marginTop: 4 }}>
+            {loading ? "Creating account…" : "Create Account"}
           </button>
         </form>
       </div>
@@ -164,43 +244,485 @@ function FinancerDashboard({ token, onLogout }) {
   );
 }
 
-/* ── Public Financer listing ── */
-function FinancerListing() {
-  const [financers, setFinancers] = useState([]);
+/* ─── Dashboard Tab: Profile ────────────────────────────── */
+function ProfileTab({ profile }) {
+  if (!profile) return <SectionSkeleton rows={4} style={{ padding: 40 }} />;
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e5e7eb" }}>
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#111827" }}>Profile Details</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {[
+          { l: "Company", v: profile.company_name },
+          { l: "GSTIN", v: profile.gstin || "—" },
+          { l: "PAN", v: profile.pan_number || "—" },
+          { l: "Phone", v: profile.phone || "—" },
+          { l: "Location", v: [profile.city, profile.state].filter(Boolean).join(", ") || "—" },
+          { l: "Interest Rate", v: profile.interest_rate_min && profile.interest_rate_max ? `${profile.interest_rate_min}% — ${profile.interest_rate_max}%` : "—" },
+          { l: "Loan Range", v: profile.min_loan_amount && profile.max_loan_amount ? `${fmtINR(profile.min_loan_amount)} — ${fmtINR(profile.max_loan_amount)}` : "—" },
+          { l: "Processing Fee", v: profile.processing_fee_pct ? `${profile.processing_fee_pct}%` : "—" },
+          { l: "Status", v: profile.is_verified ? "✅ Verified" : "⏳ Pending Verification" },
+        ].map(({ l, v }) => (
+          <div key={l} style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: "#9ca3af" }}>{l}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Dashboard Tab: Dealer Associations ────────────────── */
+function DealersTab({ authFetch }) {
+  const [dealers, setDealers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    fetch(`${API}/public/financers/`)
-      .then(r => r.ok ? r.json() : [])
-      .then(d => { setFinancers(Array.isArray(d) ? d : []); setLoading(false); })
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (search) p.set("search", search);
+    if (statusFilter) p.set("status", statusFilter);
+    const qs = p.toString() ? `?${p}` : "";
+    authFetch(`/financer/dealers/${qs}`)
+      .then(r => r.ok ? r.json() : { results: [] })
+      .then(d => { setDealers(Array.isArray(d) ? d : d?.results || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [authFetch, search, statusFilter]);
 
-  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading financers...</div>;
+  useEffect(() => { load(); }, [load]);
+
+  const handleAction = async (dealerId, act) => {
+    setActionLoading(dealerId);
+    const res = await authFetch(`/financer/dealers/${dealerId}/approve/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: act }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(data.message || `Dealer ${act}.`);
+    } else {
+      showToast(data.error || "Action failed.", "error");
+    }
+    load();
+    setActionLoading(null);
+  };
+
+  const approvedCount = dealers.filter(d => d.association_status === "approved").length;
+
+  if (loading) return <SectionSkeleton rows={3} style={{ padding: 40 }} />;
 
   return (
     <div>
-      <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: "#111827" }}>Available Financers</div>
-      {financers.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>No verified financers available yet.</div>
+      {toast && (
+        <div style={{ position: "fixed", top: 20, right: 20, padding: "10px 18px", borderRadius: 10, background: toast.type === "error" ? "#fef2f2" : "#dcfce7", color: toast.type === "error" ? "#dc2626" : "#166534", fontWeight: 700, fontSize: 13, zIndex: 9999, boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
+          {toast.msg}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>Dealer Network</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>{approvedCount} approved dealers in your network</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input type="text" placeholder="Search dealers..." value={search} onChange={e => setSearch(e.target.value)}
+            style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", minWidth: 160 }} />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit" }}>
+            <option value="">All Dealers</option>
+            <option value="approved">My Network (Approved)</option>
+            <option value="pending">Pending Approval</option>
+            <option value="rejected">Rejected</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </div>
+      </div>
+
+      {dealers.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
+          {statusFilter ? `No dealers with status "${statusFilter}".` : "No verified dealers found."}
+        </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-          {financers.map(f => (
-            <div key={f.id} style={{ background: "#fff", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb" }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>{f.company_name}</div>
-              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>📍 {f.city}{f.state ? `, ${f.state}` : ""}</div>
-              {f.interest_rate_min && f.interest_rate_max && (
-                <div style={{ fontSize: 13, color: P, fontWeight: 600, marginTop: 8 }}>
-                  Interest: {f.interest_rate_min}% — {f.interest_rate_max}%
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {dealers.map(d => (
+            <div key={d.id} style={{ background: "#fff", borderRadius: 12, padding: 16, border: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{d.dealer_name}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>📍 {d.city}{d.state ? `, ${d.state}` : ""} · {d.vehicle_count || 0} vehicles · 📞 {d.phone || "—"}</div>
+                <div style={{ marginTop: 6 }}>
+                  {d.association_status ? <Badge status={d.association_status} /> : <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Not Connected</span>}
                 </div>
-              )}
-              {f.loan_amount_min && f.loan_amount_max && (
-                <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
-                  Loan: {fmtINR(f.loan_amount_min)} — {fmtINR(f.loan_amount_max)}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {/* Financer proactively adds a dealer (no existing association) */}
+                {!d.association_status && (
+                  <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
+                    style={{ background: P, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: actionLoading === d.id ? 0.6 : 1 }}>
+                    {actionLoading === d.id ? "Adding..." : "➕ Add to Network"}
+                  </button>
+                )}
+                {d.association_status === "pending" && (
+                  <>
+                    <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
+                      style={{ background: G, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      ✅ Approve
+                    </button>
+                    <button onClick={() => handleAction(d.id, "rejected")} disabled={actionLoading === d.id}
+                      style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      ❌ Reject
+                    </button>
+                  </>
+                )}
+                {d.association_status === "approved" && (
+                  <button onClick={() => handleAction(d.id, "suspended")} disabled={actionLoading === d.id}
+                    style={{ background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    Suspend
+                  </button>
+                )}
+                {d.association_status === "suspended" && (
+                  <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
+                    style={{ background: G, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    ♻️ Re-activate
+                  </button>
+                )}
+                {d.association_status === "rejected" && (
+                  <button onClick={() => handleAction(d.id, "approved")} disabled={actionLoading === d.id}
+                    style={{ background: P, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    ➕ Add Anyway
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Dashboard Tab: Required Documents ─────────────────── */
+function RequiredDocsTab({ authFetch }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newDocType, setNewDocType] = useState("aadhaar");
+  const [newDocDesc, setNewDocDesc] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const DOC_TYPES = ["aadhaar", "pan", "voter_id", "driving_license", "bank_statement", "income_proof", "address_proof", "passport_photo", "vehicle_quotation", "form_16", "other"];
+
+  const load = useCallback(() => {
+    setLoading(true);
+    authFetch("/financer/required-documents/").then(r => r.ok ? r.json() : []).then(d => { setDocs(Array.isArray(d) ? d : d?.results || []); setLoading(false); }).catch(() => setLoading(false));
+  }, [authFetch]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addDoc = async (e) => {
+    e.preventDefault();
+    setAdding(true);
+    const res = await authFetch("/financer/required-documents/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_type: newDocType, description: newDocDesc, is_mandatory: true }),
+    });
+    if (res.ok) { load(); setNewDocDesc(""); }
+    setAdding(false);
+  };
+
+  const deleteDoc = async (id) => {
+    await authFetch(`/financer/required-documents/${id}/`, { method: "DELETE" });
+    load();
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading...</div>;
+
+  return (
+    <div>
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: "#111827" }}>Required Documents for Dealers</div>
+      <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 20 }}>Define which documents dealers must upload when applying for finance. These will be shown to dealers when they create finance applications.</p>
+
+      {docs.length > 0 && (
+        <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+          {docs.map(d => (
+            <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "#f9fafb", borderRadius: 8, border: "1px solid #f3f4f6" }}>
+              <div>
+                <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>{(d.doc_type || d.document_type)?.replace(/_/g, " ").toUpperCase()}</span>
+                {d.description && <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>— {d.description}</span>}
+                {d.is_mandatory && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, marginLeft: 8 }}>Mandatory</span>}
+              </div>
+              <button onClick={() => deleteDoc(d.id)} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "#dc2626" }}>🗑</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={addDoc} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <select value={newDocType} onChange={e => setNewDocType(e.target.value)}
+          style={{ padding: "9px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit" }}>
+          {DOC_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, " ").toUpperCase()}</option>)}
+        </select>
+        <input type="text" placeholder="Description (optional)" value={newDocDesc} onChange={e => setNewDocDesc(e.target.value)}
+          style={{ padding: "9px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", flex: 1, minWidth: 160 }} />
+        <button type="submit" disabled={adding}
+          style={{ background: P, color: "#fff", border: "none", padding: "9px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: adding ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+          {adding ? "Adding..." : "+ Add Requirement"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ─── Remarks Thread (shared component) ─────────────────── */
+function RemarksThread({ remarks, onPost, posting, role }) {
+  const [text, setText] = useState("");
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [remarks]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    await onPost(text.trim());
+    setText("");
+  };
+
+  return (
+    <div style={{ border: "1px solid #e9d5ff", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "8px 14px", background: "#faf5ff", borderBottom: "1px solid #e9d5ff", fontWeight: 600, fontSize: 12, color: P }}>
+        💬 Remarks Thread ({remarks.length})
+      </div>
+      <div style={{ maxHeight: 220, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {remarks.length === 0 && <div style={{ color: "#9ca3af", fontSize: 12, textAlign: "center", padding: "10px 0" }}>No remarks yet. Start the conversation.</div>}
+        {remarks.map(r => {
+          const isMe = r.author_type === role;
+          return (
+            <div key={r.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
+              <div style={{
+                maxWidth: "80%", padding: "8px 12px", borderRadius: isMe ? "12px 12px 0 12px" : "12px 12px 12px 0",
+                background: isMe ? P : "#f3f4f6", color: isMe ? "#fff" : "#111827", fontSize: 13,
+              }}>
+                <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 3 }}>
+                  {isMe ? "You" : (r.author_type === "financer" ? "Financer" : "Dealer")} · {new Date(r.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
                 </div>
-              )}
-              {f.processing_fee_pct && (
-                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Processing fee: {f.processing_fee_pct}%</div>
+                {r.content}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+      <form onSubmit={submit} style={{ display: "flex", gap: 8, padding: "10px 14px", borderTop: "1px solid #e9d5ff", background: "#faf5ff" }}>
+        <input type="text" value={text} onChange={e => setText(e.target.value)} placeholder="Add a remark..."
+          style={{ flex: 1, padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+        <button type="submit" disabled={posting || !text.trim()}
+          style={{ background: P, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: posting ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: posting ? 0.6 : 1 }}>
+          {posting ? "..." : "Send"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ─── Dashboard Tab: Finance Applications ───────────────── */
+function ApplicationsTab({ authFetch }) {
+  const [apps, setApps] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+  const [statusUpdate, setStatusUpdate] = useState({ notes: "" });
+  const [postingRemark, setPostingRemark] = useState(false);
+  const [localRemarks, setLocalRemarks] = useState({}); // appId → remarks[]
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (search) p.set("search", search);
+    if (statusFilter) p.set("status", statusFilter);
+    const qs = p.toString() ? `?${p}` : "";
+    authFetch(`/financer/applications/${qs}`).then(r => r.ok ? r.json() : []).then(d => {
+      const list = Array.isArray(d) ? d : d?.results || [];
+      setApps(list);
+      // Build local remarks cache from embedded data
+      const rm = {};
+      list.forEach(a => { if (a.remarks) rm[a.id] = a.remarks; });
+      setLocalRemarks(rm);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [authFetch, search, statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const updateStatus = async (appId, newStatus) => {
+    await authFetch(`/financer/applications/${appId}/update-status/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus, status_notes: statusUpdate.notes }),
+    });
+    setStatusUpdate({ notes: "" });
+    setExpanded(null);
+    load();
+  };
+
+  const postRemark = async (appId, content) => {
+    setPostingRemark(true);
+    const res = await authFetch(`/financer/applications/${appId}/remarks/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    if (res.ok) {
+      const remark = await res.json();
+      setLocalRemarks(prev => ({ ...prev, [appId]: [...(prev[appId] || []), remark] }));
+    }
+    setPostingRemark(false);
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading applications...</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 16, color: "#111827" }}>Finance Applications ({apps.length})</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer / dealer..."
+            style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", outline: "none", minWidth: 180 }} />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            style={{ padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            <option value="">All Statuses</option>
+            {["submitted","under_review","docs_required","approved","rejected","disbursed","cancelled","draft"].map(s => (
+              <option key={s} value={s}>{s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {apps.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>No applications yet. Dealers will submit loan applications here.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {apps.map(app => (
+            <div key={app.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", overflow: "hidden" }}>
+              <div style={{ padding: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-start", cursor: "pointer", flexWrap: "wrap", gap: 8 }}
+                onClick={() => setExpanded(expanded === app.id ? null : app.id)}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>
+                    {app.customer_name} — {fmtINR(app.loan_amount)}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                    Dealer: {app.dealer_name || "—"} · {app.customer_phone} · Tenure: {app.tenure_months}mo
+                  </div>
+                  <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <Badge status={app.status} />
+                    {(localRemarks[app.id]?.length || 0) > 0 && (
+                      <span style={{ background: "#ede9fe", color: P, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>
+                        💬 {localRemarks[app.id].length} remark{localRemarks[app.id].length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  {app.status_notes && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: "#92400e", background: "#fef3c7", padding: "3px 8px", borderRadius: 6, display: "inline-block" }}>
+                      ℹ️ {app.status_notes}
+                    </div>
+                  )}
+                </div>
+                <span style={{ fontSize: 18, color: "#9ca3af" }}>{expanded === app.id ? "▲" : "▼"}</span>
+              </div>
+
+              {expanded === app.id && (
+                <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12, marginBottom: 16 }}>
+                    {[
+                      { l: "Vehicle", v: app.vehicle || "—" },
+                      { l: "Loan Amount", v: fmtINR(app.loan_amount) },
+                      { l: "Down Payment", v: fmtINR(app.down_payment) },
+                      { l: "Tenure", v: `${app.tenure_months} months` },
+                      { l: "Customer Phone", v: app.customer_phone },
+                      { l: "Customer Email", v: app.customer_email || "—" },
+                      { l: "Customer Aadhaar", v: app.customer_aadhaar || "—" },
+                      { l: "Customer PAN", v: app.customer_pan || "—" },
+                      { l: "Customer Address", v: app.customer_address || "—" },
+                      { l: "Submitted", v: app.submitted_at ? new Date(app.submitted_at).toLocaleDateString("en-IN") : (app.created_at ? new Date(app.created_at).toLocaleDateString("en-IN") : "—") },
+                    ].map(({ l, v }) => (
+                      <div key={l} style={{ padding: "8px 12px", background: "#f9fafb", borderRadius: 6 }}>
+                        <div style={{ fontSize: 10, color: "#9ca3af" }}>{l}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Documents uploaded by dealer */}
+                  {app.documents && app.documents.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: "#111827", marginBottom: 8 }}>📄 Uploaded Documents ({app.documents.length})</div>
+                      {app.documents.map(doc => (
+                        <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px", background: "#f9fafb", borderRadius: 6, marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, color: "#374151" }}>{doc.doc_type?.replace(/_/g, " ").toUpperCase()} {doc.notes ? `— ${doc.notes}` : ""}</span>
+                          {doc.file && <a href={doc.file} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 600, fontSize: 11 }}>View ↗</a>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Status update — enterprise state machine */}
+                  {!["rejected","disbursed","cancelled"].includes(app.status) && (
+                    <div style={{ padding: 14, background: "#faf5ff", borderRadius: 10, border: "1px solid #e9d5ff", marginBottom: 16 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: P, marginBottom: 8 }}>Update Application Status</div>
+                      <input type="text" placeholder="Internal notes / reason (shown to dealer)" value={statusUpdate.notes} onChange={e => setStatusUpdate({ notes: e.target.value })}
+                        style={{ width: "100%", padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", marginBottom: 10, boxSizing: "border-box" }} />
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {app.status === "submitted" && (
+                          <button onClick={() => updateStatus(app.id, "under_review")} style={{ background: "#fef3c7", color: "#92400e", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            🔍 Start Review
+                          </button>
+                        )}
+                        {["submitted", "under_review"].includes(app.status) && (
+                          <button onClick={() => updateStatus(app.id, "docs_required")} style={{ background: "#fff7ed", color: "#c2410c", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            📋 Request Docs
+                          </button>
+                        )}
+                        {["under_review", "docs_required"].includes(app.status) && (
+                          <button onClick={() => updateStatus(app.id, "approved")} style={{ background: "#dcfce7", color: "#166534", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            ✅ Approve
+                          </button>
+                        )}
+                        {["submitted", "under_review", "docs_required"].includes(app.status) && (
+                          <button onClick={() => updateStatus(app.id, "rejected")} style={{ background: "#fef2f2", color: "#dc2626", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            ❌ Reject
+                          </button>
+                        )}
+                        {app.status === "approved" && (
+                          <button onClick={() => updateStatus(app.id, "disbursed")} style={{ background: P, color: "#fff", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            💰 Mark Disbursed
+                          </button>
+                        )}
+                        {app.status === "approved" && (
+                          <button onClick={() => updateStatus(app.id, "cancelled")} style={{ background: "#f3f4f6", color: "#6b7280", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            🚫 Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Remarks thread */}
+                  <RemarksThread
+                    remarks={localRemarks[app.id] || []}
+                    onPost={(content) => postRemark(app.id, content)}
+                    posting={postingRemark}
+                    role="financer"
+                  />
+                </div>
               )}
             </div>
           ))}
@@ -210,27 +732,335 @@ function FinancerListing() {
   );
 }
 
+/* ─── Dashboard Tab: Subscription & Plans ───────────────── */
+function SubscriptionTab({ authFetch }) {
+  const [sub, setSub] = useState(null);
+  const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [contact, setContact] = useState({ support_phone: '', support_whatsapp: '', support_email: '' });
+
+  useEffect(() => {
+    fetch(`${API}/platform/settings/`).then(r => r.ok ? r.json() : null).then(d => d && setContact(d)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    Promise.all([
+      authFetch("/financer/subscription/").then(r => r.ok ? r.json() : null),
+      fetch(`${API}/financer/plans/`).then(r => r.ok ? r.json() : []),
+    ]).then(([s, p]) => {
+      setSub(s);
+      setPlans(Array.isArray(p) ? p : p?.results || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [authFetch]);
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading...</div>;
+
+  return (
+    <div>
+      {/* Current subscription */}
+      {sub && (
+        <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e5e7eb", marginBottom: 24 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#111827" }}>Current Subscription</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ padding: "10px 14px", background: "#faf5ff", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>Plan</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: P, marginTop: 2 }}>{sub.plan_name || "Free Trial"}</div>
+            </div>
+            <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>Applications Used</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>
+                {sub.applications_used || 0} / {sub.max_applications === 0 ? "∞" : (sub.max_applications || 5)}
+              </div>
+            </div>
+            <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>Dealer Limit</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>
+                {sub.max_dealer_associations === 0 ? "Unlimited" : (sub.max_dealer_associations ?? 2)}
+              </div>
+            </div>
+            <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>Commission / Lead</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>
+                {sub.commission_per_lead ? fmtINR(sub.commission_per_lead) : "—"}
+              </div>
+            </div>
+            <div style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>Expires</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{sub.expires_at ? new Date(sub.expires_at).toLocaleDateString("en-IN") : "No expiry"}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expiry warning banner */}
+      {sub && sub.expires_at && (() => {
+        const days = Math.ceil((new Date(sub.expires_at) - Date.now()) / 86400000);
+        if (days > 30) return null;
+        return (
+          <div style={{ background: days <= 7 ? '#fef2f2' : '#fef3c7', border: `1px solid ${days <= 7 ? '#fca5a5' : '#fcd34d'}`, borderRadius: 10, padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>{days <= 7 ? '🚨' : '⚠️'}</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: days <= 7 ? '#dc2626' : '#92400e' }}>
+                {days <= 0 ? 'Subscription expired!' : `Subscription expires in ${days} day${days !== 1 ? 's' : ''}`}
+              </div>
+              <div style={{ fontSize: 12, color: days <= 7 ? '#dc2626' : '#92400e', opacity: 0.8 }}>Contact admin to renew your plan.</div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Available plans */}
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: "#111827" }}>Available Plans</div>
+      {plans.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>No plans configured yet.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+          {plans.map(plan => {
+            // Compare using plan_slug (API field) vs plan.slug
+            const isCurrent = sub && sub.plan_slug === plan.slug;
+            return (
+              <div key={plan.id} style={{
+                background: isCurrent ? "#faf5ff" : "#fff", borderRadius: 14, padding: 24,
+                border: isCurrent ? `2px solid ${P}` : "1px solid #e5e7eb", textAlign: "center",
+              }}>
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: "#111827" }}>{plan.name}</div>
+                  {isCurrent && <span style={{ background: P, color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, marginLeft: 8 }}>✓ Current Plan</span>}
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: P, marginBottom: 4 }}>
+                  {plan.price_per_year > 0 ? `${fmtINR(plan.price_per_year)}/yr` : "Free"}
+                </div>
+                <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16, lineHeight: 1.8 }}>
+                  {plan.max_dealer_associations === 0 ? "Unlimited dealers" : `Up to ${plan.max_dealer_associations} dealers`}<br />
+                  {plan.max_finance_applications === 0 ? "Unlimited applications" : `${plan.max_finance_applications} applications`}<br />
+                  {plan.commission_per_lead && `${fmtINR(plan.commission_per_lead)} commission/lead`}
+                </div>
+                {Array.isArray(plan.features) && plan.features.length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: '1px solid #f3f4f6', paddingTop: 10 }}>
+                    {plan.features.map((f, i) => (
+                      <div key={i} style={{ fontSize: 12, color: '#374151', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span> {f}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!isCurrent && (
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {contact.support_whatsapp && (
+                      <button onClick={() => {
+                        const digits = contact.support_whatsapp.replace(/\D/g, '');
+                        window.open(`https://wa.me/${digits}?text=${encodeURIComponent(`Hi, I want to upgrade my financer plan to ${plan.name}`)}`);
+                      }} style={{ background: '#25D366', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        💬 WhatsApp to Upgrade
+                      </button>
+                    )}
+                    {contact.support_email && (
+                      <button onClick={() => window.open(`mailto:${contact.support_email}?subject=Financer Plan Upgrade — ${plan.name}`)}
+                        style={{ background: 'none', border: `1.5px solid ${P}`, borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, color: P, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        ✉️ Email to Upgrade
+                      </button>
+                    )}
+                    {!contact.support_whatsapp && !contact.support_email && (
+                      <div style={{ fontSize: 12, color: '#6b7280', textAlign: 'center' }}>Contact admin to upgrade to this plan.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Dashboard Tab: My Documents ───────────────────────── */
+function MyDocsTab({ authFetch }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [docType, setDocType] = useState("pan");
+  const [docDesc, setDocDesc] = useState("");
+  const [docFile, setDocFile] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    authFetch("/financer/documents/").then(r => r.ok ? r.json() : []).then(d => { setDocs(Array.isArray(d) ? d : d?.results || []); setLoading(false); }).catch(() => setLoading(false));
+  }, [authFetch]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const uploadDoc = async (e) => {
+    e.preventDefault();
+    if (!docFile) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("doc_type", docType);
+    fd.append("description", docDesc);
+    fd.append("file", docFile);
+    const res = await authFetch("/financer/documents/", { method: "POST", body: fd });
+    if (res.ok) { load(); setDocFile(null); setDocDesc(""); }
+    setUploading(false);
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Loading...</div>;
+
+  return (
+    <div>
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#111827" }}>📄 My Documents</div>
+      {docs.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          {docs.map(d => (
+            <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#f9fafb", borderRadius: 8, marginBottom: 8, border: "1px solid #f3f4f6" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{(d.doc_type || d.document_type)?.replace(/_/g, " ").toUpperCase()} — {d.description || d.title || "No description"}</div>
+                <div style={{ fontSize: 11, color: "#6b7280" }}>{d.is_verified ? "✅ Verified" : "⏳ Under review"}</div>
+              </div>
+              {d.file && <a href={d.file} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 600, fontSize: 12, textDecoration: "none" }}>View ↗</a>}
+            </div>
+          ))}
+        </div>
+      )}
+      <form onSubmit={uploadDoc} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <select value={docType} onChange={e => setDocType(e.target.value)}
+          style={{ padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit" }}>
+          <option value="pan">PAN Card</option>
+          <option value="aadhaar">Aadhaar</option>
+          <option value="gst">GST Certificate</option>
+          <option value="bank">Bank Statement</option>
+          <option value="license">Business License</option>
+          <option value="agreement">Agreement</option>
+          <option value="other">Other</option>
+        </select>
+        <input type="text" placeholder="Description" value={docDesc} onChange={e => setDocDesc(e.target.value)}
+          style={{ padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", flex: 1, minWidth: 140 }} />
+        <input type="file" onChange={e => setDocFile(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
+        <button type="submit" disabled={uploading || !docFile}
+          style={{ background: P, color: "#fff", border: "none", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: uploading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: uploading ? 0.6 : 1 }}>
+          {uploading ? "Uploading..." : "Upload"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
+/* ─── Support / Contact Tab ─────────────────────────────── */
+function SupportTab() {
+  const [s, setS] = useState({ support_name: "", support_phone: "", support_whatsapp: "", support_email: "" });
+
+  useEffect(() => {
+    fetch(`${API}/platform/settings/`).then(r => r.ok ? r.json() : null).then(d => d && setS(d)).catch(() => {});
+  }, []);
+
+  const wa = (msg) => {
+    const digits = (s.support_whatsapp || "").replace(/\D/g, "");
+    if (digits) window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`);
+  };
+
+  const row = (icon, label, value, onClick) => (
+    <button key={label} onClick={onClick}
+      style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", background: "#f9fafb", border: "1.5px solid #e5e7eb", borderRadius: 10, cursor: onClick ? "pointer" : "default", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
+      <span style={{ fontSize: 22 }}>{icon}</span>
+      <div>
+        <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</div>
+        <div style={{ fontSize: 14, color: "#111827", fontWeight: 700 }}>{value || "—"}</div>
+      </div>
+    </button>
+  );
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <div style={{ fontWeight: 800, fontSize: 20, color: "#111827", marginBottom: 4 }}>🛟 Support &amp; Contact</div>
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 24 }}>Reach our team for onboarding help, verification queries, or any platform issue.</div>
+
+      {/* Admin contact card */}
+      <div style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 14, padding: "22px 20px", marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: P, marginBottom: 16 }}>🏦 Platform Admin</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {s.support_name && row("👤", "Contact Person", s.support_name, null)}
+          {row("📞", "Phone", s.support_phone, s.support_phone ? () => window.open(`tel:${s.support_phone}`) : null)}
+          {row("💬", "WhatsApp", s.support_whatsapp ? "Chat with us" : "—", s.support_whatsapp ? () => wa("Hi, I need help with my financer account on eRickshawDekho") : null)}
+          {row("✉️", "Email", s.support_email, s.support_email ? () => window.open(`mailto:${s.support_email}?subject=Financer%20Support`) : null)}
+        </div>
+      </div>
+
+      {/* Help topics */}
+      <div style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 14, padding: "22px 20px" }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: "#111827", marginBottom: 14 }}>📋 Common Topics</div>
+        {[
+          ["🔍 Profile Verification", "Our team reviews your business documents within 1–2 business days. Contact us if pending beyond that."],
+          ["🤝 Dealer Associations", "Dealers must apply to join your network. You can also proactively add verified dealers from the Dealers tab."],
+          ["📨 Loan Applications", "Applications from dealers appear under the Applications tab. Update status and add remarks to guide the dealer."],
+          ["💎 Plan & Billing", "Upgrade or downgrade your subscription from the Plans tab. Contact support for custom enterprise pricing."],
+        ].map(([title, desc]) => (
+          <div key={title} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid #f3f4f6" }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#374151", marginBottom: 3 }}>{title}</div>
+            <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.6 }}>{desc}</div>
+          </div>
+        ))}
+        <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>Response time: typically within 24 hours on business days.</div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN PAGE
+   ═══════════════════════════════════════════════════════════ */
 export default function FinancerPage() {
-  const [mode, setMode] = useState("browse"); // browse, register, dashboard
-  const [token, setToken] = useState(() => {
-    const t = localStorage.getItem("erd_financer_token");
-    return t || null;
-  });
+  const [mode, setMode] = useState("login"); // login | register | dashboard
+  const [prefillData, setPrefillData] = useState({}); // email/name pre-filled from Google new-user flow
+  const [token, setToken] = useState(() => localStorage.getItem("erd_financer_token") || null);
+  const [dashTab, setDashTab] = useState("profile");
+  const [profile, setProfile] = useState(null);
+
+  const authFetch = useCallback((path, opts = {}) => {
+    const headers = { Authorization: `Bearer ${token}`, ...(opts.headers || {}) };
+    return fetch(`${API}${path}`, { ...opts, headers });
+  }, [token]);
+
+  // Load profile when token is available
+  useEffect(() => {
+    if (!token) return;
+    authFetch("/financer/profile/").then(r => {
+      if (r.ok) return r.json();
+      // Token expired
+      localStorage.removeItem("erd_financer_token");
+      setToken(null);
+      setMode("login");
+      return null;
+    }).then(d => d && setProfile(d));
+  }, [token, authFetch]);
+
+  const handleLoginSuccess = (data) => {
+    if (data.access) {
+      localStorage.setItem("erd_financer_token", data.access);
+      if (data.refresh) localStorage.setItem("erd_financer_refresh", data.refresh);
+      setToken(data.access);
+      setMode("dashboard");
+    }
+  };
 
   const handleRegSuccess = (data) => {
     if (data.access) {
       localStorage.setItem("erd_financer_token", data.access);
+      if (data.refresh) localStorage.setItem("erd_financer_refresh", data.refresh);
       setToken(data.access);
       setMode("dashboard");
     } else {
-      setMode("browse");
+      setMode("login");
     }
   };
 
   const handleLogout = () => {
     localStorage.removeItem("erd_financer_token");
+    localStorage.removeItem("erd_financer_refresh");
     setToken(null);
-    setMode("browse");
+    setProfile(null);
+    setMode("login");
   };
 
   // Auto-login if token exists
@@ -238,8 +1068,18 @@ export default function FinancerPage() {
     if (token) setMode("dashboard");
   }, []);
 
+  const DASH_TABS = [
+    { id: "profile", label: "👤 Profile" },
+    { id: "dealers", label: "🤝 Dealers" },
+    { id: "requirements", label: "📋 Required Docs" },
+    { id: "applications", label: "📨 Applications" },
+    { id: "documents", label: "📄 My Docs" },
+    { id: "subscription", label: "💎 Plans" },
+    { id: "support", label: "🛟 Support" },
+  ];
+
   return (
-    <div style={{ fontFamily: "'Inter', 'Nunito', sans-serif", background: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: TYPO.body, background: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <style>{`* { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
       <Navbar />
 
@@ -252,38 +1092,95 @@ export default function FinancerPage() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 24px" }}>
-        <div style={{ maxWidth: 800, margin: "0 auto", display: "flex", gap: 0 }}>
-          {[
-            { id: "browse", label: "Browse Financers" },
-            { id: "register", label: "Register" },
-            ...(token ? [{ id: "dashboard", label: "My Dashboard" }] : []),
-          ].map(t => (
-            <button key={t.id} onClick={() => setMode(t.id)}
-              style={{ padding: "14px 20px", background: "none", border: "none", borderBottom: mode === t.id ? `3px solid ${P}` : "3px solid transparent", fontWeight: mode === t.id ? 700 : 500, fontSize: 14, color: mode === t.id ? P : "#6b7280", cursor: "pointer", fontFamily: "inherit" }}>
-              {t.label}
-            </button>
-          ))}
+      {/* Auth tab bar — only shown when not logged in */}
+      {!token && (
+        <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 24px" }}>
+          <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 0 }}>
+            {[
+              { id: "login", label: "Login" },
+              { id: "register", label: "Register" },
+            ].map(t => (
+              <button key={t.id} onClick={() => setMode(t.id)}
+                style={{ padding: "14px 24px", background: "none", border: "none", borderBottom: mode === t.id ? `3px solid ${P}` : "3px solid transparent", fontWeight: mode === t.id ? 700 : 500, fontSize: 14, color: mode === t.id ? P : "#6b7280", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Content */}
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
-        {mode === "browse" && <FinancerListing />}
-        {mode === "register" && <FinancerRegForm onSuccess={handleRegSuccess} />}
-        {mode === "dashboard" && token && <FinancerDashboard token={token} onLogout={handleLogout} />}
+      <div style={{ maxWidth: LAYOUT.contentWidthNarrow, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
+        {mode === "login" && (
+          <div>
+            <FinancerLoginForm
+              onSuccess={handleLoginSuccess}
+              onSwitchToRegister={(data) => { setPrefillData(data); setMode("register"); }}
+            />
+            <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#6b7280" }}>
+              Don't have an account?{" "}
+              <button onClick={() => { setPrefillData({}); setMode("register"); }} style={{ background: "none", border: "none", color: P, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Register →</button>
+            </div>
+          </div>
+        )}
+        {mode === "register" && (
+          <div>
+            <FinancerRegForm onSuccess={handleRegSuccess} prefillEmail={prefillData.email} prefillName={prefillData.name} />
+            <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#6b7280" }}>
+              Already registered?{" "}
+              <button onClick={() => setMode("login")} style={{ background: "none", border: "none", color: P, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Sign in →</button>
+            </div>
+          </div>
+        )}
+        {mode === "dashboard" && token && (
+          <div>
+            {/* Dashboard header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 22, color: "#111827" }}>🏦 {profile?.company_name || "Dashboard"}</div>
+                {profile && <div style={{ fontSize: 13, color: "#6b7280" }}>📍 {profile.city}{profile.state ? `, ${profile.state}` : ""} · {profile.is_verified ? "✅ Verified" : "⏳ Pending verification"}</div>}
+              </div>
+              <button onClick={handleLogout} style={{ background: "#f3f4f6", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Logout</button>
+            </div>
+
+            {/* Dashboard sub-tabs */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 24, overflowX: "auto", paddingBottom: 4 }}>
+              {DASH_TABS.map(t => (
+                <button key={t.id} onClick={() => setDashTab(t.id)}
+                  style={{
+                    padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: dashTab === t.id ? 700 : 500,
+                    background: dashTab === t.id ? P : "#f3f4f6", color: dashTab === t.id ? "#fff" : "#374151",
+                    border: "none", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                  }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            {dashTab === "profile" && <ProfileTab profile={profile} />}
+            {dashTab === "dealers" && <DealersTab authFetch={authFetch} />}
+            {dashTab === "requirements" && <RequiredDocsTab authFetch={authFetch} />}
+            {dashTab === "applications" && <ApplicationsTab authFetch={authFetch} />}
+            {dashTab === "documents" && <MyDocsTab authFetch={authFetch} />}
+            {dashTab === "subscription" && <SubscriptionTab authFetch={authFetch} />}
+            {dashTab === "support" && <SupportTab />}
+          </div>
+        )}
         {mode === "dashboard" && !token && (
           <div style={{ textAlign: "center", padding: 40 }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>🔐</div>
             <div style={{ fontWeight: 700, color: "#111827", marginBottom: 8 }}>Login Required</div>
-            <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>Please register first to access your dashboard.</div>
-            <button onClick={() => setMode("register")} style={{ background: P, color: "#fff", border: "none", padding: "10px 24px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Register Now</button>
+            <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>Please login to access your dashboard.</div>
+            <button onClick={() => setMode("login")} style={{ background: P, color: "#fff", border: "none", padding: "10px 24px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Login Now →</button>
           </div>
         )}
       </div>
 
-      <Footer />
+      <FooterNew />
+      {/* Bottom spacer for mobile nav */}
+      <div style={{ height: 60 }} className="mobile-bottom-spacer" />
+      <style>{`@media (min-width: 769px) { .mobile-bottom-spacer { display: none; } }`}</style>
     </div>
   );
 }

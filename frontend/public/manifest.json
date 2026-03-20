@@ -1,10 +1,12 @@
 {
   "name": "ErikshawDekho — भारत का ई-रिक्शा प्लेटफॉर्म",
   "short_name": "ErikshawDekho",
+  "id": "/",
   "description": "भारत का सबसे भरोसेमंद ई-रिक्शा प्लेटफॉर्म। Compare करें और best price पाएँ।",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#16a34a",
   "theme_color": "#16a34a",
   "orientation": "portrait-primary",
@@ -34,19 +36,19 @@
     {
       "name": "Marketplace",
       "short_name": "Marketplace",
-      "url": "/marketplace",
+      "url": "/driver/marketplace",
       "description": "Browse E-Rickshaws"
     },
     {
       "name": "Find Dealers",
       "short_name": "Dealers",
-      "url": "/dealers",
+      "url": "/driver/dealers",
       "description": "Find dealers near you"
     },
     {
       "name": "Dealer Login",
       "short_name": "Dashboard",
-      "url": "/dashboard",
+      "url": "/dealer",
       "description": "Dealer SaaS Dashboard"
     }
   ],
