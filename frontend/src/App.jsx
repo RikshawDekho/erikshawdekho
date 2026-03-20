@@ -1312,7 +1312,6 @@ const NAV = [
   { id: "marketing",  label: "Marketing",  icon: "📣" },
   { id: "reports",    label: "Reports",    icon: "📈" },
   { id: "learn",      label: "Learn",      icon: "🎓" },
-  { id: "marketplace",label: "Marketplace",icon: "🛒" },
   { id: "plans",      label: "Plans",      icon: "⭐" },
   { id: "support",    label: "Support",    icon: "🛟" },
 ];
@@ -1398,7 +1397,6 @@ function Sidebar({ page, setPage, dealer, onLogout }) {
                 { id: "marketing",   label: "Marketing", icon: "📣" },
                 { id: "reports",     label: "Reports",   icon: "📈" },
                 { id: "learn",       label: "Learn",     icon: "🎓" },
-                { id: "marketplace", label: "Market",    icon: "🛒" },
                 { id: "plans",       label: "Plans",     icon: "⭐" },
                 { id: "support",     label: "Support",   icon: "🛟" },
                 { id: "account",     label: "Account",   icon: "👤" },
@@ -2767,7 +2765,7 @@ function Finance() {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("loans");
   // ── EMI Calculator ──
-  const [emiForm, setEmiForm] = useState({ principal: 150000, rate: 12, tenure: 36 });
+  const [emiForm, setEmiForm] = useState({ principal: "", rate: 12, tenure: 36 });
   const [emiResult, setEmiResult] = useState(null);
   // ── Loans ──
   const [loans, setLoans] = useState([]);
@@ -2988,9 +2986,9 @@ function Finance() {
         <div className="erd-finance-layout" style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
           <Card>
             <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 18, color: C.text }}>💰 EMI Calculator</div>
-            <Field label="Loan Amount (₹)"><Input value={emiForm.principal} onChange={setF("principal")} type="number" /></Field>
-            <Field label="Interest Rate (% p.a.)"><Input value={emiForm.rate} onChange={setF("rate")} type="number" step="0.1" /></Field>
-            <Field label="Tenure (months)"><Input value={emiForm.tenure} onChange={setF("tenure")} type="number" /></Field>
+            <Field label="Loan Amount (₹)"><Input value={emiForm.principal} onChange={setF("principal")} type="number" placeholder="e.g. 150000" /></Field>
+            <Field label="Interest Rate (% p.a.)"><Input value={emiForm.rate} onChange={setF("rate")} type="number" step="0.1" placeholder="e.g. 12" /></Field>
+            <Field label="Tenure (months)"><Input value={emiForm.tenure} onChange={setF("tenure")} type="number" placeholder="e.g. 36" /></Field>
             <Btn label="Calculate EMI" color={C.primary} onClick={calcEMI} fullWidth />
             {emiResult && (
               <div style={{ marginTop: 18, background: `${C.primary}08`, border: `1.5px solid ${C.primary}33`, borderRadius: 10, padding: 16 }}>
@@ -4147,6 +4145,8 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
   const toast = useToast();
   const [tab, setTab] = useState("overview"); // overview | reviews | enquiry
   const [dealerInfo, setDealerInfo] = useState(null);
+  const [imgIdx, setImgIdx] = useState(0);
+  const allImgs = [v.thumbnail, ...(v.gallery_images || []).map(g => g.url)].filter(Boolean);
   const [reviews, setReviews] = useState([]);
   const [reviewForm, setReviewForm] = useState({ reviewer_name: "", reviewer_phone: "", rating: 0, comment: "" });
   const [reviewSaving, setReviewSaving] = useState(false);
@@ -4240,8 +4240,30 @@ function VehicleDetailModal({ vehicle: v, onClose }) {
 
       {tab === "overview" && (
         <div>
-          {/* Vehicle hero */}
-          <div style={{ height: 140, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 72, marginBottom: 16 }}>🛺</div>
+          {/* Vehicle image gallery */}
+          {allImgs.length > 0 ? (
+            <div style={{ position: "relative", marginBottom: 16 }}>
+              <img src={allImgs[imgIdx]} alt={`${v.brand_name} ${v.model_name}`}
+                style={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 10 }}
+                onError={e => { e.target.style.display = "none"; }} />
+              {allImgs.length > 1 && (
+                <>
+                  <button onClick={() => setImgIdx(i => (i - 1 + allImgs.length) % allImgs.length)}
+                    style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.45)", color: "#fff", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+                  <button onClick={() => setImgIdx(i => (i + 1) % allImgs.length)}
+                    style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.45)", color: "#fff", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+                  <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 5 }}>
+                    {allImgs.map((_, i) => (
+                      <div key={i} onClick={() => setImgIdx(i)}
+                        style={{ width: i === imgIdx ? 18 : 6, height: 6, borderRadius: 3, background: i === imgIdx ? "#fff" : "rgba(255,255,255,0.5)", cursor: "pointer", transition: "all 0.2s" }} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div style={{ height: 140, background: `linear-gradient(135deg,${C.primary}15,${C.accent}15)`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 72, marginBottom: 16 }}>🛺</div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
             <div>
               <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{fmtINR(v.price)}</div>
@@ -5117,6 +5139,7 @@ function Marketplace() {
   const C = useC();
   const toast = useToast();
   const [vehicles, setVehicles] = useState([]);
+  const [featured, setFeatured] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState({ fuel_type: "", search: "", city: "" });
@@ -5136,6 +5159,11 @@ function Marketplace() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Load featured vehicles once on mount
+  useEffect(() => {
+    api.marketplace("?featured=true").then(d => setFeatured((d.results || []).slice(0, 8))).catch(() => {});
+  }, []);
+
   const handleNearMe = () => {
     pendingCityAction.current = (city) => { setCityFilter(city); };
     setShowCityModal(true);
@@ -5153,6 +5181,33 @@ function Marketplace() {
           <Btn label="Search" color={C.accent} onClick={load} />
         </div>
       </div>
+
+      {/* Featured eRickshaws */}
+      {featured.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 18 }}>⭐</span>
+            <span style={{ fontWeight: 800, fontSize: 17, color: C.text }}>Featured eRickshaws</span>
+            <span style={{ fontSize: 11, background: `${C.accent}20`, color: C.accent, borderRadius: 12, padding: "2px 8px", fontWeight: 700 }}>Top Picks</span>
+          </div>
+          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+            {featured.map(v => (
+              <div key={v.id} onClick={() => setDetailVehicle(v)} style={{ minWidth: 180, cursor: "pointer", background: C.surface, borderRadius: 12, border: `1.5px solid ${C.accent}44`, boxShadow: `0 2px 8px ${C.accent}18`, flexShrink: 0, overflow: "hidden", transition: "transform 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.transform = "translateY(-3px)"}
+                onMouseLeave={e => e.currentTarget.style.transform = ""}>
+                {(v.thumbnail || v.thumbnail_url)
+                  ? <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ width: "100%", height: 110, objectFit: "cover" }} />
+                  : <div style={{ height: 110, background: `linear-gradient(135deg,${C.accent}20,${C.primary}20)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🛺</div>}
+                <div style={{ padding: "10px 12px" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 2 }}>{v.model_name}</div>
+                  <div style={{ fontSize: 12, color: C.primary, fontWeight: 700 }}>{fmtINR(v.price)}</div>
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>📍 {v.dealer_city}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Fuel filter tabs + city + sort */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -7531,7 +7586,6 @@ export default function App({ skipLanding = false }) {
       case "reports":     return <PlanGate plan={plan} feature="Reports" onUpgrade={goUpgrade}><Reports /></PlanGate>;
       case "learn":       return <LearnPage />;
       case "support":     return <SupportPage />;
-      case "marketplace": return <Marketplace />;
       case "plans":       return <PlansPage onUpgrade={goUpgrade} />;
       case "account":     return <AccountPage dealer={dealer} onLogout={handleLogout} />;
       default:            return <Dashboard onNavigate={setPage} />;
