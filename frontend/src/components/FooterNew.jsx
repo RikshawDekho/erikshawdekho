@@ -10,25 +10,13 @@ import { BRANDING } from "../branding";
 
 const G = ROLE_C.driver;
 
-// TTL-based cache: re-fetch at most once every 60s.
-// Also busted via localStorage key "erd_settings_ts" — admin saves write this key
-// so the next Footer render always picks up the latest contact details.
-let _cachedSettings = null;
-let _cacheTime = 0;
-const CACHE_TTL = 60 * 1000; // 60 seconds
-
+// Always fetch fresh — /api/platform/settings/ is a lightweight endpoint
+// so there is no meaningful cost to fetching on every mount.
+// We never fall back to a stale cache so admin changes appear immediately.
 async function fetchPlatformSettings() {
-  // If admin just saved new settings, the localStorage ts will be newer than our cache
-  const adminSavedAt = Number(localStorage.getItem("erd_settings_ts") || 0);
-  const cacheValid = _cachedSettings && (_cacheTime > adminSavedAt) && (Date.now() - _cacheTime < CACHE_TTL);
-  if (cacheValid) return _cachedSettings;
   try {
     const res = await fetch("/api/platform/settings/");
-    if (res.ok) {
-      _cachedSettings = await res.json();
-      _cacheTime = Date.now();
-      return _cachedSettings;
-    }
+    if (res.ok) return await res.json();
   } catch {}
   return null;
 }
@@ -41,12 +29,12 @@ export default function FooterNew() {
     fetchPlatformSettings().then(s => { if (s) setSettings(s); });
   }, []);
 
-  const supportEmail   = settings?.support_email   || BRANDING.support.email;
-  const supportPhone   = settings?.support_phone   || BRANDING.support.phone || "";
-  const supportWA      = settings?.support_whatsapp || BRANDING.support.whatsappDigits || supportPhone;
-  const supportName    = settings?.support_name    || BRANDING.platformName;
+  // Use nullish coalescing so an empty string from the API doesn't fall back to BRANDING defaults
+  const supportEmail = settings?.support_email ?? BRANDING.support.email;
+  const supportPhone = settings?.support_phone ?? "";
+  const supportWA    = settings?.support_whatsapp ?? "";
 
-  const displayPhone = supportPhone || (supportWA ? `+${supportWA}` : null);
+  const displayPhone = supportPhone || (supportWA ? supportWA : null);
 
   return (
     <footer style={{ background: "#111827", color: "#d1d5db", marginTop: "auto", fontFamily: TYPO.body }}>

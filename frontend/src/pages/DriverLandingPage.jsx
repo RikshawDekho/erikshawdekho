@@ -304,8 +304,9 @@ function VehicleEnquiryModal({ vehicle, lang, onClose }) {
 
         {/* Images */}
         {allImages.length > 0 && (
-          <div style={{ position: "relative", height: 200, background: "#f1f5f9", overflow: "hidden" }}>
-            <img src={allImages[imgIdx]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ position: "relative", height: 200, background: "#f1f5f9", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ fontSize: 52, position: "absolute", zIndex: 0 }}>🛺</span>
+            <img src={allImages[imgIdx]} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 1 }} onError={e => { e.target.style.display = "none"; }} />
             {allImages.length > 1 && (
               <>
                 <button onClick={() => setImgIdx(i => (i - 1 + allImages.length) % allImages.length)}
