@@ -509,7 +509,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         dealer = getattr(self.request.user, 'dealer_profile', None)
         if dealer is None:
             return Vehicle.objects.none()
-        qs = Vehicle.objects.filter(dealer=dealer, is_active=True).select_related('brand')
+        qs = Vehicle.objects.filter(dealer=dealer, is_active=True).select_related('brand').order_by('-created_at')
         brand = self.request.query_params.get('brand')
         fuel = self.request.query_params.get('fuel_type')
         stock = self.request.query_params.get('stock_status')
@@ -907,7 +907,7 @@ def emi_calculator(request):
 # ─── BRANDS ───────────────────────────────────────────────────────
 
 class BrandViewSet(viewsets.ModelViewSet):
-    queryset = Brand.objects.all()
+    queryset = Brand.objects.all().order_by('name')
     serializer_class = BrandSerializer
 
     def get_permissions(self):
