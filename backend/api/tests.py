@@ -10,6 +10,8 @@ Bugs that have been regressed here:
   - featured section filtering paginated general list instead of ?featured=true
   - admin settings not reflected in platform settings (||  vs ?? in frontend)
   - dealer inventory limit blocking pro plan adds
+  - admin featuring an out_of_stock vehicle → still not in ?featured=true (stock filter)
+  - existing DB rows had stock_quantity=0 after migration only changed column default
 """
 
 from django.test import TestCase
@@ -298,6 +300,51 @@ class FeaturedVehiclesTests(TestCase):
         ids = [v['id'] for v in _get_results(mkt_res.data)]
         self.assertNotIn(vehicle_id, ids,
                          "Non-featured vehicle must not appear in ?featured=true")
+
+    def test_out_of_stock_featured_vehicle_not_in_marketplace(self):
+        """
+        REGRESSION: Admin features a vehicle that has stock_status='out_of_stock'.
+        Even though is_featured=True, the vehicle must not appear in ?featured=true
+        because the marketplace always filters out out_of_stock inventory.
+        Migration 0032 fixes existing rows by setting stock_quantity=1 on deploy.
+        """
+        token, dealer_id = _register_dealer(self.client, 'oosfeatdealer', '9300000003')
+        # Add vehicle with qty=0 (simulates pre-migration state)
+        add_res = _add_vehicle(self.client, token, self.brand.id, stock_quantity=0)
+        vehicle_id = add_res.data['id']
+        self.assertEqual(add_res.data['stock_status'], 'out_of_stock')
+
+        # Feature it directly (as admin would)
+        v = Vehicle.objects.get(id=vehicle_id)
+        v.is_featured = True
+        v.save(update_fields=['is_featured'])
+
+        self.client.credentials()
+        feat_res = self.client.get('/api/marketplace/?featured=true')
+        ids = [v['id'] for v in _get_results(feat_res.data)]
+        self.assertNotIn(vehicle_id, ids,
+                         "out_of_stock vehicle must not appear even if is_featured=True")
+
+    def test_low_stock_featured_vehicle_in_marketplace(self):
+        """
+        After data migration fix: a vehicle with stock_quantity=1 (low_stock) that is
+        featured must appear in ?featured=true.
+        """
+        token, dealer_id = _register_dealer(self.client, 'lowfeatdealer', '9300000004')
+        add_res = _add_vehicle(self.client, token, self.brand.id, stock_quantity=1)
+        vehicle_id = add_res.data['id']
+        self.assertEqual(add_res.data['stock_status'], 'low_stock')
+
+        v = Vehicle.objects.get(id=vehicle_id)
+        v.is_featured = True
+        v.save(update_fields=['is_featured'])
+
+        self.client.credentials()
+        cache.clear()
+        feat_res = self.client.get('/api/marketplace/?featured=true')
+        ids = [v['id'] for v in _get_results(feat_res.data)]
+        self.assertIn(vehicle_id, ids,
+                      "low_stock featured vehicle must appear in ?featured=true")
 
 
 # ── Admin Settings Tests ──────────────────────────────────────────────────────
