@@ -1926,7 +1926,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         <Btn label="Delete" size="sm" outline color={C.danger}  onClick={() => setDeleteId(r.id)} />
         {isProDealer && (
           <button onClick={() => handleFeatureToggle(r)}
-            title={r.is_featured ? "Remove from homepage featured" : "Feature on homepage (max 3)"}
+            title={r.is_featured ? "Remove from homepage featured" : "Feature on homepage (max 5)"}
             style={{ padding: "4px 10px", borderRadius: 6, border: `1.5px solid ${r.is_featured ? C.warning : C.border}`, background: r.is_featured ? `${C.warning}20` : "transparent", color: r.is_featured ? C.warning : C.textMid, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
             {r.is_featured ? "⭐" : "☆"}
           </button>
