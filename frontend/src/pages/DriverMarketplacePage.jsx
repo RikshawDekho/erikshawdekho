@@ -548,11 +548,20 @@ export default function DriverMarketplacePage() {
   const [showEmi, setShowEmi] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [featured, setFeatured] = useState([]);
 
   const fuel = params.get("fuel") || "";
   const search = params.get("search") || "";
 
   useEffect(() => { localStorage.setItem("erd_last_page", "/driver/marketplace"); }, []);
+
+  // Fetch featured vehicles once on mount (independent of filters)
+  useEffect(() => {
+    fetch(`${API}/marketplace/?featured=true`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setFeatured((d.results || []).slice(0, 8)); })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -635,6 +644,44 @@ export default function DriverMarketplacePage() {
           <span style={{ fontSize: 13, color: "#9ca3af", marginLeft: "auto" }}>{total} {t("market.vehicles_found")}</span>
         </div>
       </div>
+
+      {/* ── Featured eRickshaws row (hidden when searching/filtering) ── */}
+      {featured.length > 0 && !fuel && !search && (
+        <div style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a", padding: "20px 24px" }}>
+          <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <span style={{ fontSize: 18 }}>⭐</span>
+              <span style={{ fontWeight: 800, fontSize: 16, color: "#92400e" }}>{t("market.featured") || "Featured eRickshaws"}</span>
+              <span style={{ fontSize: 12, color: "#b45309", background: "#fef3c7", padding: "2px 8px", borderRadius: 20, fontWeight: 600 }}>
+                {featured.length} {t("market.vehicles_found") || "vehicles"}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8, scrollbarWidth: "none" }}>
+              <style>{`.erd-feat-scroll::-webkit-scrollbar{display:none}`}</style>
+              {featured.map(v => {
+                const img = v.thumbnail;
+                return (
+                  <div key={v.id} onClick={() => handleDetail(v)}
+                    style={{ minWidth: 200, maxWidth: 200, background: "#fff", borderRadius: 12, overflow: "hidden", cursor: "pointer", border: "1.5px solid #fde68a", flexShrink: 0, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", transition: "transform 0.15s", }}
+                    onMouseEnter={e => e.currentTarget.style.transform = "translateY(-3px)"}
+                    onMouseLeave={e => e.currentTarget.style.transform = ""}>
+                    <div style={{ height: 110, background: "#f1f5f9", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {img ? <img src={img} alt={v.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} /> : <span style={{ fontSize: 40 }}>🛺</span>}
+                      <span style={{ position: "absolute", top: 6, left: 6, background: "#fef3c7", color: "#92400e", fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 20 }}>⭐ Featured</span>
+                    </div>
+                    <div style={{ padding: "10px 12px" }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#111827", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.model_name}</div>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.brand_name}</div>
+                      <div style={{ fontWeight: 800, color: G, fontSize: 14 }}>₹{Number(v.price || 0).toLocaleString("en-IN")}</div>
+                      {v.dealer_city && <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>📍 {v.dealer_city}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Grid */}
       <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto", padding: "24px", width: "100%", flex: 1 }}>

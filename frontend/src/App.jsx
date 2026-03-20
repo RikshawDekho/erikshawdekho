@@ -5685,6 +5685,7 @@ function AdminSettingsPanel({ toast }) {
     setSaving(true);
     try {
       await api.admin.updateSettings(form);
+      localStorage.setItem("erd_settings_ts", Date.now()); // bust FooterNew cache
       toast("Settings saved!", "success");
     } catch { toast("Failed to save settings.", "error"); }
     setSaving(false);
@@ -5737,6 +5738,7 @@ function AdminHomepagePanel({ toast }) {
     setSaving(true);
     try {
       await apiFetch("/admin-portal/settings/", { method: "PATCH", body: JSON.stringify(form) });
+      localStorage.setItem("erd_settings_ts", Date.now()); // bust FooterNew cache
       toast("Homepage content saved!", "success");
     } catch { toast("Failed to save.", "error"); }
     setSaving(false);

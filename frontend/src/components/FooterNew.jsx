@@ -10,13 +10,18 @@ import { BRANDING } from "../branding";
 
 const G = ROLE_C.driver;
 
-// TTL-based cache: re-fetch at most once every 5 minutes so admin changes appear promptly
+// TTL-based cache: re-fetch at most once every 60s.
+// Also busted via localStorage key "erd_settings_ts" — admin saves write this key
+// so the next Footer render always picks up the latest contact details.
 let _cachedSettings = null;
 let _cacheTime = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 min
+const CACHE_TTL = 60 * 1000; // 60 seconds
 
 async function fetchPlatformSettings() {
-  if (_cachedSettings && Date.now() - _cacheTime < CACHE_TTL) return _cachedSettings;
+  // If admin just saved new settings, the localStorage ts will be newer than our cache
+  const adminSavedAt = Number(localStorage.getItem("erd_settings_ts") || 0);
+  const cacheValid = _cachedSettings && (_cacheTime > adminSavedAt) && (Date.now() - _cacheTime < CACHE_TTL);
+  if (cacheValid) return _cachedSettings;
   try {
     const res = await fetch("/api/platform/settings/");
     if (res.ok) {
