@@ -408,6 +408,7 @@ export default function DriverLandingPage() {
   const [content, setContent]           = useState({});
   const [stats, setStats]               = useState({ dealer_count: 0, vehicle_count: 0, city_count: 0 });
   const [vehicles, setVehicles]         = useState([]);
+  const [featured, setFeatured]         = useState([]);
   const [, setLoadingVeh]               = useState(true);
   const [enquireVehicle, setEnquireVehicle] = useState(null);
   const [dealers, setDealers]           = useState([]);
@@ -420,6 +421,9 @@ export default function DriverLandingPage() {
       if (d) setVehicles(Array.isArray(d) ? d : (d.results || []));
       setLoadingVeh(false);
     }).catch(() => setLoadingVeh(false));
+    fetch(`${API}/marketplace/?featured=true`).then(r => r.ok ? r.json() : null).then(d => {
+      if (d) setFeatured((Array.isArray(d) ? d : (d.results || [])).slice(0, 8));
+    }).catch(() => {});
     fetch(`${API}/public/dealers/`).then(r => r.ok ? r.json() : null).then(d => d && setDealers(d.results || [])).catch(() => {});
   }, []);
 
@@ -633,7 +637,7 @@ export default function DriverLandingPage() {
       </section>
 
       {/* 5b. Featured Vehicles Carousel ─────────────────────────────────────── */}
-      {vehicles.filter(v => v.is_featured).length > 0 && (
+      {featured.length > 0 && (
         <section style={{ padding: "40px 0 20px", background: "#fff", overflow: "hidden" }}>
           <div style={{ maxWidth: LAYOUT.contentWidth, margin: "0 auto", paddingLeft: 20, marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -647,7 +651,7 @@ export default function DriverLandingPage() {
             </p>
           </div>
           <HorizontalScrollRow>
-              {vehicles.filter(v => v.is_featured).map(v => (
+              {featured.map(v => (
                 <div key={v.id} onClick={() => setEnquireVehicle(v)} style={{
                   width: "min(74vw, 260px)", flexShrink: 0, scrollSnapAlign: "start",
                   background: "#fff", borderRadius: RADIUS.xl,

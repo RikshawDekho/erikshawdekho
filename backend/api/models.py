@@ -163,7 +163,7 @@ class Vehicle(models.Model):
     vehicle_type = models.CharField(max_length=100, default='passenger')
     fuel_type = models.CharField(max_length=20, choices=FUEL_CHOICES)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    stock_quantity = models.IntegerField(default=0)
+    stock_quantity = models.IntegerField(default=1)
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS, default='in_stock')
     year = models.IntegerField(default=2024)
     is_used = models.BooleanField(default=False)
@@ -192,9 +192,10 @@ class Vehicle(models.Model):
         ]
 
     def save(self, *args, **kwargs):
-        if self.stock_quantity == 0:
+        qty = self.stock_quantity or 0
+        if qty == 0:
             self.stock_status = 'out_of_stock'
-        elif self.stock_quantity <= 3:
+        elif qty <= 3:
             self.stock_status = 'low_stock'
         else:
             self.stock_status = 'in_stock'
