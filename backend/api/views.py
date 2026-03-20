@@ -509,7 +509,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         dealer = getattr(self.request.user, 'dealer_profile', None)
         if dealer is None:
             return Vehicle.objects.none()
-        qs = Vehicle.objects.filter(dealer=dealer, is_active=True).select_related('brand')
+        qs = Vehicle.objects.filter(dealer=dealer, is_active=True).select_related('brand').order_by('-created_at')
         brand = self.request.query_params.get('brand')
         fuel = self.request.query_params.get('fuel_type')
         stock = self.request.query_params.get('stock_status')
@@ -558,7 +558,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def feature(self, request, pk=None):
-        """Toggle is_featured for dealer's own vehicle. Pro plan only, max 3 featured."""
+        """Toggle is_featured for dealer's own vehicle. Pro plan only, max 5 featured."""
         vehicle = self.get_object()
         dealer = vehicle.dealer
 
@@ -573,11 +573,11 @@ class VehicleViewSet(viewsets.ModelViewSet):
         next_featured = not vehicle.is_featured
 
         if next_featured:
-            # Check max 3 featured per dealer
+            # Check max 5 featured per dealer
             already_featured = Vehicle.objects.filter(dealer=dealer, is_featured=True, is_active=True).count()
-            if already_featured >= 3:
+            if already_featured >= 5:
                 return Response(
-                    {'error': 'You can feature a maximum of 3 vehicles. Unfeature one first.', 'code': 'feature_limit'},
+                    {'error': 'You can feature a maximum of 5 vehicles. Unfeature one first.', 'code': 'feature_limit'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -907,7 +907,7 @@ def emi_calculator(request):
 # ─── BRANDS ───────────────────────────────────────────────────────
 
 class BrandViewSet(viewsets.ModelViewSet):
-    queryset = Brand.objects.all()
+    queryset = Brand.objects.all().order_by('name')
     serializer_class = BrandSerializer
 
     def get_permissions(self):
@@ -1022,9 +1022,9 @@ def dealer_list(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def dealer_detail(request, dealer_id):
-    """Public dealer profile with vehicles and reviews."""
+    """Public dealer profile with vehicles and reviews. Works for all active dealers."""
     try:
-        dealer = DealerProfile.objects.prefetch_related('reviews', 'vehicles').get(pk=dealer_id, is_verified=True)
+        dealer = DealerProfile.objects.prefetch_related('reviews', 'vehicles').get(pk=dealer_id, user__is_active=True, is_demo=False)
     except DealerProfile.DoesNotExist:
         return Response({'error': 'Dealer not found'}, status=status.HTTP_404_NOT_FOUND)
     vehicles = Vehicle.objects.filter(dealer=dealer, is_active=True, stock_status__in=['in_stock', 'low_stock']).select_related('brand')
@@ -3364,13 +3364,17 @@ def admin_vehicles(request, vehicle_id=None):
         except Vehicle.DoesNotExist:
             return Response({'error': 'Not found'}, status=404)
         if 'is_featured' in request.data:
-            v.is_featured = request.data['is_featured']
+            next_featured = bool(request.data['is_featured'])
+            # Enforce per-dealer max 5 featured even for admin
+            if next_featured and not v.is_featured:
+                dealer_featured = Vehicle.objects.filter(dealer=v.dealer, is_featured=True, is_active=True).exclude(pk=v.pk).count()
+                if dealer_featured >= 5:
+                    return Response({'error': f'Dealer already has 5 featured vehicles (max allowed). Unfeature one first.'}, status=400)
+            v.is_featured = next_featured
             v.save(update_fields=['is_featured'])
             # Bust marketplace caches so featured vehicles appear immediately
             from django.core.cache import cache
-            for key in ['marketplace::true::', 'marketplace::::', 'marketplace::true::',
-                        f'marketplace::{v.fuel_type or ""}:true::',
-                        f'marketplace::{v.fuel_type or ""}:::']:
+            for key in ['marketplace::true::', 'marketplace::::', f'marketplace::{v.fuel_type or ""}:true::', f'marketplace::{v.fuel_type or ""}:::']:
                 cache.delete(key)
         return Response({'id': v.id, 'is_featured': v.is_featured})
 

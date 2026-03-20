@@ -75,9 +75,64 @@ function EnquiryModal({ vehicle, onClose, t }) {
   );
 }
 
-/* ── Vehicle Detail Modal ── */
+/* ── Stars helper ── */
+function Stars({ value, size = 16 }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 2 }}>
+      {[1,2,3,4,5].map(i => (
+        <span key={i} style={{ fontSize: size, color: i <= value ? "#f59e0b" : "#d1d5db" }}>★</span>
+      ))}
+    </span>
+  );
+}
+
+/* ── Vehicle Detail Modal — Overview + Reviews + More from Dealer ── */
 function VehicleDetailModal({ vehicle, onClose, onEnquire, onCompare, compareIds, t }) {
   const isInCompare = compareIds.includes(vehicle.id);
+  const [tab, setTab] = useState("overview");
+  const [imgIdx, setImgIdx] = useState(0);
+  const [dealerData, setDealerData] = useState(null);
+  const [reviewForm, setReviewForm] = useState({ reviewer_name: "", reviewer_phone: "", rating: 0, comment: "" });
+  const [reviewSending, setReviewSending] = useState(false);
+  const [reviewSent, setReviewSent] = useState(false);
+  const [reviewErr, setReviewErr] = useState("");
+
+  const allImgs = [vehicle.thumbnail, ...(vehicle.gallery_images || []).map(g => g.url)].filter(Boolean);
+
+  useEffect(() => {
+    if (!vehicle.dealer_id) return;
+    fetch(`${API}/dealers/${vehicle.dealer_id}/`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setDealerData(d); })
+      .catch(() => {});
+  }, [vehicle.dealer_id]);
+
+  const reviews = dealerData?.reviews || [];
+  const moreVehicles = (dealerData?.vehicles || []).filter(v => v.id !== vehicle.id);
+  const avgRating = reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
+
+  const submitReview = async () => {
+    setReviewErr("");
+    if (!reviewForm.reviewer_name.trim()) return setReviewErr("Name is required.");
+    if (!/^[6-9]\d{9}$/.test(reviewForm.reviewer_phone.replace(/\D/g,"").slice(-10))) return setReviewErr("Enter valid 10-digit mobile number.");
+    if (!reviewForm.rating) return setReviewErr("Please select a star rating.");
+    if (!reviewForm.comment.trim()) return setReviewErr("Please write a comment.");
+    setReviewSending(true);
+    try {
+      const res = await fetch(`${API}/dealers/${vehicle.dealer_id}/reviews/`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reviewForm),
+      });
+      if (res.ok) {
+        const newReview = await res.json();
+        setDealerData(prev => prev ? { ...prev, reviews: [newReview, ...prev.reviews] } : prev);
+        setReviewSent(true);
+        setReviewForm({ reviewer_name: "", reviewer_phone: "", rating: 0, comment: "" });
+      } else setReviewErr("Failed to submit review. Try again.");
+    } catch { setReviewErr("Network error. Try again."); }
+    setReviewSending(false);
+  };
+
   const specs = [
     vehicle.fuel_type && { label: t("spec.fuel_type"), val: `${FUEL_EMOJI[vehicle.fuel_type]} ${vehicle.fuel_type}` },
     vehicle.range_km && { label: t("spec.range"), val: `${vehicle.range_km} km` },
@@ -90,64 +145,199 @@ function VehicleDetailModal({ vehicle, onClose, onEnquire, onCompare, compareIds
     vehicle.vehicle_type && { label: t("spec.type"), val: vehicle.vehicle_type },
   ].filter(Boolean);
 
+  const TABS = [
+    { id: "overview", label: "Overview" },
+    { id: "reviews",  label: `⭐ Reviews${reviews.length ? ` (${reviews.length})` : ""}` },
+    { id: "more",     label: `🛺 More (${moreVehicles.length})` },
+  ];
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: "#fff", borderRadius: 16, width: 600, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ height: 200, background: `linear-gradient(135deg, ${G}12, #fbbf2415)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 80, position: "relative" }}>
-          {vehicle.thumbnail ? <img src={vehicle.thumbnail} alt={vehicle.model_name} style={{ height: "100%", width: "100%", objectFit: "cover" }} /> : "🛺"}
-          <button onClick={onClose} style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.5)", color: "#fff", border: "none", width: 32, height: 32, borderRadius: "50%", fontSize: 18, cursor: "pointer" }}>✕</button>
-        </div>
-        <div style={{ padding: 24 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-            <div>
-              {vehicle.is_featured && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, display: "inline-block", marginBottom: 6 }}>⭐ {t("market.featured")}</span>}
-              <div style={{ fontWeight: 800, fontSize: 20, color: "#111827" }}>{vehicle.brand_name} {vehicle.model_name}</div>
-              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>📍 {vehicle.dealer_name} · {vehicle.dealer_city}</div>
-              {vehicle.dealer_verified && <span style={{ fontSize: 11, color: G, fontWeight: 600 }}>✅ {t("spec.verified")}</span>}
+      <div style={{ background: "#fff", borderRadius: 16, width: 620, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+
+        {/* Image gallery */}
+        <div style={{ height: 220, background: `linear-gradient(135deg,${G}12,#fbbf2415)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 80, position: "relative", overflow: "hidden", flexShrink: 0 }}>
+          {allImgs.length > 0
+            ? <img src={allImgs[imgIdx]} alt={vehicle.model_name} style={{ height: "100%", width: "100%", objectFit: "cover" }} onError={e => e.target.style.display="none"} />
+            : <span>🛺</span>}
+          <button onClick={onClose} style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.5)", color: "#fff", border: "none", width: 34, height: 34, borderRadius: "50%", fontSize: 18, cursor: "pointer" }}>✕</button>
+          {allImgs.length > 1 && <>
+            <button onClick={() => setImgIdx(i => (i - 1 + allImgs.length) % allImgs.length)}
+              style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.45)", color: "#fff", border: "none", borderRadius: "50%", width: 30, height: 30, cursor: "pointer", fontSize: 18 }}>‹</button>
+            <button onClick={() => setImgIdx(i => (i + 1) % allImgs.length)}
+              style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.45)", color: "#fff", border: "none", borderRadius: "50%", width: 30, height: 30, cursor: "pointer", fontSize: 18 }}>›</button>
+            <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 5 }}>
+              {allImgs.map((_, i) => <div key={i} onClick={() => setImgIdx(i)} style={{ width: i === imgIdx ? 18 : 6, height: 6, borderRadius: 3, background: i === imgIdx ? "#fff" : "rgba(255,255,255,0.5)", cursor: "pointer", transition: "all 0.2s" }} />)}
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11, color: "#9ca3af" }}>{t("market.starting_at")}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: G }}>{fmtINR(vehicle.price)}</div>
+          </>}
+          {vehicle.is_featured && <span style={{ position: "absolute", top: 12, left: 12, background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>⭐ Featured</span>}
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: "16px 20px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 20, color: "#111827" }}>{vehicle.brand_name} {vehicle.model_name}</div>
+              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 3 }}>📍 {vehicle.dealer_name} · {vehicle.dealer_city}</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                {vehicle.dealer_verified && <span style={{ fontSize: 11, color: G, fontWeight: 600 }}>✅ Verified Dealer</span>}
+                {avgRating && <span style={{ fontSize: 11, color: "#92400e", fontWeight: 600 }}>⭐ {avgRating} ({reviews.length} reviews)</span>}
+              </div>
+            </div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>Starting at</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: G }}>{fmtINR(vehicle.price)}</div>
             </div>
           </div>
-          {vehicle.description && (
-            <div style={{ fontSize: 13, color: "#4b5563", lineHeight: 1.7, marginBottom: 20, padding: 14, background: "#f9fafb", borderRadius: 10, border: "1px solid #e5e7eb" }}>{vehicle.description}</div>
-          )}
-          {specs.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", marginBottom: 12 }}>{t("spec.specifications")}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {specs.map(({ label, val }) => (
-                  <div key={label} style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8, border: "1px solid #f3f4f6" }}>
-                    <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>{label}</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{val}</div>
+
+          {/* CTA buttons */}
+          <div style={{ display: "flex", gap: 10, marginTop: 14, marginBottom: 14 }}>
+            <button onClick={() => { onClose(); onEnquire(vehicle); }}
+              style={{ flex: 1, background: G, color: "#fff", border: "none", padding: "13px", borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit", minHeight: 48 }}>
+              💬 Ask for Price
+            </button>
+            {vehicle.dealer_phone && (
+              <a href={`tel:${vehicle.dealer_phone}`}
+                style={{ flex: 1, background: "#f0fdf4", color: G, border: `2px solid ${G}`, padding: "13px", borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit", minHeight: 48, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                📞 Call Dealer
+              </a>
+            )}
+            <button onClick={() => onCompare(vehicle.id)}
+              style={{ padding: "13px 16px", background: isInCompare ? "#dbeafe" : "#f3f4f6", color: isInCompare ? "#1d4ed8" : "#374151", border: isInCompare ? "2px solid #3b82f6" : "2px solid #e5e7eb", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", minHeight: 48 }}>
+              {isInCompare ? "✓" : "⚖"}
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", marginBottom: 16 }}>
+            {TABS.map(({ id, label }) => (
+              <button key={id} onClick={() => setTab(id)} style={{ padding: "10px 16px", border: "none", background: "none", fontWeight: tab === id ? 700 : 500, fontSize: 13, color: tab === id ? G : "#6b7280", borderBottom: tab === id ? `2px solid ${G}` : "2px solid transparent", marginBottom: -2, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tab content */}
+        <div style={{ padding: "0 20px 24px" }}>
+
+          {/* OVERVIEW */}
+          {tab === "overview" && (
+            <div>
+              {vehicle.description && (
+                <div style={{ fontSize: 13, color: "#4b5563", lineHeight: 1.7, marginBottom: 16, padding: 12, background: "#f9fafb", borderRadius: 10, border: "1px solid #e5e7eb" }}>{vehicle.description}</div>
+              )}
+              {vehicle.stock_status && (
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 14, color: vehicle.stock_status === "in_stock" ? G : vehicle.stock_status === "low_stock" ? "#f59e0b" : "#dc2626" }}>
+                  {vehicle.stock_status === "in_stock" ? "✅ In Stock" : vehicle.stock_status === "low_stock" ? "⚠️ Limited Stock" : "❌ Out of Stock"}
+                </div>
+              )}
+              {specs.length > 0 && (
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", marginBottom: 10 }}>{t("spec.specifications")}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {specs.map(({ label, val }) => (
+                      <div key={label} style={{ padding: "10px 14px", background: "#f9fafb", borderRadius: 8, border: "1px solid #f3f4f6" }}>
+                        <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>{label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginTop: 2 }}>{val}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* REVIEWS */}
+          {tab === "reviews" && (
+            <div>
+              {/* Average rating */}
+              {avgRating && (
+                <div style={{ textAlign: "center", padding: "12px 0 20px", borderBottom: "1px solid #f3f4f6", marginBottom: 16 }}>
+                  <div style={{ fontSize: 40, fontWeight: 800, color: "#111827" }}>{avgRating}</div>
+                  <Stars value={Math.round(Number(avgRating))} size={22} />
+                  <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>{reviews.length} review{reviews.length !== 1 ? "s" : ""} for {vehicle.dealer_name}</div>
+                </div>
+              )}
+
+              {/* Existing reviews */}
+              {reviews.map((r, i) => (
+                <div key={i} style={{ padding: "12px 0", borderBottom: "1px solid #f9fafb" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "#111827" }}>{r.reviewer_name || "Customer"}</div>
+                    <Stars value={r.rating} size={14} />
+                  </div>
+                  {r.comment && <div style={{ fontSize: 13, color: "#4b5563", marginTop: 4, lineHeight: 1.6 }}>{r.comment}</div>}
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>{r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN") : ""}</div>
+                </div>
+              ))}
+
+              {/* Submit review */}
+              <div style={{ marginTop: 20, padding: 16, background: "#f9fafb", borderRadius: 12, border: "1px solid #e5e7eb" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", marginBottom: 12 }}>Rate {vehicle.dealer_name}</div>
+                {reviewSent ? (
+                  <div style={{ color: G, fontWeight: 600, textAlign: "center", padding: 12 }}>✅ Review submitted! Thank you.</div>
+                ) : (
+                  <>
+                    {reviewErr && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "8px 12px", borderRadius: 8, fontSize: 12, marginBottom: 10 }}>{reviewErr}</div>}
+                    <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                      {[1,2,3,4,5].map(s => (
+                        <button key={s} onClick={() => setReviewForm(p => ({ ...p, rating: s }))}
+                          style={{ fontSize: 26, background: "none", border: "none", cursor: "pointer", color: s <= reviewForm.rating ? "#f59e0b" : "#d1d5db", padding: "2px 4px", transition: "transform 0.1s" }}
+                          onMouseEnter={e => e.target.style.transform = "scale(1.2)"}
+                          onMouseLeave={e => e.target.style.transform = ""}>★</button>
+                      ))}
+                    </div>
+                    <input placeholder="Your name *" value={reviewForm.reviewer_name} onChange={e => setReviewForm(p => ({ ...p, reviewer_name: e.target.value }))}
+                      style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" }} />
+                    <input placeholder="Mobile number *" value={reviewForm.reviewer_phone} onChange={e => setReviewForm(p => ({ ...p, reviewer_phone: e.target.value.replace(/\D/g,"").slice(0,10) }))}
+                      style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" }} inputMode="numeric" maxLength={10} />
+                    <textarea placeholder="Your experience with this dealer... *" value={reviewForm.comment} onChange={e => setReviewForm(p => ({ ...p, comment: e.target.value }))} rows={3}
+                      style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontFamily: "inherit", resize: "vertical", marginBottom: 10, boxSizing: "border-box" }} />
+                    <button onClick={submitReview} disabled={reviewSending}
+                      style={{ width: "100%", background: G, color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: reviewSending ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: reviewSending ? 0.7 : 1 }}>
+                      {reviewSending ? "Submitting..." : "⭐ Submit Review"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
-          {vehicle.stock_status && (
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 16, color: vehicle.stock_status === "in_stock" ? G : vehicle.stock_status === "low_stock" ? "#f59e0b" : "#dc2626" }}>
-              {vehicle.stock_status === "in_stock" ? `✅ ${t("market.in_stock")}` : vehicle.stock_status === "low_stock" ? `⚠️ ${t("market.low_stock")}` : `❌ ${t("market.out_stock")}`}
+
+          {/* MORE FROM DEALER */}
+          {tab === "more" && (
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", marginBottom: 14 }}>
+                More vehicles from {vehicle.dealer_name}
+              </div>
+              {moreVehicles.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af", fontSize: 13 }}>
+                  No other vehicles listed by this dealer yet.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {moreVehicles.map(v => (
+                    <div key={v.id} style={{ display: "flex", gap: 12, padding: 12, background: "#f9fafb", borderRadius: 10, border: "1px solid #f3f4f6", alignItems: "center" }}>
+                      {(v.thumbnail || v.thumbnail_url)
+                        ? <img src={v.thumbnail || v.thumbnail_url} alt={v.model_name} style={{ width: 72, height: 56, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                        : <div style={{ width: 72, height: 56, background: `${G}15`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>🛺</div>}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{v.brand_name} {v.model_name}</div>
+                        <div style={{ fontSize: 12, color: "#9ca3af" }}>{FUEL_EMOJI[v.fuel_type]} {v.fuel_type} · {v.stock_status?.replace("_"," ")}</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: G, marginTop: 2 }}>{fmtINR(v.price)}</div>
+                      </div>
+                      <button onClick={() => { onClose(); onEnquire(v); }}
+                        style={{ background: G, color: "#fff", border: "none", padding: "8px 14px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+                        Ask Price
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => { onClose(); onEnquire(vehicle); }}
-              style={{ flex: 1, background: G, color: "#fff", border: "none", padding: "14px", borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit", minHeight: 50 }}>
-              {t("market.enquiry")} →
-            </button>
-            <button onClick={() => onCompare(vehicle.id)}
-              style={{ padding: "14px 20px", background: isInCompare ? "#dbeafe" : "#f3f4f6", color: isInCompare ? "#1d4ed8" : "#374151", border: isInCompare ? "2px solid #3b82f6" : "2px solid #e5e7eb", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", minHeight: 50 }}>
-              {isInCompare ? "✓" : "⚖"} {t("market.compare")}
-            </button>
-          </div>
-          {vehicle.dealer_phone && (
-            <div style={{ marginTop: 16, padding: 14, background: "#f0fdf4", borderRadius: 10, border: "1px solid #86efac", textAlign: "center" }}>
-              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>{t("spec.dealer_contact")}</div>
-              <a href={`tel:${vehicle.dealer_phone}`} style={{ fontWeight: 700, fontSize: 16, color: G, textDecoration: "none" }}>📞 {vehicle.dealer_phone}</a>
-            </div>
-          )}
+
         </div>
       </div>
     </div>
@@ -156,7 +346,7 @@ function VehicleDetailModal({ vehicle, onClose, onEnquire, onCompare, compareIds
 
 /* ── EMI Calculator Modal ── */
 function EmiCalculatorModal({ onClose, t }) {
-  const [principal, setPrincipal] = useState(150000);
+  const [principal, setPrincipal] = useState("");
   const [rate, setRate] = useState(12);
   const [tenure, setTenure] = useState(36);
   const [result, setResult] = useState(null);
@@ -168,7 +358,7 @@ function EmiCalculatorModal({ onClose, t }) {
       const res = await fetch(`${API}/finance/emi-calculator/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ principal, rate, tenure }),
+        body: JSON.stringify({ principal: Number(principal) || 0, rate: Number(rate) || 0, tenure: Number(tenure) || 0 }),
       });
       if (res.ok) setResult(await res.json());
     } catch { /* ignore */ }
@@ -188,7 +378,7 @@ function EmiCalculatorModal({ onClose, t }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4, display: "block" }}>{t("emi.principal")}</label>
-            <input style={inp} type="number" inputMode="numeric" value={principal} onChange={e => setPrincipal(Number(e.target.value))} min={10000} step={5000} />
+            <input style={inp} type="number" inputMode="numeric" value={principal} onChange={e => setPrincipal(e.target.value)} placeholder="e.g. 150000" min={0} step={5000} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
@@ -201,7 +391,7 @@ function EmiCalculatorModal({ onClose, t }) {
             </div>
           </div>
         </div>
-        <button onClick={calculate} disabled={loading || principal <= 0 || tenure <= 0}
+        <button onClick={calculate} disabled={loading || !Number(principal) || !Number(tenure)}
           style={{ width: "100%", background: G, color: "#fff", border: "none", padding: "14px", borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", minHeight: 52, opacity: loading ? 0.6 : 1 }}>
           {loading ? "..." : `${t("emi.calculate")} →`}
         </button>
