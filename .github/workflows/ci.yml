@@ -1,0 +1,123 @@
+name: CI — Test Gate
+
+# Runs on every branch push and on all PRs.
+# A failed CI here BLOCKS the merge to develop or main via branch protection.
+#
+# Pipeline:
+#   fix/* / feature/*  → ci.yml (this) must pass before merging to develop
+#   develop            → ci.yml passes → deploy-staging.yml can trigger
+#   release/*          → ci.yml passes → deploy-staging.yml deploys to staging
+#   main               → deploy-production.yml runs after ci.yml passes
+
+on:
+  push:
+    branches:
+      - "fix/**"
+      - "feature/**"
+      - "build/**"
+      - develop
+      - staging
+  pull_request:
+    branches:
+      - develop
+      - staging
+      - main
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ── 1. Backend tests ──────────────────────────────────────────────
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB:       test_erikshaw_ci
+          POSTGRES_USER:     postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Django system check
+        working-directory: backend
+        env:
+          DJANGO_SETTINGS_MODULE: erickshaw.settings.development
+          SECRET_KEY:  ci-test-secret-key-minimum-32-chars-long
+          DEBUG:       "True"
+          DB_NAME:     test_erikshaw_ci
+          DB_USER:     postgres
+          DB_PASSWORD: postgres
+          DB_HOST:     localhost
+          DB_PORT:     "5432"
+        run: python manage.py check
+
+      - name: Run all tests (unit + integration)
+        working-directory: backend
+        env:
+          DJANGO_SETTINGS_MODULE: erickshaw.settings.development
+          SECRET_KEY:  ci-test-secret-key-minimum-32-chars-long
+          DEBUG:       "True"
+          DB_NAME:     test_erikshaw_ci
+          DB_USER:     postgres
+          DB_PASSWORD: postgres
+          DB_HOST:     localhost
+          DB_PORT:     "5432"
+        run: |
+          python manage.py test --verbosity=2 2>&1 | tee /tmp/test_output.txt
+          # Fail if any test failed (tee masks exit code, so check manually)
+          grep -qE "^(FAIL|ERROR): " /tmp/test_output.txt && exit 1 || true
+          grep -qE "^OK$" /tmp/test_output.txt || exit 1
+
+  # ── 2. Frontend build check ───────────────────────────────────────
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend (catches JS/import errors)
+        working-directory: frontend
+        env:
+          VITE_API_URL: https://api.erikshawdekho.com/api
+        run: npm run build
+
+  # ── 3. Summary ────────────────────────────────────────────────────
+  # Both jobs must pass for the PR/branch to be mergeable.
+  # Branch protection on develop and main should require this check.
+  ci-passed:
+    name: CI Passed
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-build]
+    steps:
+      - run: echo "All CI checks passed. Safe to merge."
