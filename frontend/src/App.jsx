@@ -1926,7 +1926,7 @@ function Inventory({ showAdd, onAddClose, onNavigate }) {
         <Btn label="Delete" size="sm" outline color={C.danger}  onClick={() => setDeleteId(r.id)} />
         {isProDealer && (
           <button onClick={() => handleFeatureToggle(r)}
-            title={r.is_featured ? "Remove from homepage featured" : "Feature on homepage (max 3)"}
+            title={r.is_featured ? "Remove from homepage featured" : "Feature on homepage (max 5)"}
             style={{ padding: "4px 10px", borderRadius: 6, border: `1.5px solid ${r.is_featured ? C.warning : C.border}`, background: r.is_featured ? `${C.warning}20` : "transparent", color: r.is_featured ? C.warning : C.textMid, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
             {r.is_featured ? "⭐" : "☆"}
           </button>
@@ -7134,78 +7134,122 @@ function FinancerPortal({ user, onLogout }) {
 function LandingPage({ onDealer, onMarketplace }) {
   const C = useC();
   const [lang, setLang] = useState(() => localStorage.getItem("erd_lang") || "en");
+  const [hp, setHp] = useState(null); // homepage content from admin
+  const [annDismissed, setAnnDismissed] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/public/homepage/").then(r => r.ok ? r.json() : null).then(d => { if (d) setHp(d); }).catch(() => {});
+  }, []);
+
+  const hi = lang === "hi";
+  const heroTitle    = hi ? (hp?.hero_title_hi    || "भारत का सबसे भरोसेमंद\nई-रिक्शा प्लेटफॉर्म") : (hp?.hero_title_en    || null);
+  const heroSubtitle = hi ? (hp?.hero_subtitle_hi || null) : (hp?.hero_subtitle_en || null);
+  const supportPhone = hp?.support_phone || "";
+  const supportWA    = hp?.support_whatsapp || supportPhone;
+  const supportEmail = hp?.support_email || "";
+  const waDigits     = String(supportWA).replace(/\D/g, "");
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg,${C.primaryD} 0%,${C.primary} 45%,#1a6b44 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Nunito','Segoe UI',sans-serif", position: "relative" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "'Nunito','Segoe UI',sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
 
-      {/* Language Toggle - Top Right */}
-      <button onClick={() => {
-        const next = lang === "en" ? "hi" : "en";
-        i18n.changeLanguage(next);
-        localStorage.setItem("erd_lang", next);
-        setLang(next);
-      }} title={lang === "en" ? "भाषा बदलें हिंदी के लिए" : "Change language to English"}
-        style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", backdropFilter: "blur(5px)", transition: "all 0.2s" }}
-        onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; }}
-        onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}>
-        {lang === "en" ? "हि" : "EN"}
-      </button>
-
-      {/* Brand */}
-      <div style={{ textAlign: "center", marginBottom: 48, color: "#fff" }}>
-        <div style={{ fontSize: 56, marginBottom: 12 }}>🛺</div>
-        <div style={{ fontSize: 32, fontWeight: 800, fontFamily: "Georgia,serif", letterSpacing: -1 }}>
-          eRickshaw<span style={{ color: C.accent }}>Dekho</span><span style={{ opacity: 0.7 }}>.com</span>
+      {/* Announcement bar */}
+      {hp?.announcement_text && !annDismissed && (
+        <div style={{ background: "linear-gradient(90deg,#1e40af,#1d4ed8)", color: "#fff", padding: "9px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontSize: 13, fontWeight: 500, position: "relative" }}>
+          <span style={{ background: "#fbbf24", color: "#1e1e1e", borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>NEW</span>
+          {hp.announcement_text}
+          {hp.announcement_link && (
+            <a href={hp.announcement_link} style={{ color: "#fbbf24", fontWeight: 700, textDecoration: "underline", marginLeft: 6 }}>
+              {hi ? "और जानें →" : "Learn More →"}
+            </a>
+          )}
+          <button onClick={() => setAnnDismissed(true)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#93c5fd", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
         </div>
-        <div style={{ marginTop: 8, fontSize: 15, opacity: 0.8, maxWidth: 380 }}>
-          India's #1 Platform for eRickshaws & Auto-rickshaws
-        </div>
-      </div>
+      )}
 
-      {/* Two paths */}
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center", width: "100%", maxWidth: 640 }}>
-        {/* Driver / Buyer */}
-        <div onClick={onMarketplace} style={{
-          flex: 1, minWidth: 260, background: "rgba(255,255,255,0.12)", backdropFilter: "blur(10px)",
-          border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 18, padding: 32,
-          color: "#fff", cursor: "pointer", transition: "all 0.2s", textAlign: "center",
-        }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = ""; }}>
-          <div style={{ fontSize: 44, marginBottom: 14 }}>🔍</div>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Browse Marketplace</div>
-          <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.7, marginBottom: 20 }}>
-            Search & compare eRickshaws near you. View prices, specs, dealers and reviews. No sign-in needed.
+      {/* Contact bar */}
+      {(supportPhone || supportEmail) && (
+        <div style={{ background: "#f0fdf4", borderBottom: "1px solid #dcfce7", padding: "7px 20px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 20, fontSize: 12, flexWrap: "wrap" }}>
+          {supportPhone && <a href={`tel:${supportPhone}`} style={{ color: "#374151", textDecoration: "none", fontWeight: 500 }}>📞 {supportPhone}</a>}
+          {waDigits && <a href={`https://wa.me/${waDigits}`} target="_blank" rel="noopener noreferrer" style={{ color: "#16a34a", textDecoration: "none", fontWeight: 700 }}>💬 WhatsApp</a>}
+          {supportEmail && <a href={`mailto:${supportEmail}`} style={{ color: "#64748b", textDecoration: "none" }}>✉ {supportEmail}</a>}
+        </div>
+      )}
+
+      {/* Main content */}
+      <div style={{ flex: 1, background: `linear-gradient(160deg,${C.primaryD} 0%,${C.primary} 45%,#1a6b44 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, position: "relative" }}>
+
+        {/* Language Toggle - Top Right */}
+        <button onClick={() => {
+          const next = lang === "en" ? "hi" : "en";
+          i18n.changeLanguage(next);
+          localStorage.setItem("erd_lang", next);
+          setLang(next);
+        }} title={lang === "en" ? "भाषा बदलें हिंदी के लिए" : "Change language to English"}
+          style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", backdropFilter: "blur(5px)", transition: "all 0.2s" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}>
+          {lang === "en" ? "हि" : "EN"}
+        </button>
+
+        {/* Brand */}
+        <div style={{ textAlign: "center", marginBottom: 48, color: "#fff" }}>
+          <div style={{ fontSize: 56, marginBottom: 12 }}>🛺</div>
+          <div style={{ fontSize: 32, fontWeight: 800, fontFamily: "Georgia,serif", letterSpacing: -1 }}>
+            eRickshaw<span style={{ color: C.accent }}>Dekho</span><span style={{ opacity: 0.7 }}>.com</span>
           </div>
-          <div style={{ background: C.accent, color: "#1a1a1a", borderRadius: 10, padding: "11px 20px", fontWeight: 700, fontSize: 14 }}>
-            Browse eRickshaws →
+          <div style={{ marginTop: 8, fontSize: 15, opacity: 0.8, maxWidth: 380, whiteSpace: "pre-line" }}>
+            {heroTitle || (hi ? "भारत का #1 ई-रिक्शा प्लेटफॉर्म" : "India's #1 Platform for eRickshaws & Auto-rickshaws")}
           </div>
-          <div style={{ fontSize: 11, opacity: 0.65, marginTop: 10 }}>Driver • Buyer • Fleet Owner</div>
+          {heroSubtitle && (
+            <div style={{ marginTop: 6, fontSize: 13, opacity: 0.65, maxWidth: 380 }}>{heroSubtitle}</div>
+          )}
         </div>
 
-        {/* Dealer */}
-        <div onClick={onDealer} style={{
-          flex: 1, minWidth: 260, background: "rgba(255,255,255,0.12)", backdropFilter: "blur(10px)",
-          border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 18, padding: 32,
-          color: "#fff", cursor: "pointer", transition: "all 0.2s", textAlign: "center",
-        }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = ""; }}>
-          <div style={{ fontSize: 44, marginBottom: 14 }}>🏪</div>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Dealer Portal</div>
-          <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.7, marginBottom: 20 }}>
-            Manage inventory, leads, sales & invoices. Full GST billing, CRM and analytics for your showroom.
+        {/* Two paths */}
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center", width: "100%", maxWidth: 640 }}>
+          {/* Driver / Buyer */}
+          <div onClick={onMarketplace} style={{
+            flex: 1, minWidth: 260, background: "rgba(255,255,255,0.12)", backdropFilter: "blur(10px)",
+            border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 18, padding: 32,
+            color: "#fff", cursor: "pointer", transition: "all 0.2s", textAlign: "center",
+          }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = ""; }}>
+            <div style={{ fontSize: 44, marginBottom: 14 }}>🔍</div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{hi ? "मार्केटप्लेस देखें" : "Browse Marketplace"}</div>
+            <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.7, marginBottom: 20 }}>
+              {hi ? "अपने शहर में ई-रिक्शा खोजें। कीमत, स्पेक्स और डीलर देखें। लॉगिन जरूरी नहीं।" : "Search & compare eRickshaws near you. View prices, specs, dealers and reviews. No sign-in needed."}
+            </div>
+            <div style={{ background: C.accent, color: "#1a1a1a", borderRadius: 10, padding: "11px 20px", fontWeight: 700, fontSize: 14 }}>
+              {hi ? "ई-रिक्शा देखें →" : "Browse eRickshaws →"}
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 10 }}>Driver • Buyer • Fleet Owner</div>
           </div>
-          <div style={{ background: "#fff", color: C.primary, borderRadius: 10, padding: "11px 20px", fontWeight: 700, fontSize: 14 }}>
-            Dealer Sign In →
-          </div>
-          <div style={{ fontSize: 11, opacity: 0.65, marginTop: 10 }}>Showroom • Dealer • Distributor</div>
-        </div>
-      </div>
 
-      <div style={{ marginTop: 36, fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>
-        Trusted by 500+ dealers across India · Delhi · UP · Bihar · Rajasthan
+          {/* Dealer */}
+          <div onClick={onDealer} style={{
+            flex: 1, minWidth: 260, background: "rgba(255,255,255,0.12)", backdropFilter: "blur(10px)",
+            border: "1.5px solid rgba(255,255,255,0.3)", borderRadius: 18, padding: 32,
+            color: "#fff", cursor: "pointer", transition: "all 0.2s", textAlign: "center",
+          }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = ""; }}>
+            <div style={{ fontSize: 44, marginBottom: 14 }}>🏪</div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{hi ? "डीलर पोर्टल" : "Dealer Portal"}</div>
+            <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.7, marginBottom: 20 }}>
+              {hi ? "इन्वेंटरी, लीड्स और बिलिंग मैनेज करें। GST बिलिंग, CRM और एनालिटिक्स।" : "Manage inventory, leads, sales & invoices. Full GST billing, CRM and analytics for your showroom."}
+            </div>
+            <div style={{ background: "#fff", color: C.primary, borderRadius: 10, padding: "11px 20px", fontWeight: 700, fontSize: 14 }}>
+              {hi ? "डीलर साइन इन →" : "Dealer Sign In →"}
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 10 }}>Showroom • Dealer • Distributor</div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 36, fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>
+          {hi ? "500+ डीलर्स का भरोसा · दिल्ली · UP · बिहार · राजस्थान" : "Trusted by 500+ dealers across India · Delhi · UP · Bihar · Rajasthan"}
+        </div>
       </div>
     </div>
   );
