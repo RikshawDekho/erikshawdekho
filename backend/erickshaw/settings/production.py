@@ -37,6 +37,7 @@ EMAIL_PORT          = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS       = True
 EMAIL_HOST_USER     = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '') or os.environ.get('SENDGRID_API_KEY', '')
+EMAIL_TIMEOUT       = 10  # Fail fast — don't block registration/login for 60+ seconds on SMTP timeout
 
 # ── CORS ───────────────────────────────────────────────────────────
 CORS_ALLOW_ALL_ORIGINS = False
@@ -84,7 +85,21 @@ if _cloudinary_url:
         secure=True,
     )
     DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
-    CLOUDINARY_STORAGE = {'CLOUDINARY_URL': _cloudinary_url}
+    CLOUDINARY_STORAGE = {
+        'CLOUDINARY_URL': _cloudinary_url,
+        # Auto-compress every upload: quality auto (~50-100 KB for thumbnails),
+        # serve WebP/AVIF where supported, cap width at 800px.
+        'TRANSFORMATION': [
+            {
+                'quality': 'auto:good',
+                'fetch_format': 'auto',
+                'width': 800,
+                'crop': 'limit',
+            }
+        ],
+        'STATIC_TRANSFORMATION': None,   # don't touch static files
+        'UNSIGNED_PRESET': None,
+    }
 
 # ── Sentry ─────────────────────────────────────────────────────────
 _SENTRY_DSN = os.environ.get('SENTRY_DSN', '')
