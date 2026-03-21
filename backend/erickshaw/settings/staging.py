@@ -38,6 +38,7 @@ EMAIL_PORT          = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS       = True
 EMAIL_HOST_USER     = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '') or os.environ.get('SENDGRID_API_KEY', '')
+EMAIL_TIMEOUT       = 10  # Fail fast — don't block registration/login for 60+ seconds on SMTP timeout
 
 # ── CORS ───────────────────────────────────────────────────────────
 CORS_ALLOW_ALL_ORIGINS = False
